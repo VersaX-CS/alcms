@@ -15044,7 +15044,14 @@ function render(){
   el.innerHTML = html;
   hideMobileFab();
   if(window.innerWidth<=900 && route!==__lastTransitionRoute){
-    el.classList.remove('page-transition'); void el.offsetWidth; el.classList.add('page-transition');
+    // Restart the CSS animation without forcing a synchronous layout pass. `void el.offsetWidth`
+    // used to force layout of the whole freshly-injected page right here, which blocked the main
+    // thread on every nav click (worse on big pages like catalogue/register). Two nested rAFs
+    // achieve the same "restart" by waiting for the browser's own paint cycle instead.
+    el.classList.remove('page-transition');
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=> el.classList.add('page-transition'));
+    });
     __lastTransitionRoute = route;
   }
 
