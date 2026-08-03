@@ -2534,7 +2534,7 @@ input,select,textarea{font-family:inherit;}
 
 /* --- App name: building up letter by letter with Segoe UI --- */
 .splash-title{ 
-  font-size:32px; letter-spacing:0px; font-weight:700; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size:24px; letter-spacing:-.5px; font-weight:700; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   text-transform:lowercase; display:flex; gap:0px; align-items:baseline;
 }
 .splash-title .letter{ 
@@ -2889,8 +2889,8 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 }
 .topbar-title-caret{ display:none; font-size:12px; color:rgba(239,232,211,.65); flex:none; transition:transform .15s ease;}
 .topbar-title-btn[aria-expanded="true"] .topbar-title-caret{ transform:rotate(180deg);}
-.topbar-nav-menu{ position:fixed; top:60px; left:0; width:min(250px, 90vw); height:calc(100vh - 60px); max-height:none; overflow-y:auto; overflow-x:hidden; padding:6px 8px; box-sizing:border-box; z-index:99; background:var(--sidebar-bg); border-right:1px solid rgba(255,255,255,.12);}
-.topbar-nav-menu .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted-label); padding:10px 14px 4px; font-weight:700;}
+.topbar-nav-menu{ position:fixed; top:60px; left:0; width:min(250px, 90vw); height:calc(100vh - 60px); max-height:none; overflow-y:auto; overflow-x:hidden; padding:6px 8px; box-sizing:border-box; z-index:99; background:var(--sidebar-bg); border-right:1px solid rgba(255,255,255,.12); -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
+.topbar-nav-menu .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted-label); padding:8px 14px 3px; font-weight:700;}
 .topbar-nav-menu a{ display:flex; align-items:center; gap:10px;}
 .topbar-nav-menu a .ico{ width:18px; text-align:center; font-size:14px; flex:none;}
 .topbar-nav-menu a.active{ background:var(--parchment-dim); font-weight:600;}
@@ -2925,6 +2925,19 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .account-chip .nm{ font-size:12.5px; font-weight:600; line-height:1.2; color:#fff;}
 .account-chip .rl{ font-size:10px; color:rgba(239,232,211,.6); text-transform:uppercase; letter-spacing:.4px;}
 .content{ padding:22px 26px 60px; flex:1; overflow-y:auto; min-height:0;}
+
+/* Home page only: the weather hero + KPI strip stay pinned to the top of the scrolling .content
+   area, so as the page is scrolled only the quicklinks (nav-icon) grid and any due-list alert
+   move underneath them — the hero/KPIs never scroll out of view. Solid background is required
+   since sticky content still paints below it in the same stacking context; without it, the
+   quicklink cards would visibly show through the gap under the rotated corner accents. */
+.home-frozen-top{
+  position:sticky; top:0; z-index:3; background:var(--parchment);
+}
+.home-frozen-top::after{
+  content:''; position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none;
+  background:linear-gradient(to bottom, rgba(0,0,0,.05), transparent); transform:translateY(100%);
+}
 
 /* ===== Components ===== */
 .grid{ display:grid; gap:16px; margin-bottom:20px;}
@@ -3073,6 +3086,10 @@ table.datatable{ width:100%; border-collapse:collapse; font-size:12.8px;}
 table.datatable th{
   text-align:left; padding:9px 10px; background:var(--parchment-dim); color:var(--muted-label); font-size:11px;
   text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid var(--line); white-space:nowrap;position:sticky;top:0;
+  z-index:2; /* keeps the sticky header painting above in-row content (e.g. the rotated .stamp
+                badges) that would otherwise poke above its row and overlap the header as it
+                scrolls underneath — transform:rotate() on .stamp creates its own stacking
+                context, so without this the header could lose that paint order in some browsers */
 }
 table.datatable td{ padding:8px 10px; border-bottom:1px solid #efe8d4; vertical-align:top;}
 table.datatable tr:hover td{ background:#fbf8ee;}
@@ -3598,6 +3615,10 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   }
   .btn, .btn.small{ min-height:42px;}
   select, input[type="date"], .dropdown-menu a{ min-height:42px;}
+  /* The mobile "tap the page title" nav dropdown is a scrollable list of every destination, not
+     a handful of menu actions — the generic 42px touch-target min-height above (meant for short
+     action menus) left far too much air between rows here, so it's compacted specifically. */
+  .topbar-nav-menu a{ min-height:0; padding:7px 14px;}
   input, select, textarea{ font-size:16px !important; } /* prevents iOS auto-zoom on focus */
   .home-hero{ padding:20px 18px; padding-top:30px;}
   .home-hero h1{ font-size:20px;}
@@ -8019,17 +8040,19 @@ function pageHome(){
     .sort((a,b)=> (a.status==='OVERDUE'?0:1) - (b.status==='OVERDUE'?0:1));
 
   return `
-  <div class="home-hero">
-    ${renderWeatherAmbience()}
-    ${renderWeatherLabel()}
-    <h1>${greeting}, ${esc(firstNameOf((SESSION&&SESSION.fullName)||''))}!</h1>
-    <p>${DB.setup.institutionName? esc(DB.setup.institutionName)+' — ':''}Search the catalogue, issue and return loans, keep an eye on overdue titles, and manage your members — all from one shelf.</p>
-  </div>
-  <div class="grid kpis">
-    ${kpi('Issued today', issuedToday, '')}
-    ${kpi('Returned today', returnedToday, '')}
-    ${kpi('Library visits today', visitsToday, 'desk + class periods')}
-    ${kpi('Overdue right now', overdue, overdue? 'needs a reminder':'all clear')}
+  <div class="home-frozen-top">
+    <div class="home-hero">
+      ${renderWeatherAmbience()}
+      ${renderWeatherLabel()}
+      <h1>${greeting}, ${esc(firstNameOf((SESSION&&SESSION.fullName)||''))}!</h1>
+      <p>${DB.setup.institutionName? esc(DB.setup.institutionName)+' — ':''}Search the catalogue, issue and return loans, keep an eye on overdue titles, and manage your members — all from one shelf.</p>
+    </div>
+    <div class="grid kpis">
+      ${kpi('Issued today', issuedToday, '')}
+      ${kpi('Returned today', returnedToday, '')}
+      ${kpi('Library visits today', visitsToday, 'desk + class periods')}
+      ${kpi('Overdue right now', overdue, overdue? 'needs a reminder':'all clear')}
+    </div>
   </div>
   ${(dueList.length && homeAlertsDismissed.dueList!==today)? `
   <div class="card panel" style="margin-bottom:16px">
