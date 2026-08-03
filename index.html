@@ -2820,7 +2820,7 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .main{ flex:1; min-width:0; display:flex; flex-direction:column; height:100vh; overflow-y:auto;}
 .topbar{
   display:flex; align-items:center; justify-content:space-between; padding:14px 26px;
-  background:var(--sidebar-bg); border-bottom:1px solid rgba(255,255,255,.12); position:sticky; top:0; z-index:5; gap:16px;
+  background:var(--sidebar-bg); border-bottom:1px solid rgba(255,255,255,.12); position:sticky; top:0; z-index:100; gap:16px;
 }
 .topbar > div:first-child{ display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto;}
 .topbar .titles{ min-width:0;}
@@ -2834,7 +2834,7 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 }
 .topbar-title-caret{ display:none; font-size:12px; color:rgba(239,232,211,.65); flex:none; transition:transform .15s ease;}
 .topbar-title-btn[aria-expanded="true"] .topbar-title-caret{ transform:rotate(180deg);}
-.topbar-nav-menu{ width:250px; max-width:calc(100vw - 16px); max-height:min(85vh,600px); overflow-y:auto; overflow-x:hidden; padding:6px 0; box-sizing:border-box;}
+.topbar-nav-menu{ position:fixed; top:60px; left:0; width:min(250px, 90vw); height:calc(100vh - 60px); max-height:none; overflow-y:auto; overflow-x:hidden; padding:6px 8px; box-sizing:border-box; z-index:99; background:var(--sidebar-bg); border-right:1px solid rgba(255,255,255,.12);}
 .topbar-nav-menu .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted-label); padding:10px 14px 4px; font-weight:700;}
 .topbar-nav-menu a{ display:flex; align-items:center; gap:10px;}
 .topbar-nav-menu a .ico{ width:18px; text-align:center; font-size:14px; flex:none;}
@@ -3037,7 +3037,7 @@ table.datatable tr:hover td{ background:#fbf8ee;}
 .stamp{
   display:inline-flex; align-items:center; justify-content:center; border:2px solid currentColor;
   border-radius:5px; padding:2px 8px; font-family:Georgia,serif; font-weight:700; font-size:10.5px;
-  letter-spacing:1px; transform:rotate(-3deg); position:relative; z-index:1;
+  letter-spacing:1px; transform:rotate(-3deg);
 }
 .stamp.available{ color:var(--ok);}
 .stamp.issued{ color:var(--brass);}
@@ -3440,8 +3440,9 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 @media (min-width:901px){ .scroll-top-btn{ display:none !important;} }
 
 /* ===== mobile pull-to-refresh ===== */
+/* DISABLED: Pull-to-refresh functionality has been completely removed */
 .pull-refresh-indicator{
-  display:none; position:fixed; left:50%; top:calc(env(safe-area-inset-top,0) + 8px); z-index:47;
+  display:none !important; position:fixed; left:50%; top:calc(env(safe-area-inset-top,0) + 8px); z-index:47;
   width:34px; height:34px; border-radius:50%; background:var(--card); box-shadow:var(--shadow);
   align-items:center; justify-content:center; transform:translate(-50%,-60px); transition:transform .15s;
 }
@@ -5860,60 +5861,10 @@ function tapFeedback(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(
   btn.onclick = ()=>{ tapFeedback(); mainEl.scrollTo({top:0, behavior:'smooth'}); };
 })();
 
-// Pull-to-refresh: dragging down from the very top of the page reloads the saved data and
-// re-renders — useful when the same library is open in another tab/device and this one should
-// pick up the latest changes. Only engages when .main is already scrolled to the top, so it
-// never fights normal downward scrolling.
-(function(){
-  const mainEl = document.querySelector('.main');
-  const indicator = document.getElementById('pullRefreshIndicator');
-  if(!mainEl || !indicator) return;
-  let startY=0, pulling=false, refreshing=false, lastRefreshTime=0;
-  const THRESHOLD = 100; // Increased from 70 to prevent accidental triggers
-  const COOLDOWN = 3000; // 3 second cooldown between refreshes
-  function onStart(e){
-    if(window.innerWidth>900 || refreshing) return;
-    if(document.querySelector('.modal-backdrop')) return;
-    if(mainEl.scrollTop > 0) return;
-    const now = Date.now();
-    if(now - lastRefreshTime < COOLDOWN) return; // Prevent refresh if cooldown active
-    startY = e.touches[0].clientY; pulling = true;
-  }
-  function onMove(e){
-    if(!pulling || refreshing) return;
-    const dy = e.touches[0].clientY - startY;
-    if(dy<=0){ indicator.classList.remove('pulling'); indicator.style.transform=''; return; }
-    if(mainEl.scrollTop > 0){ pulling=false; indicator.classList.remove('pulling'); indicator.style.transform=''; return; }
-    indicator.classList.add('pulling');
-    const dist = Math.min(dy*0.5, 90);
-    indicator.style.transform = `translate(-50%, ${dist-60}px)`;
-  }
-  async function onEnd(e){
-    if(!pulling || refreshing) return;
-    pulling = false;
-    const dy = (e.changedTouches[0].clientY - startY) * 0.5;
-    indicator.classList.remove('pulling');
-    if(dy < THRESHOLD){ indicator.style.transform=''; return; }
-    const now = Date.now();
-    if(now - lastRefreshTime < COOLDOWN) return; // Double-check cooldown on release
-    refreshing = true; lastRefreshTime = now; tapFeedback();
-    indicator.classList.add('refreshing');
-    indicator.style.transform = 'translate(-50%, 10px)';
-    try{
-      DB = await loadDB();
-      render();
-      toast('Refreshed');
-    }catch(err){ console.error('Pull-to-refresh failed', err); toast('Could not refresh'); }
-    finally{
-      indicator.classList.remove('refreshing');
-      indicator.style.transform = '';
-      refreshing = false;
-    }
-  }
-  document.addEventListener('touchstart', onStart, {passive:true});
-  document.addEventListener('touchmove', onMove, {passive:true});
-  document.addEventListener('touchend', onEnd, {passive:true});
-})();
+// Pull-to-refresh: DISABLED
+// This feature has been completely disabled per user request.
+// All touchstart, touchmove, and touchend event listeners for pull-to-refresh have been removed.
+// The pull-refresh-indicator element remains in the DOM but is no longer functional.
 
 // Edge-swipe-back: dragging in from the left edge of the screen (the standard iOS/Android
 // gesture) steps back through the page stack, same as the hardware/gesture back button.
