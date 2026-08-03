@@ -2494,44 +2494,99 @@ input,select,textarea{font-family:inherit;}
 .splash-badge{
   width:96px;height:96px;border-radius:50%;border:3px solid var(--brass-light); display:flex; align-items:center; justify-content:center;
   font-family:Georgia,serif; font-size:34px; font-weight:700; color:var(--brass-light); margin-bottom:18px;
-  animation: pop .7s cubic-bezier(.2,1.4,.4,1); overflow:hidden;
+  animation: pop .8s cubic-bezier(.34,1.56,.64,1), badge-glow 3s ease-in-out infinite 1.5s; overflow:hidden;
+  box-shadow: 0 0 0 4px #fff, 0 0 20px rgba(184,134,62,.0);
 }
 .splash-badge img{ width:100%; height:100%; object-fit:cover; border-radius:50%;}
-@keyframes pop{ from{ transform:scale(.6); opacity:0;} to{ transform:scale(1); opacity:1;} }
+@keyframes pop{ 
+  0%{ transform:scale(.3); opacity:0; }
+  60%{ transform:scale(1.12); }
+  100%{ transform:scale(1); opacity:1; } 
+}
+@keyframes badge-glow{
+  0%, 100%{ box-shadow: 0 0 0 4px #fff, 0 0 12px rgba(184,134,62,.3); }
+  50%{ box-shadow: 0 0 0 4px #fff, 0 0 32px rgba(184,134,62,.6); }
+}
 
-/* --- "Building" logo reveal: the mark's pieces draw themselves in, staggered --- */
+/* --- "Building" logo reveal: the mark's pieces draw themselves in, staggered, with enhanced effects --- */
 .splash-logo-svg .build-stroke{
   stroke-dasharray:60; stroke-dashoffset:60;
-  animation: draw-stroke .6s ease forwards;
+  animation: draw-stroke .7s ease-out forwards;
 }
 .splash-logo-svg .build-fill{
-  opacity:0; transform:translateY(4px); transform-origin:center;
-  animation: build-in .5s cubic-bezier(.2,1,.3,1) forwards;
+  opacity:0; transform:translateY(6px) scale(.85); transform-origin:center;
+  animation: build-in .6s cubic-bezier(.3,1.2,.4,1) forwards;
 }
 .splash-logo-svg .build-fill.f1{ animation-delay:.15s; }
-.splash-logo-svg .build-fill.f2{ animation-delay:.35s; }
-.splash-logo-svg .build-stroke{ animation-delay:.55s; }
-.splash-logo-svg .build-dot{ opacity:0; transform:scale(0); transform-origin:32px 12px; animation: build-dot .45s cubic-bezier(.3,1.6,.4,1) forwards; animation-delay:.85s; }
-@keyframes build-in{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:translateY(0);} }
-@keyframes draw-stroke{ to{ stroke-dashoffset:0;} }
-@keyframes build-dot{ from{ opacity:0; transform:scale(0);} 70%{ opacity:1; transform:scale(1.25);} to{ opacity:1; transform:scale(1);} }
+.splash-logo-svg .build-fill.f2{ animation-delay:.38s; }
+.splash-logo-svg .build-stroke{ animation-delay:.62s; }
+.splash-logo-svg .build-dot{ opacity:0; transform:scale(0) rotate(-45deg); transform-origin:32px 12px; animation: build-dot .5s cubic-bezier(.3,1.8,.4,1) forwards; animation-delay:.95s; }
+@keyframes build-in{ 
+  from{ opacity:0; transform:translateY(6px) scale(.85); }
+  to{ opacity:1; transform:translateY(0) scale(1); } 
+}
+@keyframes draw-stroke{ to{ stroke-dashoffset:0; } }
+@keyframes build-dot{ 
+  0%{ opacity:0; transform:scale(0) rotate(-45deg); }
+  70%{ opacity:1; transform:scale(1.3) rotate(0); }
+  100%{ opacity:1; transform:scale(1) rotate(0); }
+}
 
-/* --- App name: gentle breathing pulse while the splash is up --- */
-.splash-title{ font-size:26px; letter-spacing:1px; opacity:0; animation: title-in .5s ease forwards, title-pulse 1.8s ease-in-out infinite; animation-delay:.55s, 1.05s;}
-@keyframes title-in{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:translateY(0);} }
-@keyframes title-pulse{ 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:.62; transform:scale(1.035);} }
-.splash-sub{ font-size:12.5px; color:rgba(19,32,25,.6); margin-top:8px; letter-spacing:2px; text-transform:uppercase; opacity:0; animation: title-in .5s ease forwards; animation-delay:.7s;}
+/* --- App name: building up letter by letter with Segoe UI --- */
+.splash-title{ 
+  font-size:32px; letter-spacing:2px; font-weight:400; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  text-transform:lowercase; display:flex; gap:1px; align-items:baseline;
+}
+.splash-title .letter{ 
+  opacity:0; transform:translateY(12px) scale(.7); display:inline-block;
+  animation: letter-build .5s cubic-bezier(.25,1.2,.35,1) forwards;
+}
+.splash-title .letter:nth-child(1){ animation-delay:.5s; }
+.splash-title .letter:nth-child(2){ animation-delay:.62s; }
+.splash-title .letter:nth-child(3){ animation-delay:.74s; }
+.splash-title .letter:nth-child(4){ animation-delay:.86s; }
+.splash-title .letter:nth-child(5){ animation-delay:.98s; }
+@keyframes letter-build{
+  from{ opacity:0; transform:translateY(12px) scale(.7); }
+  to{ opacity:1; transform:translateY(0) scale(1); }
+}
+.splash-sub{ 
+  font-size:12.5px; color:rgba(19,32,25,.5); margin-top:12px; letter-spacing:2px; text-transform:uppercase; 
+  opacity:0; animation: subtitle-fade .5s ease forwards; animation-delay:1.5s;
+}
+@keyframes subtitle-fade{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:translateY(0); } }
 
-/* --- Windows 11-style indeterminate loading ring: rotates while its visible arc grows/shrinks --- */
-.splash-spinner{ width:34px; height:34px; margin-top:28px; opacity:0; animation: title-in .4s ease forwards; animation-delay:.9s; }
-.splash-spinner svg{ width:100%; height:100%; animation: spinner-rotate 1.6s linear infinite; }
-.splash-spinner .spinner-track{ fill:none; stroke:rgba(19,32,25,.12); stroke-width:3; }
-.splash-spinner .spinner-arc{ fill:none; stroke:var(--brass-light); stroke-width:3; stroke-linecap:round; stroke-dasharray:90; stroke-dashoffset:60; animation: spinner-arc 1.6s cubic-bezier(.65,0,.35,1) infinite; }
-@keyframes spinner-rotate{ to{ transform:rotate(360deg);} }
+/* --- Windows 11-style indeterminate loading ring: smooth, elegant growing/shrinking arc --- */
+.splash-spinner{ 
+  width:40px; height:40px; margin-top:32px; opacity:0; 
+  animation: spinner-fade-in .4s ease forwards; 
+  animation-delay:1.2s;
+}
+.splash-spinner svg{ 
+  width:100%; height:100%; 
+  animation: spinner-rotate 4s linear infinite; 
+}
+.splash-spinner .spinner-track{ 
+  fill:none; stroke:rgba(19,32,25,.08); stroke-width:2.5; 
+}
+.splash-spinner .spinner-arc{ 
+  fill:none; stroke:var(--brass-light); stroke-width:2.5; stroke-linecap:round; 
+  stroke-dasharray:106; stroke-dashoffset:0; 
+  animation: spinner-arc 2.4s cubic-bezier(.4,.0,.2,1) infinite, spinner-offset 2.4s cubic-bezier(.4,.0,.2,1) infinite;
+  opacity:1;
+}
+@keyframes spinner-fade-in{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes spinner-rotate{ to{ transform:rotate(360deg); } }
 @keyframes spinner-arc{
-  0%{ stroke-dashoffset:90; }
-  50%{ stroke-dashoffset:16; }
-  100%{ stroke-dashoffset:90; transform:rotate(360deg); }
+  0%{ stroke-dashoffset:0; }
+  25%{ stroke-dashoffset:0; }
+  50%{ stroke-dashoffset:-106; }
+  75%{ stroke-dashoffset:-106; }
+  100%{ stroke-dashoffset:0; }
+}
+@keyframes spinner-offset{
+  0%{ transform:rotate(0deg); }
+  100%{ transform:rotate(360deg); }
 }
 
 /* ===== Auth screen ===== */
@@ -2817,7 +2872,7 @@ nav.navlist button.active{ background:var(--brass); color:#221704; font-weight:6
 nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .sidebar-foot{ padding:12px 18px 18px; font-size:10.5px; color:rgba(255,255,255,.45); border-top:1px solid rgba(255,255,255,.1); flex:none;}
 
-.main{ flex:1; min-width:0; display:flex; flex-direction:column; height:100vh; overflow-y:auto;}
+.main{ flex:1; min-width:0; display:flex; flex-direction:column; height:100vh; overflow:hidden;}
 .topbar{
   display:flex; align-items:center; justify-content:space-between; padding:14px 26px;
   background:var(--sidebar-bg); border-bottom:1px solid rgba(255,255,255,.12); position:sticky; top:0; z-index:100; gap:16px;
@@ -2869,7 +2924,7 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .account-chip .av{ width:30px;height:30px;border-radius:50%; flex:0 0 30px; background:var(--brass-light); color:var(--forest-dark); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; font-family:Georgia,serif;}
 .account-chip .nm{ font-size:12.5px; font-weight:600; line-height:1.2; color:#fff;}
 .account-chip .rl{ font-size:10px; color:rgba(239,232,211,.6); text-transform:uppercase; letter-spacing:.4px;}
-.content{ padding:22px 26px 60px; flex:1;}
+.content{ padding:22px 26px 60px; flex:1; overflow-y:auto; min-height:0;}
 
 /* ===== Components ===== */
 .grid{ display:grid; gap:16px; margin-bottom:20px;}
@@ -3631,7 +3686,7 @@ html, body{ overflow-x:hidden;}
 
 <div id="splash">
   <div class="splash-badge" id="splashBadge"><svg class="splash-logo-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%"><rect width="64" height="64" rx="12" fill="#1F3A2E"/><path class="build-fill f1" d="M14 18c6-4 14-4 18 0v30c-4-4-12-4-18 0V18z" fill="#F6F1E2"/><path class="build-fill f2" d="M50 18c-6-4-14-4-18 0v30c4-4 12-4 18 0V18z" fill="#F6F1E2"/><path class="build-stroke" d="M32 18v30" stroke="#B8863E" stroke-width="2"/><circle class="build-dot" cx="32" cy="12" r="4" fill="#D9A94F"/></svg></div>
-  <div class="splash-title stamp-font" id="splashTitle">ALCMS</div>
+  <div class="splash-title" id="splashTitle"><span class="letter">a</span><span class="letter">l</span><span class="letter">c</span><span class="letter">m</span><span class="letter">s</span></div>
   <div class="splash-sub">Access Library · Circulation Desk</div>
   <div class="splash-spinner" aria-hidden="true"><svg viewBox="0 0 40 40"><circle class="spinner-track" cx="20" cy="20" r="17"/><circle class="spinner-arc" cx="20" cy="20" r="17"/></svg></div>
 </div>
