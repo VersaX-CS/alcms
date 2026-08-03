@@ -2551,7 +2551,7 @@ input,select,textarea{font-family:inherit;}
   to{ opacity:1; transform:translateY(0) scale(1); }
 }
 .splash-sub{ 
-  font-size:12.5px; color:rgba(19,32,25,.5); margin-top:12px; letter-spacing:2px; text-transform:uppercase; 
+  font-size:10px; color:rgba(19,32,25,.5); margin-top:8px; letter-spacing:1.2px; text-transform:uppercase; 
   opacity:0; animation: subtitle-fade .5s ease forwards; animation-delay:1.5s;
 }
 @keyframes subtitle-fade{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:translateY(0); } }
@@ -6372,7 +6372,9 @@ function renderNav(){
 // Mobile-only: tapping the topbar title opens a dropdown listing every nav destination (the
 // same groups/items as the sidebar), so switching pages doesn't require opening the full sidebar
 // drawer first. Content is rebuilt each time it's opened so active-state and badge counts (which
-// can change while the menu is closed) are always current.
+// can change while the menu is closed) are always current. The list is longer than one screen,
+// so it's a plain vertical scroll (see .topbar-nav-menu overflow-y) rather than paginating or
+// collapsing groups — everything stays reachable with one continuous scroll.
 function prepareTopbarNavMenu(){
   if(window.innerWidth > 900) return; // desktop always shows the full sidebar; trigger is inert there
   const el = document.getElementById('topbarNavMenu'); if(!el) return;
