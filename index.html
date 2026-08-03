@@ -2447,6 +2447,7 @@ html[data-theme="dark"]{
 html[data-theme="dark"] body{ background:var(--parchment); }
 html[data-theme="dark"] .stamp.missing{ background:#3a1f1f; color:#f0a08c;}
 html[data-theme="dark"] .stamp.withdrawn{ background:#2c2c2c; color:#a8a8a8; border-color:#6b6b6b;}
+html[data-theme="dark"] .stamp.reserved{ background:#1f2e33; color:#8fc2d3; border-color:#3E6B7A;}
 html[data-theme="dark"] table.datatable tr:hover td{ background:rgba(255,255,255,.05);}
 html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,html[data-theme="dark"] .field textarea,
 html[data-theme="dark"] .toolbar input,html[data-theme="dark"] .toolbar select{ background:rgba(255,255,255,.06); color:var(--ink);}
@@ -2780,16 +2781,16 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,30
 #app.show{ display:flex; }
 .sidebar{
   width:230px; flex:none; background:var(--sidebar-bg); color:#EFE8D3;
-  display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto;
+  display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
   transition:width .22s ease; overflow-x:hidden;
 }
 .sidebar.desktop-collapsed{ width:0;}
-.sidebar-icon-row{ display:flex; gap:8px; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,.12);}
+.sidebar-icon-row{ display:flex; gap:8px; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 .sidebar-icon-row .icon-btn{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:#EFE8D3;}
 .sidebar-icon-row .icon-btn:hover{ background:rgba(255,255,255,.18); border-color:var(--brass-light);}
 .sidebar-close{ display:none;}
 .sidebar-close:hover{ background:rgba(255,255,255,.2);}
-.brand{ padding:22px 20px 14px; border-bottom:1px solid rgba(255,255,255,.12);}
+.brand{ padding:22px 20px 14px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 .brand .mark{ display:flex; align-items:center; gap:10px;}
 .brand .mark .stamp-badge{
   width:38px;height:38px;border-radius:50%;border:2px solid var(--brass-light);
@@ -2799,7 +2800,10 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,30
 .brand .mark .stamp-badge img{ width:100%; height:100%; object-fit:cover;}
 .brand h1{ font-size:16px; color:#fff; line-height:1.15;}
 .brand p{ margin:4px 0 0; font-size:11px; color:rgba(255,255,255,.62); letter-spacing:.5px;}
-nav.navlist{ padding:10px 10px; flex:1;}
+/* Only the nav list itself scrolls — the logo, the save/lock/theme icon row above it, and the
+   footer below it stay put. min-height:0 lets a flex child shrink below its content size, which
+   is what makes overflow-y:auto actually kick in here instead of the column just growing. */
+nav.navlist{ padding:10px 10px; flex:1; overflow-y:auto; min-height:0;}
 nav.navlist .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:rgba(255,255,255,.5); padding:14px 10px 6px;}
 nav.navlist button{
   display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:9px 10px;
@@ -2811,7 +2815,7 @@ nav.navlist button:hover{ background:rgba(255,255,255,.08);}
 nav.navlist button.active{ background:var(--brass); color:#221704; font-weight:600;}
 .nav-badge{ margin-left:auto; background:var(--terracotta); color:#fff; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:20px; line-height:1.5;}
 nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
-.sidebar-foot{ padding:12px 18px 18px; font-size:10.5px; color:rgba(255,255,255,.45); border-top:1px solid rgba(255,255,255,.1);}
+.sidebar-foot{ padding:12px 18px 18px; font-size:10.5px; color:rgba(255,255,255,.45); border-top:1px solid rgba(255,255,255,.1); flex:none;}
 
 .main{ flex:1; min-width:0; display:flex; flex-direction:column; height:100vh; overflow-y:auto;}
 .topbar{
@@ -3040,6 +3044,7 @@ table.datatable tr:hover td{ background:#fbf8ee;}
 .stamp.overdue{ color:var(--terracotta);}
 .stamp.missing{ color:#6b1f1f; background:#f8e3e3;}
 .stamp.withdrawn{ color:#6b6b6b; background:#ececec; border-color:#9a9a9a;}
+.stamp.reserved{ color:#3E6B7A; background:#DCE6EA; border-color:#9db6bf;}
 
 .modal-backdrop{ position:fixed; inset:0; background:rgba(19,32,25,.45); display:flex; align-items:center; justify-content:center; z-index:950; padding:20px;
   animation:modalBackdropIn .18s ease;}
@@ -8313,7 +8318,7 @@ function pageCatalogue(){
     selectable:true, rowKey:r=>r.acc,
     filters:[
       {key:'mainClass', label:'Main class', options:[...new Set(DB.catalogue.map(b=>b.mainClass))].filter(Boolean).sort()},
-      {key:'available', label:'Status', options:['AVAILABLE','ISSUED','MISSING','WITHDRAWN']},
+      {key:'available', label:'Status', options:['AVAILABLE','ISSUED','MISSING','WITHDRAWN','RESERVED']},
       {key:'condition', label:'Condition', options:[...new Set(DB.catalogue.map(b=>b.condition))].filter(Boolean).sort()},
     ],
     rowClass:r=>r.available==='WITHDRAWN'?'row-muted':'',
@@ -8324,7 +8329,7 @@ function pageCatalogue(){
       {key:'shelf', label:'Shelf'},
       {key:'year', label:'Year'},
       {key:'condition', label:'Condition', render:r=>`<span class="badge ${r.condition==='GOOD'?'green':r.condition==='FAIR'?'gold':'red'}">${esc(r.condition)}</span>`},
-      {key:'available', label:'Status', render:r=>`<span class="stamp ${r.available==='AVAILABLE'?'available':r.available==='MISSING'?'missing':r.available==='WITHDRAWN'?'withdrawn':'issued'}">${esc(r.available)}</span>`},
+      {key:'available', label:'Status', render:r=>`<span class="stamp ${r.available==='AVAILABLE'?'available':r.available==='MISSING'?'missing':r.available==='WITHDRAWN'?'withdrawn':r.available==='RESERVED'?'reserved':'issued'}">${esc(r.available)}</span>`},
     ],
     exportColumns:[
       {label:'Accession No.', get:r=>r.acc},{label:'Title', get:r=>r.title},{label:'Author', get:r=>r.author},
@@ -8344,6 +8349,8 @@ function pageCatalogue(){
       {label:'🪪 Catalogue cards', alwaysShow:true, onClick:()=> openAllBookCardsModal()},
       {label:'🏷 Print codes only', alwaysShow:true, onClick:()=> openAllBookCodesModal()},
       {label:'📍 Reassign shelf (selected)', onClick:()=> bulkReassignShelf()},
+      {label:'🔖 Reserve selected (kept back)', onClick:()=> bulkReserveCatalogue()},
+      {label:'🗃 Withdraw selected', onClick:()=> bulkWithdrawCatalogue()},
       {label:'🗑 Delete selected', onClick:()=> bulkDeleteCatalogue(), danger:true},
       {label:'⚠ Clear all titles', onClick:clearAllCatalogue, danger:true},
     ],
@@ -8378,7 +8385,12 @@ function pageCatalogue(){
         return {added, skipped};
       }
     }),
-    rowActions:r=>`<button class="btn secondary small" onclick="viewBook('${esc(r.acc)}')">Details</button> ${r.available==='ISSUED'?`<button class="btn secondary small" onclick="goReserveBook('${esc(r.acc)}')">Reserve</button>`:''} <button class="btn secondary small" onclick="openBookForm('${r.acc}')">Edit</button> ${r.available==='WITHDRAWN'?`<button class="btn secondary small" onclick="reinstateBook('${r.acc}')">Reinstate</button>`:r.available==='AVAILABLE'?`<button class="btn secondary small" onclick="withdrawBook('${r.acc}')">Withdraw</button>`:''} <button class="btn danger small" onclick="deleteBook('${r.acc}')">Delete</button>`,
+    rowActions:r=>`<button class="btn secondary small" onclick="viewBook('${esc(r.acc)}')">Details</button> ${r.available==='ISSUED'?`<button class="btn secondary small" onclick="goReserveBook('${esc(r.acc)}')">Reserve</button>`:''} <button class="btn secondary small" onclick="openBookForm('${r.acc}')">Edit</button> ${
+      r.available==='WITHDRAWN' ? `<button class="btn secondary small" onclick="reinstateBook('${r.acc}')">Reinstate</button>`
+      : r.available==='RESERVED' ? `<button class="btn secondary small" onclick="releaseBook('${r.acc}')">Release</button>`
+      : r.available==='AVAILABLE' ? `<button class="btn secondary small" onclick="reserveBook('${r.acc}')">Reserve</button> <button class="btn secondary small" onclick="withdrawBook('${r.acc}')">Withdraw</button>`
+      : ''
+    } <button class="btn danger small" onclick="deleteBook('${r.acc}')">Delete</button>`,
   });
   return `<div id="mod_catalogue"></div>`;
 }
@@ -8725,6 +8737,59 @@ function bulkDeleteCatalogue(){
     logActivity('catalogue', 'delete', `Deleted ${accs.length} title(s) in bulk`);
     saveDB(); render(); toast(`${accs.length} title(s) moved to Trash — restorable for 30 days`);
   });
+}
+/* "Reserved" here means a physical copy the library is deliberately keeping back — e.g. pulled
+   for a class project or a reference shelf — not the hold-for-when-it's-returned system on the
+   Reservations page (that one only applies to titles that are already ISSUED and has its own
+   page). A reserved title stays AVAILABLE-looking in every way except it can't be issued: it's
+   simply excluded once available!=='AVAILABLE', the same gate every existing checkout path
+   (the issue picker, "Issue all", scan-to-issue) already uses — so nothing there needed to change. */
+function reserveBook(acc){
+  if(!isAdmin()) return requireAdmin('reserve titles');
+  const b = DB.catalogue.find(x=>x.acc===acc); if(!b) return;
+  b.available = 'RESERVED';
+  logActivity('catalogue', 'reserve', `Reserved "${b.title}" (${b.acc}) — kept back from circulation`);
+  saveDB(); render(); toast('Title reserved — kept back, can\'t be issued until released');
+}
+function releaseBook(acc){
+  if(!isAdmin()) return requireAdmin('release titles');
+  const b = DB.catalogue.find(x=>x.acc===acc); if(!b) return;
+  b.available = 'AVAILABLE';
+  logActivity('catalogue', 'release', `Released "${b.title}" (${b.acc}) back to circulation`);
+  saveDB(); render(); toast('Title released — available to issue again');
+}
+function bulkReserveCatalogue(){
+  if(!isAdmin()) return requireAdmin('reserve titles');
+  const accs = [...(catalogueModuleState.selected||[])];
+  if(!accs.length){ toast('Tick one or more titles first'); return; }
+  // Same rule as the single-item action: only a title that's currently Available can be pulled
+  // aside — one that's already out, missing, withdrawn, or already reserved is left alone.
+  const eligible = DB.catalogue.filter(b=>accs.includes(b.acc) && b.available==='AVAILABLE');
+  const skipped = accs.length - eligible.length;
+  if(!eligible.length){ toast('None of the selected titles can be reserved — only titles currently Available qualify'); return; }
+  confirmModal(`Reserve ${eligible.length} title(s) — keep them back from circulation?${skipped? ` (${skipped} of the selected title(s) skipped — only titles currently Available can be reserved.)`:''} They stay in the catalogue looking otherwise normal but can't be issued until released.`, ()=>{
+    eligible.forEach(b=> b.available = 'RESERVED');
+    catalogueModuleState.selected.clear();
+    logActivity('catalogue', 'reserve', `Reserved ${eligible.length} title(s) in bulk — kept back from circulation`);
+    saveDB(); render(); toast(`${eligible.length} title(s) reserved — kept back from circulation`);
+  }, {confirmLabel:'Reserve', danger:false});
+}
+function bulkWithdrawCatalogue(){
+  if(!isAdmin()) return requireAdmin('withdraw titles');
+  const accs = [...(catalogueModuleState.selected||[])];
+  if(!accs.length){ toast('Tick one or more titles first'); return; }
+  // Mirrors the single-item rule (see withdrawBook / the row-action ternary): only a title that's
+  // currently Available can be withdrawn — one that's issued, missing, or already withdrawn is
+  // left alone rather than silently changed.
+  const eligible = DB.catalogue.filter(b=>accs.includes(b.acc) && b.available==='AVAILABLE');
+  const skipped = accs.length - eligible.length;
+  if(!eligible.length){ toast('None of the selected titles can be withdrawn — only titles currently Available qualify'); return; }
+  confirmModal(`Withdraw ${eligible.length} title(s) from circulation?${skipped? ` (${skipped} of the selected title(s) skipped — only titles currently Available can be withdrawn.)`:''} They stay in the catalogue (greyed out, searchable) but can no longer be issued or reserved — unlike Delete, nothing is lost and there's no 30-day expiry.`, ()=>{
+    eligible.forEach(b=> b.available = 'WITHDRAWN');
+    catalogueModuleState.selected.clear();
+    logActivity('catalogue', 'withdraw', `Withdrew ${eligible.length} title(s) in bulk`);
+    saveDB(); render(); toast(`${eligible.length} title(s) withdrawn — still in the catalogue, greyed out`);
+  }, {confirmLabel:'Withdraw', danger:false});
 }
 function bulkReassignShelf(){
   if(!isAdmin()) return requireAdmin('edit the catalogue');
