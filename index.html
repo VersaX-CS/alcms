@@ -4,7 +4,7 @@
 <link rel="manifest" href="manifest.json">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ALCMS — Automated Library &amp; Circulation Management System</title>
+<title>alcms — Automated Library &amp; Circulation Management System</title>
 <script>
 /* Runs synchronously, before any CSS paints, so the splash screen never flashes the default
    (green) theme colours for a frame before switching to whatever theme the user actually has
@@ -3719,7 +3719,7 @@ html, body{ overflow-x:hidden;}
     <div class="auth-info">
       <div class="auth-brand">
         <div class="stamp-badge" id="authBrandBadge"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%"><rect width="64" height="64" rx="12" fill="#1F3A2E"/><path d="M14 18c6-4 14-4 18 0v30c-4-4-12-4-18 0V18z" fill="#F6F1E2"/><path d="M50 18c-6-4-14-4-18 0v30c4-4 12-4 18 0V18z" fill="#F6F1E2"/><path d="M32 18v30" stroke="#B8863E" stroke-width="2"/><circle cx="32" cy="12" r="4" fill="#D9A94F"/></svg></div>
-        <h1 id="authBrandTitle">ALCMS</h1>
+        <h1 id="authBrandTitle">alcms</h1>
       </div>
       <div class="auth-clock" id="authClock" onclick="cycleAuthClockStyle()" title="Click to change the clock style"></div>
       <div class="auth-carousel-wrap">
@@ -3761,7 +3761,7 @@ html, body{ overflow-x:hidden;}
           <div id="authFormArea"></div>
         </div>
         <div class="auth-footer-row auth-form-footer">
-          <div class="auth-foot">ALCMS — Automated Library &amp; Circulation Management System</div>
+          <div class="auth-foot">alcms — Automated Library &amp; Circulation Management System</div>
           <a href="#" class="auth-contact-dev-link" onclick="openDeveloperContactForm();return false;">Contact the developer</a>
         </div>
       </div>
@@ -3776,7 +3776,7 @@ html, body{ overflow-x:hidden;}
       <div class="mark">
         <div class="stamp-badge" id="sidebarLogo">AL</div>
         <div>
-          <h1>ALCMS</h1>
+          <h1>alcms</h1>
           <p id="brandSubtitle">ACCESS LIBRARY</p>
         </div>
       </div>
@@ -3846,7 +3846,7 @@ html, body{ overflow-x:hidden;}
 <script>
 
 
-/* ALCMS application logic */
+/* alcms application logic */
 const $ = (sel,root=document)=>root.querySelector(sel);
 const $$ = (sel,root=document)=>Array.from(root.querySelectorAll(sel));
 const esc = s => (s===null||s===undefined) ? '' : String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -4277,7 +4277,7 @@ function cycleLockscreenDecorStyle(){
 
 /* ================= admin key (required to create a new admin account) ================= */
 const ADMIN_KEY_STORAGE = 'alcms_admin_key_v1';
-let ADMIN_KEY = 'ALCMS-ADMIN-2026'; // default — change this in Personalization
+let ADMIN_KEY = 'alcms-ADMIN-2026'; // default — change this in Personalization
 async function loadAdminKey(){
   try{ const v = await storeGet(ADMIN_KEY_STORAGE); if(v) ADMIN_KEY = v; }catch(e){}
 }
@@ -4491,7 +4491,7 @@ async function storeDelete(key){
     if(STORAGE_BACKEND==='local'){ localStorage.removeItem(LOCAL_PREFIX+key); return; }
   }catch(e){ /* ignore */ }
 }
-/* Clears everything ALCMS has cached/stored in this browser (localStorage under the 'alcms:'
+/* Clears everything alcms has cached/stored in this browser (localStorage under the 'alcms:'
    prefix — database, preferences, saved login/session, admin key, GitHub sync config, auto-
    backup config, the works) and reloads fresh, as if the app had just been installed on this
    device. This is deliberately separate from "Clear all data" above: that only empties the
@@ -4499,7 +4499,7 @@ async function storeDelete(key){
    wipes the browser's own storage for the app — useful when local storage feels stuck/corrupted,
    before handing off or wiping a shared/public device, or to free up space. */
 function clearBrowserStorage(){
-  if(!confirm('This clears everything ALCMS has stored in this browser — saved login, database, preferences and settings — and reloads the app fresh. Back up first if you need to keep anything. This cannot be undone from here. Continue?')) return;
+  if(!confirm('This clears everything alcms has stored in this browser — saved login, database, preferences and settings — and reloads the app fresh. Back up first if you need to keep anything. This cannot be undone from here. Continue?')) return;
   try{
     if(STORAGE_BACKEND==='local'){
       Object.keys(localStorage).filter(k=>k.startsWith(LOCAL_PREFIX)).forEach(k=>localStorage.removeItem(k));
@@ -4983,7 +4983,7 @@ async function registerBiometric(){
     const userId = new TextEncoder().encode(acc.username);
     const cred = await navigator.credentials.create({ publicKey: {
       challenge,
-      rp: { name: 'ALCMS Library' },
+      rp: { name: 'alcms Library' },
       user: { id: userId, name: acc.username, displayName: acc.fullName || acc.username },
       pubKeyCredParams: [{type:'public-key', alg:-7}, {type:'public-key', alg:-257}],
       authenticatorSelection: { authenticatorAttachment:'platform', userVerification:'required', residentKey:'preferred' },
@@ -5026,15 +5026,23 @@ async function doSignup(){
   }
   const acc = {username, password, fullName, role:signupRole, email, phone, securityQuestion, securityAnswer, createdAt:new Date().toISOString()};
   ACCOUNTS.push(acc); await saveAccounts(ACCOUNTS);
-  await completeLogin(acc);
+  await completeLogin(acc, {isNewSignup:true});
 }
-async function completeLogin(acc){
+async function completeLogin(acc, opts={}){
   SESSION = {username:acc.username, fullName:acc.fullName, role:acc.role, avatar:acc.avatar||null, avatarPos:acc.avatarPos||{x:50,y:50}};
   await persistSession(SESSION);
   $('#authScreen').classList.remove('show');
   clearInterval(authSlideTimer);
   await enterApp();
   resetIdleTimer();
+  // First-time tour: brand-new accounts get the "Getting started" walkthrough automatically,
+  // right after the Home page has had a moment to render — it's the same carousel the
+  // "🚀 Getting started" button opens on demand, so returning here later works identically.
+  // That button stays visible everywhere it already was; this just also fires it once, for free,
+  // the moment a new account signs up.
+  if(opts.isNewSignup){
+    setTimeout(()=> openGettingStartedModal(), 500);
+  }
 }
 async function signOut(){
   SESSION = null; await persistSession(null);
@@ -5096,11 +5104,11 @@ function showAuthScreen(){
    show a real logo rather than plain "AL" initials. */
 const APP_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%"><rect width="64" height="64" rx="12" fill="#1F3A2E"/><path d="M14 18c6-4 14-4 18 0v30c-4-4-12-4-18 0V18z" fill="#F6F1E2"/><path d="M50 18c-6-4-14-4-18 0v30c4-4 12-4 18 0V18z" fill="#F6F1E2"/><path d="M32 18v30" stroke="#B8863E" stroke-width="2"/><circle cx="32" cy="12" r="4" fill="#D9A94F"/></svg>`;
 function applyAuthBranding(){
-  const name = (DB && DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'ALCMS';
+  const name = (DB && DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'alcms';
   const logo = (DB && DB.setup && DB.setup.institutionLogo) ? DB.setup.institutionLogo : null;
   const pos = (DB && DB.setup && DB.setup.institutionLogoPos) || {x:50,y:50};
   // Splash screen (splashTitle/splashBadge) is intentionally excluded here — it always shows the
-  // app's own ALCMS mark, regardless of institution branding, since it's the app's own loading
+  // app's own alcms mark, regardless of institution branding, since it's the app's own loading
   // screen rather than a place meant to represent the institution.
   const el = document.getElementById('authBrandTitle'); if(el) el.textContent = name;
   const badge = document.getElementById('authBrandBadge');
@@ -5242,7 +5250,7 @@ function pageAccount(){
     ${webauthnSupported()
       ? `<button class="btn secondary" onclick="registerBiometric()">👆 Register this device</button>`
       : `<p class="field-hint">Not available right now — this needs the page to be opened over <strong>https://</strong> (or localhost) and a device with a fingerprint reader or face sensor. It won't work when the file is opened directly from disk.</p>`}
-    <p class="field-hint" style="margin-top:8px">Your fingerprint/face scan itself is read by your device's operating system and is never seen or stored by ALCMS — only a device sign-in token is saved.</p>
+    <p class="field-hint" style="margin-top:8px">Your fingerprint/face scan itself is read by your device's operating system and is never seen or stored by alcms — only a device sign-in token is saved.</p>
   </div>
   ${isAdmin()? `
   <div class="card panel">
@@ -6341,7 +6349,7 @@ const PAGE_META = {
   account:['My Account','Your profile, password and access'],
   backup:['Backup & Restore','Data backup, GitHub sync and checkpoints'],
   guide:['User guide','How to use every part of the desk'],
-  about:['About','ALCMS — Automated Library & Circulation Management System'],
+  about:['About','alcms — Automated Library & Circulation Management System'],
 };
 
 function renderNav(){
@@ -6485,7 +6493,7 @@ const QUICK_TIPS = [
 ];
 function openQuickTipsModal(){ openTipsCarouselModal('Quick tips', QUICK_TIPS); }
 const GETTING_STARTED_TIPS = [
-  {ico:'👋', heading:'Welcome to ALCMS', body:'This is your library and circulation desk in one place — catalogue, members, loans, schedule and more.'},
+  {ico:'👋', heading:'Welcome to alcms', body:'This is your library and circulation desk in one place — catalogue, members, loans, schedule and more.'},
   {ico:'🔑', heading:'Sign in to get started', body:'Sign in with an admin account to manage records, or continue as a guest to browse and search only.'},
   {ico:'▥', heading:'Everything lives in the sidebar', body:'Catalogue, Members, Circulation, Schedule and Personalization are all one click away from the sidebar menu.'},
   {ico:'📚', heading:'Add your first titles', body:'Catalogue → "+ Add title", or Import a spreadsheet of your existing collection to get going quickly.'},
@@ -6970,7 +6978,7 @@ function printHeaderHtml(title, subtitle){
       ${logo? `<img class="print-logo" src="${logo}" alt="logo" style="object-position:${pos.x}% ${pos.y}%">` : ''}
       <div class="print-header-text">
         ${orgName? `<h1 class="print-org-name">${esc(orgName)}</h1>` : ''}
-        <h2>ALCMS — ${esc(title)}</h2>
+        <h2>alcms — ${esc(title)}</h2>
         ${period? `<p style="font-weight:600">${esc(period)}</p>` : ''}
         <p>${esc(subtitle)}</p>
       </div>
@@ -7192,7 +7200,7 @@ function pdfHeaderBlock(doc, title, subtitle, marginLeft){
     doc.text(fit.text, textX, y); y += 6;
   }
   doc.setFontSize(11); doc.setFont(undefined,'normal'); doc.setTextColor(40);
-  doc.text('ALCMS — '+title, textX, y); y += 6;
+  doc.text('alcms — '+title, textX, y); y += 6;
   const period = academicPeriodLabel();
   if(period){
     doc.setFontSize(9.5); doc.setFont(undefined,'bold'); doc.setTextColor(0);
@@ -7549,7 +7557,7 @@ function csvEscape(v){
 function xlsxHeaderRows(title){
   const rows = [];
   if(DB.setup.institutionName) rows.push([DB.setup.institutionName]);
-  rows.push(['ALCMS — '+title]);
+  rows.push(['alcms — '+title]);
   const period = academicPeriodLabel();
   if(period) rows.push([period]);
   const fullName = (SESSION && SESSION.fullName) || '—', role = (SESSION && SESSION.role) || '—';
@@ -7640,7 +7648,7 @@ function exportPDF(filename, title, columns, rows){
     y += 6;
   }
   doc.setFontSize(11); doc.setFont(undefined,'normal');
-  doc.text('ALCMS — '+title, textX, y); y += 6;
+  doc.text('alcms — '+title, textX, y); y += 6;
   const period = academicPeriodLabel();
   if(period){
     doc.setFontSize(9.5); doc.setFont(undefined,'bold');
@@ -7742,7 +7750,7 @@ function exportPDFMulti(filename, title, sections){
     }catch(e){ console.warn('Could not embed logo in PDF export', e); }
   }
   if(DB.setup.institutionName){ const fit = fitPdfTextSingleLine(doc, DB.setup.institutionName, pageW-MARGIN-textX, 15, 10); doc.setFont(undefined,'bold'); doc.text(fit.text, textX, y); y += 6; }
-  doc.setFontSize(11); doc.setFont(undefined,'normal'); doc.text('ALCMS — '+title, textX, y); y += 6;
+  doc.setFontSize(11); doc.setFont(undefined,'normal'); doc.text('alcms — '+title, textX, y); y += 6;
   const period = academicPeriodLabel();
   if(period){ doc.setFontSize(9.5); doc.setFont(undefined,'bold'); doc.text(period, textX, y); y += 5.5; doc.setFont(undefined,'normal'); }
   doc.setFontSize(8.5); doc.text('Generated '+new Date().toLocaleString('en-GB'), textX, y);
@@ -8084,7 +8092,7 @@ function pageHome(){
     ${qlink(navIcon('activitylog','📜'),'Activity Log', 'Recent changes','activitylog')}
     ${qlink(navIcon('backup','⟲'),'Backup & Restore', 'Sync & checkpoints','backup')}
     ${qlink(navIcon('guide','❖'),'User guide', 'How the desk works','guide')}
-    ${qlink(navIcon('about','ⓘ'),'About', 'ALCMS version info','about')}
+    ${qlink(navIcon('about','ⓘ'),'About', 'alcms version info','about')}
   </div>
   `;
 }
@@ -10730,7 +10738,7 @@ function idCardHtml(it, i){
   return `
   <div class="id-card ${it.kind==='book'?'id-card-book':'id-card-member'}">
     <div class="id-card-head">
-      <div class="id-card-org">${esc(DB.setup.institutionName||'ALCMS')}</div>
+      <div class="id-card-org">${esc(DB.setup.institutionName||'alcms')}</div>
       <div class="id-card-type">${it.kind==='book'?'Catalogue Card':'Member Card'}</div>
     </div>
     <div class="id-card-body">
@@ -10947,7 +10955,7 @@ async function buildCardsPdfDoc(items){
   const cols = 2;
   const rows = Math.max(1, Math.floor((pageH - 2*marginY + gapY) / (cardH + gapY)));
   const perPage = cols*rows;
-  const opts = { orgName: DB.setup.institutionName||'ALCMS', forestRGB: cssVarRGB('--forest','#1F3A2E'), codeType, iconCache };
+  const opts = { orgName: DB.setup.institutionName||'alcms', forestRGB: cssVarRGB('--forest','#1F3A2E'), codeType, iconCache };
 
   items.forEach((it,i)=>{
     const posInPage = i % perPage;
@@ -11476,7 +11484,7 @@ function waCardTitleFor(kind){
 /* Header banner + gold divider, shared by every card. Portrait: centred, stacked, not a wide
    left-to-right banner — reads like the top of a till receipt rather than a letterhead. */
 function waCardHeader(T, kind, daysOverdue){
-  const org = (DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'ALCMS Library';
+  const org = (DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'alcms Library';
   const logo = DB.setup && DB.setup.institutionLogo;
   const pos = (DB.setup && DB.setup.institutionLogoPos) || {x:50,y:50};
   const status = waCardStatusMeta(T, kind, daysOverdue||0);
@@ -11494,7 +11502,7 @@ function waCardFooter(T){
     <div style="border-top:1px dashed ${T.line};margin:4px 24px 0;"></div>
     <div style="padding:12px 24px 18px;text-align:center;">
       <div style="font-size:10.5px;color:${T.muted};">Generated ${new Date().toLocaleDateString('en-GB')} ${new Date().toTimeString().slice(0,5)}</div>
-      <div style="font-size:10.5px;color:${T.muted};letter-spacing:.06em;margin-top:2px;">ALCMS</div>
+      <div style="font-size:10.5px;color:${T.muted};letter-spacing:.06em;margin-top:2px;">alcms</div>
     </div>`;
 }
 /* Single-item card shell — one transaction, itemized as vertically-stacked label/value rows
@@ -11589,7 +11597,7 @@ function waBulkReminderCardHtml({name, loans}){
    record's details. Mirrors the grouping/cap logic of formatEquipmentSummaryText, rendered visually. */
 function waEquipmentCardHtml(rows){
   const T = waResolveTheme();
-  const org = (DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'ALCMS Library';
+  const org = (DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'alcms Library';
   const logo = DB.setup && DB.setup.institutionLogo;
   const pos = (DB.setup && DB.setup.institutionLogoPos) || {x:50,y:50};
   const grouped = {};
@@ -12945,7 +12953,7 @@ function pageSetup(){
     <p class="field-hint">Every scan, issue, return, and check-in is POSTed here as JSON if a URL is set. A station/token can also be supplied via the URL, e.g. <code>?station=DESK1&amp;token=abc123</code>.</p>
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
       <button class="btn secondary" onclick="saveIntegrationSettings()">Save integration settings</button>
-      <button class="btn secondary small" onclick="sendScanWebhook('test',{note:'Test event from ALCMS Setup'}); toast(DB.setup.scanWebhookUrl? 'Test event sent' : 'Set a webhook URL first')">Send test event</button>
+      <button class="btn secondary small" onclick="sendScanWebhook('test',{note:'Test event from alcms Setup'}); toast(DB.setup.scanWebhookUrl? 'Test event sent' : 'Set a webhook URL first')">Send test event</button>
     </div>
   </div>
   <div class="card panel">
@@ -12956,7 +12964,7 @@ function pageSetup(){
       <button class="btn danger" onclick="clearAllData()">⚠ Clear all data (start empty)</button>
       <button class="btn danger" onclick="clearBrowserStorage()">⚠ Clear cached/stored browser memory</button>
     </div>
-    <p class="field-hint" style="margin-top:6px">"Reset" restores the original demo workbook. "Clear all data" empties the catalogue, members, circulation, register, feedback and reminders — keeping your classes, subjects, staff designations and institution branding intact — for starting a fresh real deployment. "Clear cached/stored browser memory" wipes everything ALCMS has saved in this browser (database, login, preferences, settings) and reloads the app fresh — use this if the app feels stuck or before handing off a shared device.</p>
+    <p class="field-hint" style="margin-top:6px">"Reset" restores the original demo workbook. "Clear all data" empties the catalogue, members, circulation, register, feedback and reminders — keeping your classes, subjects, staff designations and institution branding intact — for starting a fresh real deployment. "Clear cached/stored browser memory" wipes everything alcms has saved in this browser (database, login, preferences, settings) and reloads the app fresh — use this if the app feels stuck or before handing off a shared device.</p>
   </div>`;
 }
 
@@ -13214,7 +13222,7 @@ function pageSettings(){
       </div>`).join('')}</div>
     <button class="btn secondary" style="margin-top:10px" onclick="saveClockPrefs()">Save appearance</button>
 
-    <div class="panel-head" style="margin-top:20px"><h3 style="font-size:14px">Accessibility</h3><div class="hint">Applies for everyone using this library's ALCMS</div></div>
+    <div class="panel-head" style="margin-top:20px"><h3 style="font-size:14px">Accessibility</h3><div class="hint">Applies for everyone using this library's alcms</div></div>
     <div class="field-row">
       <label style="display:flex;align-items:center;gap:8px;height:38px"><input type="checkbox" id="a11yLargeText" ${PREFS.a11yLargeText?'checked':''} onchange="toggleA11yLargeText(this.checked)"> Larger UI size</label>
       <label style="display:flex;align-items:center;gap:8px;height:38px"><input type="checkbox" id="a11yHighContrast" ${PREFS.a11yHighContrast?'checked':''} onchange="toggleA11yHighContrast(this.checked)"> High-contrast borders &amp; focus outlines</label>
@@ -13497,7 +13505,7 @@ function pageBackup(){
       <div class="field" style="flex:1 1 140px"><label>Day of week (weekly only)</label><select id="abWeekday">${WEEKDAY_CODE.map(w=>`<option ${AUTO_BACKUP.weekday===w?'selected':''}>${w}</option>`).join('')}</select></div>
     </div>
     <button class="btn secondary" onclick="saveAutoBackupForm()">Save schedule</button>
-    <p class="field-hint" style="margin-top:6px">Only runs while ALCMS is open in a browser tab — it can't wake your device to run in the background.</p>
+    <p class="field-hint" style="margin-top:6px">Only runs while alcms is open in a browser tab — it can't wake your device to run in the background.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Checkpoints</h3><div class="hint">${(DB.versions||[]).length}/${MAX_VERSIONS} saved</div></div>
@@ -13673,7 +13681,7 @@ function pageAbout(){
   return `
   <div class="home-hero">
     <h1>Automated Library &amp; Circulation Management System</h1>
-    <p>ALCMS${DB.setup.institutionName? ' for '+esc(DB.setup.institutionName):''} — one desk for cataloguing, circulation, members, discipline, scheduling and reporting.</p>
+    <p>alcms${DB.setup.institutionName? ' for '+esc(DB.setup.institutionName):''} — one desk for cataloguing, circulation, members, discipline, scheduling and reporting.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>What's new</h3><button class="btn secondary small" onclick="downloadUserGuidePDF()">📄 Download comprehensive PDF guide</button></div>
@@ -13692,7 +13700,7 @@ function pageAbout(){
   <div class="grid two-col">
     <div class="card panel">
       <div class="panel-head"><h3>What this app does</h3></div>
-      <p style="font-size:13px;line-height:1.7;color:var(--muted)">ALCMS grew out of a real school library spreadsheet and keeps the same spirit: a catalogue of every title, a register of members, a circulation desk to issue and return books, member/catalogue ID cards, a visitor register, a weekly schedule, discipline tracking, feedback, analytics, and printable/exportable reports — all in a single, self-contained page.</p>
+      <p style="font-size:13px;line-height:1.7;color:var(--muted)">alcms grew out of a real school library spreadsheet and keeps the same spirit: a catalogue of every title, a register of members, a circulation desk to issue and return books, member/catalogue ID cards, a visitor register, a weekly schedule, discipline tracking, feedback, analytics, and printable/exportable reports — all in a single, self-contained page.</p>
     </div>
     <div class="card panel">
       <div class="panel-head"><h3>How your data is stored</h3></div>
@@ -13705,11 +13713,11 @@ function pageAbout(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Version</h3></div>
-    <p style="font-size:12.5px;color:var(--muted)">ALCMS · July 2026 build · ${DB.catalogue.length} titles · ${DB.users.length} members on record.</p>
+    <p style="font-size:12.5px;color:var(--muted)">alcms · July 2026 build · ${DB.catalogue.length} titles · ${DB.users.length} members on record.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Support</h3></div>
-    <p style="font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:12px">ALCMS is built and supported by <strong>VersaX CS</strong>.<br>Contact: <strong>Morris Okereke</strong> &nbsp;·&nbsp; Info.versax@gmail.com &nbsp;·&nbsp; +234 813 795 2242</p>
+    <p style="font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:12px">alcms is built and supported by <strong>VersaX CS</strong>.<br>Contact: <strong>Morris Okereke</strong> &nbsp;·&nbsp; Info.versax@gmail.com &nbsp;·&nbsp; +234 813 795 2242</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <a class="btn secondary" href="mailto:Info.versax@gmail.com">${navIcon('email','✉')} Send email</a>
       <a class="btn secondary" href="https://wa.me/2348137952242" target="_blank" rel="noopener">${navIcon('whatsapp','🟢')} WhatsApp message</a>
@@ -13728,7 +13736,7 @@ function openDeveloperContactForm(){
       {key:'message', label:'Message', type:'textarea', required:true},
     ],
     onSave:(vals)=>{
-      const subject = encodeURIComponent('ALCMS query/complaint from '+vals.name);
+      const subject = encodeURIComponent('alcms query/complaint from '+vals.name);
       const body = encodeURIComponent(`${vals.message}\n\n— ${vals.name}${vals.email?' ('+vals.email+')':''}`);
       window.open(`mailto:Info.versax@gmail.com?subject=${subject}&body=${body}`, '_blank');
       toast('Opening your email app to send this…');
@@ -13757,6 +13765,7 @@ const GUIDE_TIPS = [
   'Switch theme (light/dark/system) and colour palette any time from the topbar or Personalization.',
   'Analytics\' Print and Export buttons both cover the entire page — summary tables, every chart\'s data, and the overdue detail — so you never need to stitch together several exports.',
   'Fingerprint/Face ID sign-in needs the page to be opened over https:// (or http://localhost) and a device with a fingerprint reader or face sensor — it\'s hidden or shows a note if either is missing. It\'s always an extra option on top of your username and password, never a replacement.',
+  'On mobile, tap the page title in the topbar to open a scrollable list of every destination — no need to open the full sidebar drawer first.',
 ];
 /* ================= comprehensive PDF user guide ================= */
 function stripHtmlTags(s){
@@ -13886,8 +13895,8 @@ function downloadUserGuidePDF(){
     doc.setFillColor(...FOREST); doc.rect(0,0,pageW,12,'F');
     doc.setFillColor(...BRASS_L); doc.rect(0,12,pageW,0.9,'F');
     doc.setFontSize(9); doc.setFont(undefined,'bold'); doc.setTextColor(...CREAM);
-    doc.text('ALCMS', marginL, 7.8);
-    const leftW = doc.getTextWidth('ALCMS');
+    doc.text('alcms', marginL, 7.8);
+    const leftW = doc.getTextWidth('alcms');
     doc.setFont(undefined,'normal');
     const availW = pageW - marginR - marginL - leftW - 8;
     const fit = fitTextSingleLine(DB.setup.institutionName || 'User Guide', availW, 8, 6);
@@ -14073,7 +14082,7 @@ function downloadUserGuidePDF(){
   doc.setDrawColor(...BRASS_L); doc.setLineWidth(0.8); doc.circle(pageW/2, 66, 19, 'S');
   doc.setTextColor(...CREAM); doc.setFont(undefined,'bold');
   {
-    const coverFit = fitTextSingleLine(DB.setup.institutionName||'ALCMS', pageW-64, 23, 13);
+    const coverFit = fitTextSingleLine(DB.setup.institutionName||'alcms', pageW-64, 23, 13);
     doc.text(coverFit.text, pageW/2, 104, {align:'center'});
   }
   doc.setFontSize(12.5); doc.setFont(undefined,'normal');
@@ -14098,7 +14107,7 @@ function downloadUserGuidePDF(){
   doc.setFontSize(8.5); doc.setTextColor(...fade(CREAM,0.2));
   doc.text('Generated '+new Date().toLocaleString('en-GB'), pageW/2, 275, {align:'center'});
   doc.setFontSize(7.5);
-  doc.text('VersaX CS · ALCMS', pageW/2, 281, {align:'center'});
+  doc.text('VersaX CS · alcms', pageW/2, 281, {align:'center'});
 
   // ================= TABLE OF CONTENTS (reserved page 2, filled in later) =================
   doc.addPage();
@@ -14121,9 +14130,9 @@ function downloadUserGuidePDF(){
   GUIDE_FAQ.forEach(f=>faqItem(f.q, f.a));
 
   sectionHeading('About & support', 'info', FOREST);
-  paragraph(`ALCMS${DB.setup.institutionName? ' for '+DB.setup.institutionName:''} — one desk for cataloguing, circulation, members, discipline, scheduling and reporting.`);
+  paragraph(`alcms${DB.setup.institutionName? ' for '+DB.setup.institutionName:''} — one desk for cataloguing, circulation, members, discipline, scheduling and reporting.`);
   paragraph('Roles: Admin accounts can add, edit, delete, issue/return, print and export. Guest accounts can browse and search everything, but can\'t change data.');
-  paragraph(`Version: ALCMS · ${DB.catalogue.length} titles · ${DB.users.length} members on record, as of this export.`);
+  paragraph(`Version: alcms · ${DB.catalogue.length} titles · ${DB.users.length} members on record, as of this export.`);
   y += 2;
   doc.setFontSize(10.5); doc.setFont(undefined,'bold'); doc.setTextColor(...FOREST);
   ensureSpace(8); doc.text('Get in touch', marginL, y); y += 7;
@@ -14175,15 +14184,15 @@ function downloadUserGuidePDF(){
     doc.setFontSize(7.5); doc.setFont(undefined,'bold'); doc.setTextColor(...WHITE);
     doc.text(String(p-1), pageW-marginR-3.6, pageH-8.2, {align:'center'});
     doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(...MUTED);
-    doc.text('ALCMS — Comprehensive User Guide', marginL, pageH-8.2);
+    doc.text('alcms — Comprehensive User Guide', marginL, pageH-8.2);
     if(pageMeta[p]) doc.text(pageMeta[p], pageW/2, pageH-8.2, {align:'center'});
   }
-  doc.save('ALCMS_User_Guide.pdf');
+  doc.save('alcms_User_Guide.pdf');
   toast('User guide PDF downloaded');
 }
 /* ================= PAGE: USER GUIDE ================= */
 const GUIDE_SECTIONS = [
-  {h:'Home', ic:'home', b:'Your landing page: a hero banner with the live weather scene and a centred, middle-left "Good Morning/Afternoon/Evening" greeting, a "Due today & overdue" alert you can dismiss for the rest of the day once it\'s handled, and quick-link shortcuts to every part of the desk.'},
+  {h:'Home', ic:'home', b:'Your landing page: a hero banner with the live weather scene and a centred, middle-left "Good Morning/Afternoon/Evening" greeting, plus the day\'s KPI snapshot (issued, returned, visits, overdue). On smaller screens this weather/KPI strip stays pinned to the top as you scroll, so the "Due today & overdue" alert (dismissible for the rest of the day once handled) and the quick-link shortcuts to every part of the desk scroll underneath it.'},
   {h:'Dashboard', ic:'bars', b:'The full library overview — collection size, availability, active loans, recent circulation activity, today\'s schedule, and two headline charts. Use "Generate comprehensive report" here for a printable report over any period, with no wasted blank space on the page (a new page only starts when a new heading needs one).'},
   {h:'Analytics', ic:'linechart', b:'Deeper trends: top borrowers and titles, monthly circulation, book condition, loan status, members by category, borrowing by class, and visit purpose. "Print" produces a full printable report including the actual chart images; "Export" downloads everything — the summary tables, every chart\'s underlying data, and the overdue detail — as one CSV, Excel or PDF file.'},
   {h:'Catalogue', ic:'book', b:'Search and browse every title. Click "Details" on any title to see its full record plus its complete transaction history, and to generate its catalogue card (barcode or QR, per Setup → Codes). Admins can add, edit, delete, export the current view as CSV/Excel/PDF, and generate every catalogue card at once — "🪪 Catalogue cards" — with a one-click 10-up A4 export ready to print and cut.'},
@@ -14197,7 +14206,7 @@ const GUIDE_SECTIONS = [
   {h:'Personalization', ic:'palette', b:'Everything else: theme and colour palette, clock style and date format (the analogue clock now shows the date on its face), typography, icons, lockscreen appearance and backgrounds — including separate Section and Modal background colours, and a notification bell you can show or hide on the sign-in screen.'},
   {h:'Lockscreen', ic:'lock', b:'Before signing in you can still check your own loans — there\'s a search bar directly above the sign-in box (with live suggestions as you type a name or ID), the notification bell previews what\'s waiting for you, and Create Account opens as a wider card centred over the whole screen so every field fits without excess scrolling.'},
   {h:'My Account', ic:'fingerprint', b:'Your profile photo, name, email, phone, password and security question, and — for admins — role and other accounts. Also home to Fingerprint &amp; Face ID sign-in: register this device once (needs https:// or localhost, plus a fingerprint/face sensor) to add a one-touch "Sign in with fingerprint / Face ID" button to the sign-in screen. Your username and password always keep working alongside it, and are what you use to register or remove a device.'},
-  {h:'About', ic:'info', b:'What ALCMS does, how your data is stored, account roles, version info, and how to reach support — plus a "Download PDF" button for this entire user guide.'},
+  {h:'About', ic:'info', b:'What alcms does, how your data is stored, account roles, version info, and how to reach support — plus a "Download PDF" button for this entire user guide.'},
 ];
 function pageGuide(){
   const sections = GUIDE_SECTIONS;
@@ -14556,7 +14565,7 @@ function replaceSeedBlock(html, key, jsonStr){
 }
 function isSplitSeedFile(){
   // True in the split project (index.html + css/styles.css + js/seed-data.js + js/app.js).
-  // False in a merged single-file ALCMS.html, where everything is inline already.
+  // False in a merged single-file alcms.html, where everything is inline already.
   return !!document.querySelector('script[src$="seed-data.js"]');
 }
 async function generateUpdatedSeedJs(){
@@ -14579,7 +14588,7 @@ async function generateUpdatedSeedJs(){
 }
 function generateUpdatedAppHtml(){
   // Single-file mode: the seed blocks are inline inside this very page, so rewrite
-  // document.documentElement.outerHTML directly, same as the original ALCMS.html did.
+  // document.documentElement.outerHTML directly, same as the original alcms.html did.
   let html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
   html = replaceSeedBlock(html, 'CATALOGUE', JSON.stringify(catalogueToRows()));
   html = replaceSeedBlock(html, 'USERS', JSON.stringify(usersToRows()));
@@ -14602,8 +14611,8 @@ async function downloadUpdatedApp(){
       toast('Updated seed-data.js downloaded — replace js/seed-data.js with this file so it becomes the new starting point');
     } else {
       const html = generateUpdatedAppHtml();
-      downloadBlob('ALCMS_updated_'+todayISO()+'.html', new Blob([html], {type:'text/html'}));
-      toast('Updated ALCMS.html downloaded — your current data is now baked in as its starting point');
+      downloadBlob('alcms_updated_'+todayISO()+'.html', new Blob([html], {type:'text/html'}));
+      toast('Updated alcms.html downloaded — your current data is now baked in as its starting point');
     }
   }catch(e){
     toast('Could not regenerate the file: '+e.message);
@@ -14623,12 +14632,12 @@ async function downloadUpdatedApp(){
    - Checkpoints    → combined snapshot saved locally (no download), for a fast
                      in-app "undo to a known-good point". */
 async function applyDataPayload(payload){
-  if(!payload || !payload.db || !Array.isArray(payload.db.catalogue)) throw new Error("This doesn't look like an ALCMS data backup");
+  if(!payload || !payload.db || !Array.isArray(payload.db.catalogue)) throw new Error("This doesn't look like an alcms data backup");
   DB = payload.db;
   await saveDB();
 }
 async function applyAccountPayload(payload){
-  if(!payload || !Array.isArray(payload.accounts) || !payload.accounts.length) throw new Error("This doesn't look like an ALCMS account backup");
+  if(!payload || !Array.isArray(payload.accounts) || !payload.accounts.length) throw new Error("This doesn't look like an alcms account backup");
   ACCOUNTS = payload.accounts; await saveAccounts(ACCOUNTS);
   if(payload.prefs){ PREFS = Object.assign(PREFS, payload.prefs); await savePrefs(); applyTheme(); applyPalette(PREFS.palette); }
   if(payload.adminKey) await saveAdminKey(payload.adminKey);
@@ -14758,7 +14767,7 @@ async function githubSaveNow(silent){
     let sha = await fetchGithubSha(cfg);
     const payload = { type:'alcms-full-backup', exportedAt:new Date().toISOString(), db:DB, accounts:ACCOUNTS, prefs:PREFS };
     const doPut = (shaVal)=> githubRequest(cfg, 'PUT', {
-      message: 'ALCMS data sync — '+new Date().toISOString(),
+      message: 'alcms data sync — '+new Date().toISOString(),
       content: b64EncodeUnicode(JSON.stringify(payload)),
       branch: cfg.branch||'main',
       ...(shaVal ? {sha:shaVal} : {})
@@ -14789,7 +14798,7 @@ async function githubLoadNow(){
     try{
       // Fetch the raw file bytes directly (not the default JSON-wrapped/base64 response) — the
       // default Contents API response truncates `content` to empty for files over ~1MB, which
-      // ALCMS backups routinely exceed. Requesting the raw media type avoids that limit entirely.
+      // alcms backups routinely exceed. Requesting the raw media type avoids that limit entirely.
       const rawRes = await githubRequest(cfg, 'GET', null, {raw:true});
       if(rawRes.status===404) throw new Error('No file found at that path yet — use "Save to GitHub" first');
       if(!rawRes.ok) throw new Error('GitHub error '+rawRes.status);
