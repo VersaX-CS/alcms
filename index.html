@@ -10288,17 +10288,31 @@ document.addEventListener('click', e=>{
   const trigger = e.target.closest('[data-dropdown-toggle]');
   const triggerId = trigger ? trigger.getAttribute('data-dropdown-toggle') : null;
   document.querySelectorAll('.dropdown-menu.open').forEach(m=>{
-    if(m.id !== triggerId) m.classList.remove('open');
+    if(m.id !== triggerId){ m.classList.remove('open'); if(openDropdownAnchor && openDropdownAnchor.menu===m) openDropdownAnchor = null; }
   });
   if(trigger){
     const menu = document.getElementById(triggerId);
     if(menu){
       const willOpen = !menu.classList.contains('open');
       menu.classList.toggle('open', willOpen);
-      if(willOpen) positionFloatingPanel(menu, trigger, {align:'right'});
+      if(willOpen){ positionFloatingPanel(menu, trigger, {align:'right'}); openDropdownAnchor = {menu, trigger}; }
+      else openDropdownAnchor = null;
     }
   }
 });
+// An anchored dropdown should track (or close with) the button it's pinned to — not stay
+// floating at its last on-screen spot while the page scrolls out from under it, which is what
+// made it look like a stray modal rather than a real dropdown. Re-run on every scroll (any
+// scrollable ancestor, caught via the capture phase since scroll doesn't bubble) and resize.
+let openDropdownAnchor = null;
+function trackOpenDropdown(){
+  if(!openDropdownAnchor) return;
+  const {menu, trigger} = openDropdownAnchor;
+  if(!menu.classList.contains('open') || !document.body.contains(trigger)){ openDropdownAnchor = null; return; }
+  positionFloatingPanel(menu, trigger, {align:'right'});
+}
+window.addEventListener('scroll', trackOpenDropdown, true);
+window.addEventListener('resize', trackOpenDropdown);
 /* Row-level "⋯ More" menu — same idea, but for table rows that have more actions than fit
    comfortably (e.g. Edit/Delete stay visible, less-used actions collapse here). Populate
    ROW_MORE_ITEMS[id] with that row's menu HTML right before rendering its row (see
@@ -10313,6 +10327,7 @@ function rowMoreButton(id, itemsHtml){
 function closeRowMoreMenu(){
   const m = document.getElementById('rowMoreMenu');
   if(m) m.classList.remove('open');
+  openDropdownAnchor = null;
 }
 /* Shared by every dropdown/suggestion popover that can appear inside a scrolling container
    (.content, .modal, .auth-form-side on mobile, etc.) — position:fixed + coordinates computed
@@ -10321,6 +10336,8 @@ function closeRowMoreMenu(){
    and clamps horizontally so it never runs off a narrow mobile viewport. */
 function positionFloatingPanel(panel, anchor, {matchWidth=false, align='left'}={}){
   if(!panel || !anchor) return;
+  const prevVis = panel.style.visibility;
+  panel.style.visibility = 'hidden'; // measure without letting the browser paint the stale/default position first
   const rect = anchor.getBoundingClientRect();
   const pw = matchWidth ? rect.width : (panel.offsetWidth || 220);
   let left = align==='right' ? rect.right - pw : rect.left;
@@ -10333,28 +10350,25 @@ function positionFloatingPanel(panel, anchor, {matchWidth=false, align='left'}={
   panel.style.left = left+'px';
   panel.style.top = top+'px';
   if(matchWidth) panel.style.width = rect.width+'px';
+  panel.style.visibility = prevVis;
 }
 function openRowMoreMenu(id, anchorEl){
   let menu = document.getElementById('rowMoreMenu');
   if(!menu){ menu = document.createElement('div'); menu.id = 'rowMoreMenu'; menu.className = 'row-more-menu'; document.body.appendChild(menu); }
   const wasOpenForThis = menu.classList.contains('open') && menu.dataset.rowId===id;
-  menu.classList.remove('open');
+  menu.classList.remove('open'); openDropdownAnchor = null;
   if(wasOpenForThis) return;
   menu.innerHTML = ROW_MORE_ITEMS[id] || '';
   menu.dataset.rowId = id;
-  menu.style.visibility = 'hidden'; menu.classList.add('open');
-  const rect = anchorEl.getBoundingClientRect();
-  const mw = menu.offsetWidth||190, mh = menu.offsetHeight||100;
-  let left = rect.right - mw; if(left<8) left = 8;
-  let top = rect.bottom + 4;
-  if(top+mh > window.innerHeight-8) top = Math.max(8, rect.top-mh-4);
-  menu.style.left = left+'px'; menu.style.top = top+'px'; menu.style.visibility = '';
+  menu.classList.add('open');
+  positionFloatingPanel(menu, anchorEl, {align:'right'});
+  openDropdownAnchor = {menu, trigger:anchorEl};
 }
 document.addEventListener('click', e=>{
   const trigger = e.target.closest('[data-row-more]');
   const menu = document.getElementById('rowMoreMenu');
   if(trigger){ e.stopPropagation(); openRowMoreMenu(trigger.getAttribute('data-row-more'), trigger); return; }
-  if(menu && !menu.contains(e.target)) menu.classList.remove('open');
+  if(menu && !menu.contains(e.target)){ menu.classList.remove('open'); openDropdownAnchor = null; }
 });
 document.addEventListener('keydown', e=>{
   if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){
