@@ -2701,6 +2701,9 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,30
 .auth-error{ background:#F4E1DC; color:var(--terracotta); padding:9px 12px; border-radius:7px; font-size:12.5px; margin-bottom:14px; display:none;}
 .auth-error.show{ display:block;}
 .auth-submit{ width:100%; padding:12px; font-size:14px;}
+#biometricSigninBtn.waiting{ opacity:.75; cursor:wait;}
+#biometricSigninBtn.waiting .fingerprint-ic{ animation: fp-waiting-pulse 1s ease-in-out infinite; }
+@keyframes fp-waiting-pulse{ 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:.5; transform:scale(1.12);} }
 .auth-hint{ font-size:11.5px; color:var(--muted); margin-top:16px; line-height:1.6;}
 @media (max-width:820px){
   .auth-wrap{ flex-direction:column;}
@@ -4823,9 +4826,53 @@ function biometricSignInButtonHtml(){
   if(!webauthnSupported()) return '';
   const anyRegistered = ACCOUNTS.some(a=>(a.biometricCredentials||[]).length);
   if(!anyRegistered) return '';
-  const fpIcon = `<svg class="fingerprint-ic" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" style="vertical-align:-8px"><path d="M12 3.5c-3.2 0-5.9 1.7-7.3 4.3"/><path d="M4.2 11c.2-1 .5-2 1-2.8"/><path d="M12 3.5c3.9 0 7.2 2.6 8.1 6.2"/><path d="M6.5 20.2c-1.1-1.6-1.9-3.5-2.1-5.5"/><path d="M8.6 21.8C7 19.9 6 17.4 6 14.7 6 11.6 8.7 9 12 9s6 2.6 6 5.7c0 .7-.05 1.4-.15 2"/><path d="M9.4 22.6C8 20.7 7.1 18.2 7.1 14.7c0-2.7 2.2-4.9 4.9-4.9s4.9 2.2 4.9 4.9"/><path d="M12 14.7c0 3.2 1 5.9 2.6 7.9"/><path d="M12 14.7c0 2.2.6 4.2 1.6 5.9"/></svg>`;
-  return `<button type="button" class="btn secondary auth-submit" style="margin-top:8px;display:flex;align-items:center;justify-content:center;padding:10px" onclick="signInWithBiometric()" title="Sign in with fingerprint / Face ID" aria-label="Sign in with fingerprint / Face ID">${fpIcon}</button>`;
+  const fpIcon = `<svg class="fingerprint-ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" style="vertical-align:-5px;margin-right:8px"><path d="M12 3.5c-3.2 0-5.9 1.7-7.3 4.3"/><path d="M4.2 11c.2-1 .5-2 1-2.8"/><path d="M12 3.5c3.9 0 7.2 2.6 8.1 6.2"/><path d="M6.5 20.2c-1.1-1.6-1.9-3.5-2.1-5.5"/><path d="M8.6 21.8C7 19.9 6 17.4 6 14.7 6 11.6 8.7 9 12 9s6 2.6 6 5.7c0 .7-.05 1.4-.15 2"/><path d="M9.4 22.6C8 20.7 7.1 18.2 7.1 14.7c0-2.7 2.2-4.9 4.9-4.9s4.9 2.2 4.9 4.9"/><path d="M12 14.7c0 3.2 1 5.9 2.6 7.9"/><path d="M12 14.7c0 2.2.6 4.2 1.6 5.9"/></svg>`;
+  return `<button type="button" class="btn secondary auth-submit" id="biometricSigninBtn" style="margin-top:8px;display:flex;align-items:center;justify-content:center" onclick="signInWithBiometric()" title="Sign in with fingerprint / Face ID" aria-label="Sign in with fingerprint / Face ID">${fpIcon}<span id="biometricSigninBtnLabel">Sign in with fingerprint</span></button>`;
 }
+function setBiometricButtonWaiting(isWaiting){
+  const btn = document.getElementById('biometricSigninBtn');
+  const label = document.getElementById('biometricSigninBtnLabel');
+  if(!btn || !label) return;
+  btn.disabled = !!isWaiting;
+  btn.classList.toggle('waiting', !!isWaiting);
+  label.textContent = isWaiting ? 'Waiting for fingerprint…' : 'Sign in with fingerprint';
+}
+/* Fires the OS fingerprint/Face ID prompt automatically as soon as the sign-in screen appears,
+   the way Windows Hello / Face ID do on a lock screen — so the person can just touch the sensor
+   without hunting for a button first. auto=true suppresses the on-screen error banner if it's
+   dismissed/cancelled/times out, since that's an unprompted offer, not something they asked for;
+   a manual click (auto=false) still shows the normal error. */
+async function signInWithBiometric(auto){
+  if(!webauthnSupported()){ if(!auto) showAuthError('Fingerprint/Face ID sign-in is not available in this browser or context.'); return; }
+  const allowCredentials = [];
+  ACCOUNTS.forEach(a=>(a.biometricCredentials||[]).forEach(c=>allowCredentials.push({ id: bufferFromB64url(c.id), type:'public-key' })));
+  if(!allowCredentials.length){ if(!auto) showAuthError('No fingerprint is registered yet. Sign in with a password first, then register one from My Account.'); return; }
+  setBiometricButtonWaiting(true);
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await navigator.credentials.get({ publicKey: { challenge, allowCredentials, userVerification:'required', timeout:60000 }});
+    if(!assertion) throw new Error('No assertion returned');
+    const usedId = b64urlFromBuffer(assertion.rawId);
+    const acc = ACCOUNTS.find(a=>(a.biometricCredentials||[]).some(c=>c.id===usedId));
+    if(!acc){ setBiometricButtonWaiting(false); if(!auto) showAuthError('That fingerprint is not recognized on this device.'); return; }
+    failedLoginAttempts = 0;
+    await completeLogin(acc);
+  }catch(e){
+    console.warn('WebAuthn sign-in failed', e);
+    setBiometricButtonWaiting(false);
+    if(!auto && e.name!=='NotAllowedError') showAuthError('Fingerprint sign-in failed. Use your username and password instead.');
+  }
+}
+/* Auto-offer the fingerprint prompt right as the sign-in screen loads. A short delay lets the
+   auth screen finish rendering/animating in first so the OS prompt doesn't collide with it. */
+function maybeAutoPromptBiometric(){
+  if(authTab!=='signin') return;
+  if(!webauthnSupported()) return;
+  if(!ACCOUNTS.some(a=>(a.biometricCredentials||[]).length)) return;
+  clearTimeout(autoBiometricTimer);
+  autoBiometricTimer = setTimeout(()=>{ if(authTab==='signin' && $('#authScreen').classList.contains('show')) signInWithBiometric(true); }, 500);
+}
+let autoBiometricTimer = null;
 async function registerBiometric(){
   if(!webauthnSupported()){ toast('Fingerprint/Face ID sign-in needs a secure browser context (https, or localhost) and a device with a fingerprint or face sensor.'); return; }
   const acc = ACCOUNTS.find(a=>a.username===SESSION.username); if(!acc) return;
@@ -4856,25 +4903,6 @@ async function removeBiometric(id){
   acc.biometricCredentials = (acc.biometricCredentials||[]).filter(c=>c.id!==id);
   await saveAccounts(ACCOUNTS);
   toast('Fingerprint removed'); render();
-}
-async function signInWithBiometric(){
-  if(!webauthnSupported()){ showAuthError('Fingerprint/Face ID sign-in is not available in this browser or context.'); return; }
-  const allowCredentials = [];
-  ACCOUNTS.forEach(a=>(a.biometricCredentials||[]).forEach(c=>allowCredentials.push({ id: bufferFromB64url(c.id), type:'public-key' })));
-  if(!allowCredentials.length){ showAuthError('No fingerprint is registered yet. Sign in with a password first, then register one from My Account.'); return; }
-  try{
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const assertion = await navigator.credentials.get({ publicKey: { challenge, allowCredentials, userVerification:'required', timeout:60000 }});
-    if(!assertion) throw new Error('No assertion returned');
-    const usedId = b64urlFromBuffer(assertion.rawId);
-    const acc = ACCOUNTS.find(a=>(a.biometricCredentials||[]).some(c=>c.id===usedId));
-    if(!acc){ showAuthError('That fingerprint is not recognized on this device.'); return; }
-    failedLoginAttempts = 0;
-    await completeLogin(acc);
-  }catch(e){
-    console.warn('WebAuthn sign-in failed', e);
-    if(e.name!=='NotAllowedError') showAuthError('Fingerprint sign-in failed. Use your username and password instead.');
-  }
 }
 function unlockAuthWithAdminKey(){
   const key = $('#unlockAdminKey') ? $('#unlockAdminKey').value : '';
@@ -4959,6 +4987,7 @@ function showAuthScreen(){
   startAuthCarousel();
   renderAuthNotifBell();
   syncAuthMobileLayout();
+  maybeAutoPromptBiometric();
 }
 /* The app's own SVG mark (same design as the favicon) — used on the splash screen and
    auth screen badge whenever no institution logo has been uploaded, so those spots always
@@ -15165,8 +15194,8 @@ async function enterApp(){
   tickClocks();
   await loadPrefs();
   tickClocks();
-  // absolute failsafe: no matter what happens above, force the splash away after 4s
-  const failsafe = setTimeout(()=>{ $('#splash').classList.add('hide'); if(!$('#authScreen').classList.contains('show') && !$('#app').classList.contains('show')) showAuthScreen(); }, 4000);
+  // absolute failsafe: no matter what happens above, force the splash away after 9s
+  const failsafe = setTimeout(()=>{ $('#splash').classList.add('hide'); if(!$('#authScreen').classList.contains('show') && !$('#app').classList.contains('show')) showAuthScreen(); }, 9000);
   try{
     ACCOUNTS = await loadAccounts();
     await loadAdminKey();
@@ -15187,7 +15216,7 @@ async function enterApp(){
         console.error('Post-splash init failed', e);
         showAuthScreen();
       }
-    }, 1500);
+    }, 7000);
   }catch(e){
     console.error('Boot failed before splash could hand off', e);
     clearTimeout(failsafe);
