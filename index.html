@@ -2822,6 +2822,20 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .topbar .titles{ min-width:0;}
 .topbar .titles h2{ font-size:20px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .topbar .titles p{ margin:2px 0 0; font-size:12.5px; color:rgba(239,232,211,.68); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+/* On desktop the sidebar is always visible, so the title is plain text — the tap-for-a-menu
+   affordance (and the dropdown itself) only kicks in at the mobile breakpoint below. */
+.topbar-title-btn{
+  display:flex; align-items:center; gap:4px; background:none; border:none; padding:0; margin:0;
+  font:inherit; text-align:left; cursor:default; pointer-events:none; -webkit-tap-highlight-color:transparent;
+}
+.topbar-title-caret{ display:none; font-size:12px; color:rgba(239,232,211,.65); flex:none; transition:transform .15s ease;}
+.topbar-title-btn[aria-expanded="true"] .topbar-title-caret{ transform:rotate(180deg);}
+.topbar-nav-menu{ width:250px; max-width:calc(100vw - 16px); max-height:min(70vh,480px); overflow-y:auto; padding:6px 0;}
+.topbar-nav-menu .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted-label); padding:10px 14px 4px; font-weight:700;}
+.topbar-nav-menu a{ display:flex; align-items:center; gap:10px;}
+.topbar-nav-menu a .ico{ width:18px; text-align:center; font-size:14px; flex:none;}
+.topbar-nav-menu a.active{ background:var(--parchment-dim); font-weight:600;}
+.topbar-nav-menu a .nav-badge{ margin-left:auto;}
 .topbar .today{ font-size:12px; color:rgba(239,232,211,.68); text-align:right;}
 .topbar-right{ display:flex; align-items:center; gap:14px; flex:none;}
 .topbar-search{ position:relative; display:flex; align-items:center;}
@@ -3474,6 +3488,8 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   }
   .topbar .titles h2{ font-size:18px; font-weight:700; letter-spacing:-.2px;}
   .topbar .titles p{ font-size:11px; margin-top:0;}
+  .topbar-title-btn{ pointer-events:auto; cursor:pointer;}
+  .topbar-title-caret{ display:inline-block;}
   .topbar-right{ flex:1 1 auto; min-width:0; justify-content:flex-end; gap:2px;}
   .clock-chip{ display:none;}
   .topbar .icon-btn{
@@ -3699,10 +3715,14 @@ html, body{ overflow-x:hidden;}
       <div style="display:flex;align-items:center;gap:10px">
         <button class="hamburger" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
         <button class="icon-btn" id="topHomeBtn" onclick="route='home';render();" title="Home" style="display:none" aria-label="Home">⌂</button>
-        <div class="titles">
-          <h2 id="pageTitle">Home</h2>
-          <p id="pageSubtitle">Welcome back</p>
-        </div>
+        <button type="button" class="titles topbar-title-btn" data-dropdown-toggle="topbarNavMenu" data-dropdown-align="left" onclick="prepareTopbarNavMenu()" aria-label="Go to…" aria-haspopup="true" aria-expanded="false">
+          <span style="min-width:0;overflow:hidden">
+            <h2 id="pageTitle">Home</h2>
+            <p id="pageSubtitle">Welcome back</p>
+          </span>
+          <span class="topbar-title-caret">▾</span>
+        </button>
+        <div class="dropdown-menu topbar-nav-menu" id="topbarNavMenu"></div>
       </div>
       <div class="topbar-right">
         <div class="topbar-search" id="topbarSearch">
@@ -6310,6 +6330,34 @@ function renderNav(){
       b.onclick = it.action ? ()=>{ window[it.action](); closeMobileSidebar(); } : ()=>{ route=it.id; render(); closeMobileSidebar(); };
       el.appendChild(b);
     });
+  });
+}
+// Mobile-only: tapping the topbar title opens a dropdown listing every nav destination (the
+// same groups/items as the sidebar), so switching pages doesn't require opening the full sidebar
+// drawer first. Content is rebuilt each time it's opened so active-state and badge counts (which
+// can change while the menu is closed) are always current.
+function prepareTopbarNavMenu(){
+  if(window.innerWidth > 900) return; // desktop always shows the full sidebar; trigger is inert there
+  const el = document.getElementById('topbarNavMenu'); if(!el) return;
+  const reminderCount = (DB && DB.circulation) ? reminderNeedsCount() : 0;
+  const feedbackCount = (DB && Array.isArray(DB.feedback)) ? DB.feedback.filter(f=>f.status!=='RESOLVED').length : 0;
+  const readyReservationCount = (DB && Array.isArray(DB.reservations)) ? DB.reservations.filter(r=>r.status==='READY').length : 0;
+  el.innerHTML = NAV.map(g=>`
+    <div class="navgroup-label">${esc(g.group)}</div>
+    ${g.items.map(it=>{
+      const count = it.id==='reminders' ? reminderCount : it.id==='feedback' ? feedbackCount : it.id==='reservations' ? readyReservationCount : 0;
+      const badge = count>0 ? `<span class="nav-badge">${count>99?'99+':count}</span>` : '';
+      return `<a data-nav-id="${esc(it.id)}" class="${it.id===route?'active':''}"><span class="ico">${navIcon(it.id, it.ico)}</span><span>${esc(it.label)}</span>${badge}</a>`;
+    }).join('')}
+  `).join('');
+  el.querySelectorAll('[data-nav-id]').forEach(a=>{
+    const it = NAV.flatMap(g=>g.items).find(x=>x.id===a.getAttribute('data-nav-id'));
+    a.onclick = ()=>{
+      tapFeedback();
+      // Closing the menu itself is handled by the existing outside-click-closes logic once this
+      // click bubbles up to the document — no need to duplicate that here.
+      if(it && it.action) window[it.action](); else { route = a.getAttribute('data-nav-id'); render(); }
+    };
   });
 }
 function reminderNeedsCount(){
@@ -10288,28 +10336,64 @@ document.addEventListener('click', e=>{
   const trigger = e.target.closest('[data-dropdown-toggle]');
   const triggerId = trigger ? trigger.getAttribute('data-dropdown-toggle') : null;
   document.querySelectorAll('.dropdown-menu.open').forEach(m=>{
-    if(m.id !== triggerId){ m.classList.remove('open'); if(openDropdownAnchor && openDropdownAnchor.menu===m) openDropdownAnchor = null; }
+    if(m.id !== triggerId){
+      closeDropdownMenu(m, document.querySelector(`[data-dropdown-toggle="${m.id}"]`));
+      if(openDropdownAnchor && openDropdownAnchor.menu===m) openDropdownAnchor = null;
+    }
   });
   if(trigger){
     const menu = document.getElementById(triggerId);
     if(menu){
       const willOpen = !menu.classList.contains('open');
-      menu.classList.toggle('open', willOpen);
-      if(willOpen){ positionFloatingPanel(menu, trigger, {align:'right'}); openDropdownAnchor = {menu, trigger}; }
-      else openDropdownAnchor = null;
+      if(willOpen){ openDropdownMenu(menu, trigger); openDropdownAnchor = {menu, trigger}; }
+      else{ closeDropdownMenu(menu, trigger); openDropdownAnchor = null; }
     }
   }
 });
+// A menu that's a descendant of a blurred/filtered card (the "glassy" section style puts
+// backdrop-filter on .card, and the mobile topbar itself) gets positioned relative to that
+// ancestor instead of the viewport — backdrop-filter, like transform or filter, creates a new
+// containing block for position:fixed children — so despite being computed from the trigger's
+// real on-screen coordinates, it can render far from the button or entirely off-screen. Detach
+// it to <body> while it's open, so position:fixed is always relative to the viewport, and put it
+// back next to its trigger on close so re-rendering the panel doesn't leave an orphaned copy
+// behind. Triggers align their menu to their right edge by default (the "⋯ More" buttons); pass
+// data-dropdown-align="left" on the trigger (e.g. the mobile topbar title) to hang it off the
+// left edge instead.
+function openDropdownMenu(menu, trigger){
+  document.body.appendChild(menu);
+  menu.classList.add('open');
+  trigger.setAttribute('aria-expanded','true');
+  positionFloatingPanel(menu, trigger, {align: trigger.dataset.dropdownAlign || 'right'});
+}
+function closeDropdownMenu(menu, trigger){
+  menu.classList.remove('open');
+  menu.style.position=''; menu.style.top=''; menu.style.left=''; menu.style.width='';
+  if(trigger){
+    trigger.setAttribute('aria-expanded','false');
+    if(trigger.parentElement) trigger.parentElement.appendChild(menu);
+  }
+}
 // An anchored dropdown should track (or close with) the button it's pinned to — not stay
 // floating at its last on-screen spot while the page scrolls out from under it, which is what
-// made it look like a stray modal rather than a real dropdown. Re-run on every scroll (any
-// scrollable ancestor, caught via the capture phase since scroll doesn't bubble) and resize.
+// made it look like a stray modal rather than a real dropdown. Re-run on scroll (any scrollable
+// ancestor, caught via the capture phase since scroll doesn't bubble) and resize — coalesced to
+// one recalculation per animation frame via rAF, rather than once per raw scroll event, since a
+// scroll gesture can fire dozens of scroll events per frame and each one was forcing a synchronous
+// layout read (getBoundingClientRect/offsetWidth). That repeated layout thrashing, compounded by
+// the glassy theme's backdrop-filter blur needing to repaint each time, is what was causing the lag.
 let openDropdownAnchor = null;
+let dropdownTrackScheduled = false;
 function trackOpenDropdown(){
-  if(!openDropdownAnchor) return;
-  const {menu, trigger} = openDropdownAnchor;
-  if(!menu.classList.contains('open') || !document.body.contains(trigger)){ openDropdownAnchor = null; return; }
-  positionFloatingPanel(menu, trigger, {align:'right'});
+  if(!openDropdownAnchor || dropdownTrackScheduled) return;
+  dropdownTrackScheduled = true;
+  requestAnimationFrame(()=>{
+    dropdownTrackScheduled = false;
+    if(!openDropdownAnchor) return;
+    const {menu, trigger} = openDropdownAnchor;
+    if(!menu.classList.contains('open') || !document.body.contains(trigger)){ openDropdownAnchor = null; return; }
+    positionFloatingPanel(menu, trigger, {align:'right'});
+  });
 }
 window.addEventListener('scroll', trackOpenDropdown, true);
 window.addEventListener('resize', trackOpenDropdown);
