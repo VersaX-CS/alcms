@@ -3360,7 +3360,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
   max-height:220px; overflow-y:auto; box-shadow:var(--shadow); z-index:1200; display:none;}
 .quickpick .suggestions.show{ display:block;}
 .quickpick .sugg-item{ padding:8px 12px; font-size:12.5px; border-bottom:1px solid #f1ead4; cursor:pointer;}
-.quickpick .sugg-item:hover{ background:var(--parchment-dim);}
+.quickpick .sugg-item:hover, .quickpick .sugg-item.active{ background:var(--parchment-dim);}
 .quickpick .sugg-item b{ color:var(--forest);}
 .picked-card{ margin-top:8px; padding:10px 12px; background:var(--parchment-dim); border-radius:8px; font-size:12px; display:none;}
 .picked-card.show{ display:block;}
@@ -4672,7 +4672,7 @@ function getAuthSlides(){
   const ready = DB && Array.isArray(DB.catalogue) && Array.isArray(DB.users);
   const orgWord = (DB && DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'the library';
   const stats = ready ? [
-    {big: DB.catalogue.length.toLocaleString(), lbl:'Titles catalogued', text:`Every accessioned book in ${orgWord}'s collection, organised by Dewey main class and shelf location.`},
+    {big: DB.catalogue.filter(b=>b.available!=='WITHDRAWN').length.toLocaleString(), lbl:'Titles catalogued', text:`Every accessioned book in ${orgWord}'s collection, organised by Dewey main class and shelf location.`},
     {big: DB.users.length.toLocaleString(), lbl:'Registered members', text:'Students and staff who can borrow, with per-category limits and discipline tracking.'},
     {big: LOAN_PERIOD_DAYS+' days', lbl:'Standard loan period', text:`Every title issued is due back in ${LOAN_PERIOD_DAYS} days — the desk will flag it automatically if it runs late.`},
   ] : [
@@ -6531,6 +6531,7 @@ function openModal({title, fields, values={}, onSave, wide, validate, postRender
     </div>
   </div>`;
   root.innerHTML = html;
+  bindSearchSelectFields(fields);
   const close = ()=> animatedCloseModal(document.getElementById('mb'), ()=> root.innerHTML='');
   $('#mClose').onclick=close; $('#mCancel').onclick=close;
   $('#mb').addEventListener('click', e=>{ if(e.target.id==='mb') close(); });
@@ -6578,6 +6579,19 @@ function fieldHtml(f,values){
       ${usePlaceholder? `<option value="" disabled ${noneSelected?'selected':''}>${esc(placeholderText)}</option>` : ''}
       ${opts.map(o=>`<option value="${esc(o)}" ${o===val?'selected':''}>${esc(o)}</option>`).join('')}
     </select>`;
+  } else if(f.type==='searchselect'){
+    // Like a <select>, but the box is a text input: typing filters options by matching every
+    // typed word anywhere in the option text (not just against the option's first letters, which
+    // is all a native <select>'s built-in type-ahead supports) — needed once the option list is
+    // long enough (e.g. "copy from an existing title") that jumping by first letter isn't useful.
+    const opts = f.options||[];
+    const usePlaceholder = f.placeholder !== false;
+    const placeholderText = typeof f.placeholder==='string' ? f.placeholder : ('Search '+String(f.label||'').replace(/\s*\*$/,''));
+    input = `<div class="quickpick fieldSearchSelect" id="ss_${f.key}" data-options-count="${opts.length}">
+      <input type="text" id="f_${f.key}__search" autocomplete="off" placeholder="${esc(placeholderText)}" value="${esc(val)}">
+      <input type="hidden" id="f_${f.key}" value="${esc(val)}">
+      <div class="suggestions" id="ss_sugg_${f.key}"></div>
+    </div>`;
   } else if(f.type==='textarea'){
     input = `<textarea id="f_${f.key}">${esc(val)}</textarea>`;
   } else if(f.type==='password'){
@@ -6593,6 +6607,61 @@ function fieldHtml(f,values){
     }
   }
   return `<div class="field" ${f.wrapId?`id="${f.wrapId}"`:''} ${f.hidden?'style="display:none"':''}><label>${esc(f.label)}${f.required?' *':''}</label>${f.extra? `<div style="display:flex;gap:6px;align-items:center">${input}${f.extra}</div>` : input}${f.subHint?`<p class="field-hint" id="hint_${f.key}" style="margin-top:4px">${f.subHint}</p>`:''}</div>`;
+}
+/* Wires up every 'searchselect' field rendered by fieldHtml(): typing filters the option list by
+   matching each typed word anywhere in the option text (order-independent, e.g. typing "harry
+   stone" still finds "The Philosopher's Stone — Harry Potter"), unlike a native <select>'s
+   built-in type-ahead which only jumps to the option whose first letter matches the last key
+   pressed. Picking a suggestion (click/Enter) sets the hidden f_<key> input and fires a real
+   'change' event on it, so existing code that listens for change on that hidden input (e.g. the
+   "copy from an existing title" handler) keeps working unchanged. */
+function bindSearchSelectFields(fields){
+  flattenFields(fields).filter(f=>f.type==='searchselect').forEach(f=>{
+    const wrap = document.getElementById('ss_'+f.key);
+    const input = document.getElementById('f_'+f.key+'__search');
+    const hidden = document.getElementById('f_'+f.key);
+    const sugg = document.getElementById('ss_sugg_'+f.key);
+    if(!wrap || !input || !hidden || !sugg) return;
+    const opts = f.options||[];
+    let matches = [];
+    let activeIndex = -1;
+    function highlight(){
+      [...sugg.children].forEach((el,i)=> el.classList.toggle('active', i===activeIndex));
+      const el = sugg.children[activeIndex];
+      if(el) el.scrollIntoView({block:'nearest'});
+    }
+    function openList(){
+      const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      matches = words.length ? opts.filter(o=>{ const hay = o.toLowerCase(); return words.every(w=>hay.includes(w)); }) : opts;
+      activeIndex = -1;
+      sugg.innerHTML = matches.length
+        ? matches.slice(0,50).map((o,i)=>`<div class="sugg-item" data-i="${i}">${esc(o)}</div>`).join('')
+        : `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`;
+      sugg.classList.add('show');
+      positionFloatingPanel(sugg, input, {matchWidth:true});
+    }
+    function closeList(){ sugg.classList.remove('show'); }
+    function pick(opt){
+      input.value = opt;
+      hidden.value = opt;
+      closeList();
+      hidden.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+    input.addEventListener('input', ()=>{ hidden.value=''; openList(); });
+    input.addEventListener('focus', openList);
+    input.addEventListener('keydown', e=>{
+      if(!sugg.classList.contains('show')) return;
+      if(e.key==='ArrowDown'){ e.preventDefault(); activeIndex = Math.min(activeIndex+1, matches.length-1); highlight(); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); activeIndex = Math.max(activeIndex-1, 0); highlight(); }
+      else if(e.key==='Enter'){ if(activeIndex>=0 && matches[activeIndex]){ e.preventDefault(); pick(matches[activeIndex]); } }
+      else if(e.key==='Escape'){ closeList(); }
+    });
+    sugg.addEventListener('mousedown', e=>{
+      const row = e.target.closest('.sugg-item'); if(!row || row.dataset.i===undefined) return;
+      const opt = matches[+row.dataset.i]; if(opt) pick(opt);
+    });
+    document.addEventListener('click', e=>{ if(!e.target.closest('#ss_'+f.key)) closeList(); });
+  });
 }
 /* Styled in-app replacement for the browser's native confirm() — used for every destructive
    action (delete, clear, restore, overwrite) so the prompt matches the app's look, works the
@@ -7394,6 +7463,8 @@ function inRange(dateVal, from, to){
    detail table) is more than what's needed. Always covers "right now", no period picker. */
 function generateSummaryReport(){
   const c = DB.catalogue, u = DB.users, t = DB.circulation;
+  const withdrawn = c.filter(b=>b.available==='WITHDRAWN').length;
+  const inCatalogue = c.length - withdrawn;
   const available = c.filter(b=>b.available==='AVAILABLE').length;
   const issued = c.filter(b=>b.available==='ISSUED').length;
   const overdue = t.filter(x=>txnStatus(x)==='OVERDUE').length;
@@ -7408,9 +7479,10 @@ function generateSummaryReport(){
   const memberClassEntries = Object.entries(byMemberClass).sort((a,b)=>b[1]-a[1]);
   printMultiSection('Summary Report', 'Snapshot as of '+new Date().toLocaleString('en-GB'), [
     { heading:'Collection', kpis:[
-      {label:'Titles in collection', value:c.length},
+      {label:'Titles in collection', value:inCatalogue},
       {label:'Available now', value:available},
       {label:'Currently issued', value:issued},
+      {label:'Withdrawn', value:withdrawn},
     ]},
     { heading:'Members', kpis:[
       {label:'Registered members', value:u.length},
@@ -8039,6 +8111,7 @@ function cycleWeatherAmbienceSet(){
 }
 function pageHome(){
   const c = DB.catalogue, u = DB.users, t = DB.circulation;
+  const titlesInCatalogue = c.filter(b=>b.available!=='WITHDRAWN').length;
   const overdue = t.filter(x=>txnStatus(x)==='OVERDUE').length;
   const today = todayISO();
   const issuedToday = t.filter(x=>(x.dateBorrowed||'').slice(0,10)===today).length;
@@ -8076,7 +8149,7 @@ function pageHome(){
   </div>` : ''}
   <div class="grid quicklinks">
     ${qlink(navIcon('dashboard','▤'),'Dashboard', 'Full library overview','dashboard')}
-    ${qlink(navIcon('catalogue','▥'),'Catalogue', c.length+' titles on the shelf','catalogue')}
+    ${qlink(navIcon('catalogue','▥'),'Catalogue', titlesInCatalogue+' titles on the shelf','catalogue')}
     ${qlink(navIcon('users','👥'),'Members', u.length+' registered borrowers','users')}
     ${qlink(navIcon('circulation','⇄'),'Circulation', t.filter(x=>txnStatus(x)!=='RETURNED').length+' active loans','circulation')}
     ${qlink(navIcon('reminders','✉'),'Reminders', overdue+' overdue right now','reminders')}
@@ -8107,6 +8180,8 @@ function qlink(ico,title,sub,go){
 /* ================= PAGE: DASHBOARD ================= */
 function pageDashboard(){
   const c = DB.catalogue, u = DB.users, t = DB.circulation;
+  const withdrawn = c.filter(b=>b.available==='WITHDRAWN').length;
+  const inCatalogue = c.length - withdrawn;
   const available = c.filter(b=>b.available==='AVAILABLE').length;
   const issued = c.filter(b=>b.available==='ISSUED').length;
   const overdue = t.filter(x=>txnStatus(x)==='OVERDUE').length;
@@ -8123,7 +8198,7 @@ function pageDashboard(){
     </div>
   </div>
   <div class="grid kpis">
-    ${kpi('Titles in collection', c.length, '')}
+    ${kpi('Titles in collection', inCatalogue, withdrawn+' withdrawn (not counted)')}
     ${kpi('Available now', available, issued+' currently issued')}
     ${kpi('Registered members', u.length, u.filter(x=>x.category==='STAFF').length+' staff · '+u.filter(x=>x.category==='STUDENT').length+' students')}
     ${kpi('Active loans', active, overdue+' overdue')}
@@ -8491,7 +8566,7 @@ function viewBook(acc){
 function bookFields(b={}, isNew){
   return [
     ...(isNew && DB.catalogue.length ? [
-      {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'select', placeholder:'Select a title to copy from…',
+      {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'searchselect', placeholder:'Search a title to copy from…',
         options: [...DB.catalogue].sort((a,b2)=>(a.title||'').localeCompare(b2.title||'')).map(x=>`${x.title} — ${x.acc}`),
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
