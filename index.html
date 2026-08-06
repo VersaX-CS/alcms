@@ -2404,6 +2404,8 @@ window.QRCodeGen = qrcode;
   --line:#DDD3B4;
   --ok:#2F6B44;
   --warn:#A8452F;
+  --amber:#95591A;
+  --active-loan:#2E5C82;
   --muted:#5F6E62;
   --muted-label:#7A6A45;
   --shadow: 0 1px 2px rgba(19,32,25,.06), 0 6px 16px rgba(19,32,25,.06);
@@ -2440,6 +2442,8 @@ html[data-theme="dark"]{
   --line:#3A3B3E;
   --ok:#6FBE86;
   --warn:#E0836A;
+  --amber:#E0A03D;
+  --active-loan:#6FA8D8;
   --muted:#AAAAAF;
   --muted-label:#C9B37E;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35);
@@ -3104,6 +3108,8 @@ table.datatable tr:hover td{ background:#fbf8ee;}
 .badge.red{ background:#F4E1DC; color:var(--warn);}
 .badge.gold{ background:#F3E6C9; color:var(--brass);}
 .badge.grey{ background:#e9e5da; color:var(--muted);}
+.badge.amber{ background:#F6E8CC; color:var(--amber);}
+.badge.blue{ background:#DEE9F3; color:var(--active-loan);}
 .badge.blue{ background:#DCE6EA; color:#3E6B7A;}
 
 .stamp{
@@ -3500,6 +3506,104 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 }
 @media (min-width:901px){ .mobile-fab{ display:none !important;} }
 
+/* ===== calendar quick-access FAB — shown on every page, on every screen size ===== */
+.calendar-fab{
+  position:fixed; right:18px; z-index:46;
+  /* Stacked one slot above the mobile "+ Add" FAB (same right edge) so the two never overlap
+     on modules that have both — the extra offset is simply unused space on pages without one. */
+  bottom:calc(72px + env(safe-area-inset-bottom,0) + 14px + 52px + 12px);
+  width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
+  background:var(--forest); color:#F3EEDD; font-size:22px; line-height:1;
+  display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.28);
+  transition:transform .12s ease;
+}
+.calendar-fab:active{ transform:scale(.92);}
+.calendar-fab.active{ background:var(--brass); color:#221704;}
+/* Needs-attention states: overdue loans/reminders take priority (red, faster pulse) over the
+   softer amber pulse for anything less urgent (due-soon loans, unread notifications, classes
+   still expected today, unresolved feedback). Numeric badge on corner shows count of attention items. */
+.calendar-fab[data-badge]::after{
+  content:attr(data-badge); position:absolute; top:-4px; right:-4px; 
+  background:var(--amber); color:#221704; font-size:11px; font-weight:700;
+  width:20px; height:20px; min-width:20px; border-radius:50%; border:2px solid var(--card);
+  display:flex; align-items:center; justify-content:center; line-height:1;
+}
+.calendar-fab.fab-overdue[data-badge]::after{
+  background:var(--warn); color:white;
+}
+.calendar-fab.fab-attention{ animation:fabPulseAmber 1.8s ease-in-out infinite; }
+.calendar-fab.fab-overdue{ animation:fabPulseRed 1.4s ease-in-out infinite; }
+@keyframes fabPulseAmber{
+  0%,100%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 0 rgba(149,89,26,.55);}
+  50%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 9px rgba(149,89,26,0);}
+}
+@keyframes fabPulseRed{
+  0%,100%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 0 rgba(168,69,47,.6);}
+  50%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 10px rgba(168,69,47,0);}
+}
+@media (prefers-reduced-motion: reduce){
+  .calendar-fab.fab-attention, .calendar-fab.fab-overdue{ animation:none; }
+}
+@media (min-width:901px){
+  /* No bottom nav to clear on desktop, so it just sits in the corner. */
+  .calendar-fab{ bottom:24px; }
+}
+
+/* ===== calendar FAB modal (mini month calendar + day drill-down) ===== */
+.cal-modal .modal{ max-width:480px; }
+.cal-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.cal-nav strong{ font-size:14px; }
+.cal-legend{ display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:10px; }
+.cal-legend span{ display:inline-flex; align-items:center; gap:6px; }
+.cal-dot.static{ position:static; display:inline-block; }
+.cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+.cal-dow{ font-size:11px; text-align:center; color:var(--muted-label); font-weight:600; padding:4px 0 6px; }
+.cal-cell{ position:relative; aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+  border-radius:8px; cursor:pointer; font-size:13px; background:transparent; border:1px solid transparent;
+  font-family:inherit; color:var(--ink); padding:0;
+}
+.cal-cell.other-month{ opacity:.32; }
+.cal-cell.today .cal-daynum{ font-weight:700; text-decoration:underline; text-underline-offset:3px; }
+.cal-cell:hover{ background:var(--parchment-dim); }
+.cal-cell.selected{ background:var(--forest); color:#F3EEDD; }
+.cal-dot{ position:absolute; bottom:4px; width:6px; height:6px; border-radius:50%; }
+.cal-dot.gold{ background:var(--brass); left:calc(50% - 8px); }
+.cal-dot.purple{ background:#9B7FB8; left:calc(50% - 2px); }
+.cal-dot.red{ background:var(--warn); left:calc(50% + 2px); }
+.cal-dot.amber{ background:var(--amber); left:calc(50% + 2px); }
+.cal-dot.green{ background:var(--ok); left:calc(50% + 2px); }
+.cal-dot.blue{ background:var(--active-loan); left:calc(50% + 2px); }
+.cal-cell.has-visit .cal-dot.gold{ animation:calPulseGold 1.4s ease-in-out infinite; }
+.cal-cell.has-ready .cal-dot.purple{ animation:calPulsePurple 1.6s ease-in-out infinite; }
+.cal-cell.has-overdue .cal-dot.red{ animation:calPulseRed 1.4s ease-in-out infinite; }
+.cal-cell.has-duesoon .cal-dot.amber{ animation:calPulseAmber 1.4s ease-in-out infinite; }
+.cal-cell.has-due .cal-dot.green{ animation:calPulseGreen 1.4s ease-in-out infinite; }
+.cal-cell.has-active .cal-dot.blue{ animation:calPulseBlue 2.2s ease-in-out infinite; }
+@keyframes calPulseGold{ 0%,100%{ box-shadow:0 0 0 0 rgba(184,134,62,.55);} 50%{ box-shadow:0 0 0 5px rgba(184,134,62,0);} }
+@keyframes calPulsePurple{ 0%,100%{ box-shadow:0 0 0 0 rgba(155,127,184,.5);} 50%{ box-shadow:0 0 0 5px rgba(155,127,184,0);} }
+@keyframes calPulseRed{ 0%,100%{ box-shadow:0 0 0 0 rgba(168,69,47,.55);} 50%{ box-shadow:0 0 0 5px rgba(168,69,47,0);} }
+@keyframes calPulseAmber{ 0%,100%{ box-shadow:0 0 0 0 rgba(149,89,26,.5);} 50%{ box-shadow:0 0 0 5px rgba(149,89,26,0);} }
+@keyframes calPulseGreen{ 0%,100%{ box-shadow:0 0 0 0 rgba(47,107,68,.5);} 50%{ box-shadow:0 0 0 5px rgba(47,107,68,0);} }
+@keyframes calPulseBlue{ 0%,100%{ box-shadow:0 0 0 0 rgba(46,92,130,.45);} 50%{ box-shadow:0 0 0 4px rgba(46,92,130,0);} }
+.cal-day-dropdown{ margin-top:14px; border:1px solid var(--line); border-radius:10px; padding:14px;
+  background:var(--parchment-dim); animation:calDropIn .16s ease;
+}
+@keyframes calDropIn{ from{ opacity:0; transform:translateY(-6px);} to{ opacity:1; transform:translateY(0);} }
+.cal-section-label{ font-size:11px; font-weight:700; letter-spacing:.4px; color:var(--muted-label); text-transform:uppercase; margin-bottom:6px; }
+.cal-event-row{ display:flex; align-items:center; gap:8px; padding:5px 0; font-size:13px; border-bottom:1px dashed var(--line); }
+.cal-event-row:last-child{ border-bottom:none; }
+.cal-empty-note{ font-size:12.5px; color:var(--muted); padding:4px 0 2px; }
+/* Badges inside the day-details panel pulse in the matching colour when their date is selected,
+   visually tying the calendar dot the person clicked to the matching event(s) listed above it. */
+.badge.pulse-red{ animation:calBadgePulseRed 1.4s ease-in-out infinite; }
+.badge.pulse-amber{ animation:calBadgePulseAmber 1.4s ease-in-out infinite; }
+.badge.pulse-green{ animation:calBadgePulseGreen 1.4s ease-in-out infinite; }
+.badge.pulse-blue{ animation:calBadgePulseBlue 2.2s ease-in-out infinite; }
+@keyframes calBadgePulseRed{ 0%,100%{ box-shadow:0 0 0 0 rgba(168,69,47,.45);} 50%{ box-shadow:0 0 0 4px rgba(168,69,47,0);} }
+@keyframes calBadgePulseAmber{ 0%,100%{ box-shadow:0 0 0 0 rgba(149,89,26,.45);} 50%{ box-shadow:0 0 0 4px rgba(149,89,26,0);} }
+@keyframes calBadgePulseGreen{ 0%,100%{ box-shadow:0 0 0 0 rgba(47,107,68,.45);} 50%{ box-shadow:0 0 0 4px rgba(47,107,68,0);} }
+@keyframes calBadgePulseBlue{ 0%,100%{ box-shadow:0 0 0 0 rgba(46,92,130,.4);} 50%{ box-shadow:0 0 0 4px rgba(46,92,130,0);} }
+
 /* ===== mobile scroll-to-top button ===== */
 .scroll-top-btn{
   display:none; position:fixed; left:18px; z-index:46;
@@ -3831,6 +3935,7 @@ html, body{ overflow-x:hidden;}
     <div class="content" id="content"></div>
   </div>
   <button class="mobile-fab" id="mobileFab" style="display:none" aria-label="Add"><span>+</span></button>
+  <button class="calendar-fab" id="calendarFab" title="Calendar" aria-label="Open calendar" onclick="openCalendarModal();">📅</button>
   <button class="scroll-top-btn" id="scrollTopBtn" style="display:none" aria-label="Scroll to top">↑</button>
   <div class="pull-refresh-indicator" id="pullRefreshIndicator"><span class="prf-spinner"></span></div>
   <nav class="bottom-nav" id="bottomNav">
@@ -5161,7 +5266,7 @@ function openAccountQuickModal(){
           <div class="field"><label>Current password</label>${pwFieldHtml('qCurrentPw','Only needed to set a new one')}</div>
           <div class="field"><label>New password</label>${pwFieldHtml('qNewPw','')}</div>
         </div>
-        <p class="field-hint">For account deletion, roles, the admin key, or other accounts, use the full My Account page.</p>
+        <p class="field-hint">For roles, use the full My Account page. For account deletion, other accounts, or the admin key, use Privacy &amp; Security.</p>
       </div>
       <div class="modal-foot">
         <button class="btn danger" id="qSignOut" style="margin-right:auto">Sign out</button>
@@ -5282,13 +5387,12 @@ function pageAccount(){
       <div class="field"><label>Admin key (only needed if changing to Staff or Admin)</label>${pwFieldHtml('acctAdminKeyInput','')}</div>
     </div>
     <button class="btn secondary" onclick="saveAccountRole()">Save access level</button>
-  </div>
-  <div class="card panel">
-    <div class="panel-head"><h3>Other accounts</h3><div class="hint">${ACCOUNTS.length} total</div></div>
-    <p class="field-hint" style="margin-bottom:8px">You can delete any account except the one you're currently signed in as — at least one account must always remain.</p>
-    <div class="table-wrap"><table class="datatable"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead>
-    <tbody id="otherAccountsBody">${renderOtherAccountRows()}</tbody></table></div>
   </div>` : ''}
+  <div class="card panel">
+    <div class="panel-head"><h3>Session</h3><div class="hint">Signed in right now</div></div>
+    <p style="font-size:12.5px;color:var(--muted)">${esc(SESSION.fullName)} (${esc(SESSION.username)}) · <span class="badge ${SESSION.role==='ADMIN'?'gold':SESSION.role==='STAFF'?'blue':'grey'}">${esc(SESSION.role)}</span></p>
+    <p class="field-hint" style="margin-top:6px">A page refresh always signs everyone out and returns to the sign-in screen — sessions never persist silently across reloads.</p>
+  </div>
   <div class="card panel">
     <button class="btn danger" onclick="promptSignOut()">Sign out</button>
   </div>`;
@@ -5339,26 +5443,6 @@ function bindAccountPage(){
     const repoWrap = document.getElementById('avatarRepositionWrap'); if(repoWrap) repoWrap.style.display='none';
     persistAvatar();
   };
-  if(isAdmin()){
-    const bindDeleteButtons = ()=>{
-      document.querySelectorAll('[data-del-account]').forEach(btn=>{
-        btn.onclick = async ()=>{
-          const uname = btn.dataset.delAccount;
-          if(uname===SESSION.username) return; // guard: never allow deleting yourself
-          if(ACCOUNTS.length<=1) return; // guard: never allow the last account to be removed
-          confirmModal(`Delete the account "${uname}"? This cannot be undone.`, async ()=>{
-            ACCOUNTS = ACCOUNTS.filter(a=>a.username!==uname);
-            await saveAccounts(ACCOUNTS);
-            const tbody = document.getElementById('otherAccountsBody');
-            if(tbody) tbody.innerHTML = renderOtherAccountRows();
-            bindDeleteButtons();
-            toast('Account deleted');
-          }, {confirmLabel:'Delete', danger:true});
-        };
-      });
-    };
-    bindDeleteButtons();
-  }
 }
 function saveAccountProfile(){
   const acc = ACCOUNTS.find(a=>a.username===SESSION.username); if(!acc) return;
@@ -5819,7 +5903,7 @@ function restartOutstandingSummaryTimer(){
   outstandingSummaryTimer = setInterval(checkOutstandingSummaryAlert, ms);
 }
 restartOutstandingSummaryTimer();
-setInterval(()=>{ checkScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); }, 20000);
+setInterval(()=>{ checkScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
 
 /* ================= navigation ================= */
 const NAV = [
@@ -6366,7 +6450,7 @@ const PAGE_META = {
   feedback:['Feedback','Suggestions, complaints and requests'],
   setup:['Setup','Institution, term, classes, shelves and configuration'],
   settings:['Personalization','Appearance, typography, icons and backgrounds'],
-  security:['Privacy & Security','Admin key, lockout and account creation rules'],
+  security:['Privacy & Security','Admin key, lockout, account creation and other accounts'],
   activitylog:['Activity Log','A running trail of changes made across the app'],
   account:['My Account','Your profile, password and access'],
   backup:['Backup & Restore','Data backup, GitHub sync and checkpoints'],
@@ -6446,6 +6530,324 @@ function setHeader(){
   $('#pageTitle').textContent = t; $('#pageSubtitle').textContent = s;
   const homeBtn = document.getElementById('topHomeBtn');
   if(homeBtn) homeBtn.style.display = route==='home' ? 'none' : '';
+  const calFab = document.getElementById('calendarFab');
+  if(calFab) calFab.classList.toggle('active', route==='schedule');
+  updateCalendarFabAttention();
+}
+
+/* ================= calendar FAB: mini month calendar modal ================= */
+const CAL_DAY_NAME_TO_INDEX = {SUNDAY:0, MONDAY:1, TUESDAY:2, WEDNESDAY:3, THURSDAY:4, FRIDAY:5, SATURDAY:6};
+const CAL_INDEX_TO_DAY_NAME = {1:'MONDAY', 2:'TUESDAY', 3:'WEDNESDAY', 4:'THURSDAY', 5:'FRIDAY'};
+let calModalState = null;
+function calDateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function saveCalModalState(state){
+  try{ localStorage.setItem('alcms:calModalState', JSON.stringify(state)); }catch(e){}
+}
+function loadCalModalState(){
+  try{ const s = localStorage.getItem('alcms:calModalState'); return s ? JSON.parse(s) : null; }catch(e){ return null; }
+}
+
+/* How many expected classes today still haven't logged a library visit (mirrors the "classes yet
+   to visit" panel logic, but as a plain count for the FAB badge). */
+function calClassesPendingTodayCount(){
+  if(!DB || !Array.isArray(DB.scheduleDays)) return 0;
+  const today = new Date();
+  const dayName = CAL_INDEX_TO_DAY_NAME[today.getDay()];
+  if(!dayName) return 0;
+  const key = calDateKey(today);
+  const periods = DB.scheduleDays.filter(r=>r[0]===dayName);
+  if(!periods.length) return 0;
+  const visited = new Set((DB.registerLog||[]).filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===key).map(r=>r.cls));
+  let pending = 0;
+  periods.forEach(r=> String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(cls=>{ if(!visited.has(cls)) pending++; }));
+  return pending;
+}
+
+/* Overall attention level for the calendar FAB: 'overdue' (red, most urgent) beats 'attention'
+   (amber — due-soon loans, unread notifications, classes still expected today, or unresolved
+   feedback), which beats null (nothing needs a look). Anything that would already surface
+   somewhere else in the app (reminders, notification bell, feedback queue) also surfaces here,
+   so the FAB is a single at-a-glance "does anything need me" signal. */
+function calAttentionLevel(){
+  if(!DB) return null;
+  const hasOverdue = (DB.circulation||[]).some(t=> !t.returnDate && txnStatus(t)==='OVERDUE');
+  if(hasOverdue) return 'overdue';
+  const hasDueSoon = (DB.circulation||[]).some(t=>{
+    if(t.returnDate || txnStatus(t)!=='BORROWED') return false;
+    const due = parseAnyDate(t.dueDate); if(!due) return false;
+    const days = daysBetween(new Date(), due);
+    return days!==null && days<=1; // matches the "due soon" (amber) calendar tier
+  });
+  const hasPendingClasses = calClassesPendingTodayCount() > 0;
+  const hasUnreadNotif = typeof unreadNotificationCount==='function' && unreadNotificationCount() > 0;
+  const hasNewFeedback = (DB.feedback||[]).some(f=>f.status==='NEW');
+  if(hasDueSoon || hasPendingClasses || hasUnreadNotif || hasNewFeedback) return 'attention';
+  return null;
+}
+function updateCalendarFabAttention(){
+  const calFab = document.getElementById('calendarFab');
+  if(!calFab) return;
+  const level = calAttentionLevel();
+  
+  // Calculate badge count: overdue items + due-soon items + pending classes + new feedback
+  let badgeCount = 0;
+  const overdue = (DB.circulation||[]).filter(t=> !t.returnDate && txnStatus(t)==='OVERDUE').length;
+  const dueSoon = (DB.circulation||[]).filter(t=>{
+    if(t.returnDate || txnStatus(t)!=='BORROWED') return false;
+    const due = parseAnyDate(t.dueDate); if(!due) return false;
+    const days = daysBetween(new Date(), due);
+    return days!==null && days<=1;
+  }).length;
+  const pendingClasses = calClassesPendingTodayCount();
+  const newFeedback = (DB.feedback||[]).filter(f=>f.status==='NEW').length;
+  const unreadNotif = typeof unreadNotificationCount==='function' ? unreadNotificationCount() : 0;
+  
+  badgeCount = overdue + dueSoon + pendingClasses + newFeedback + unreadNotif;
+  
+  calFab.classList.toggle('fab-overdue', level==='overdue');
+  calFab.classList.toggle('fab-attention', level==='attention');
+  if(level && badgeCount > 0){
+    calFab.setAttribute('data-badge', badgeCount > 99 ? '99+' : badgeCount);
+  } else {
+    calFab.removeAttribute('data-badge');
+  }
+  calFab.title = level==='overdue' ? `Calendar — ${overdue} overdue item${overdue!==1?'s':''} need attention`
+    : level==='attention' ? `Calendar — ${badgeCount} item${badgeCount!==1?'s':''} need your attention`
+    : 'Calendar';
+}
+function openCalendarModal(){
+  // Try to restore the last-viewed month; if none saved, default to today
+  const saved = loadCalModalState();
+  if(saved && typeof saved.viewYear==='number' && typeof saved.viewMonth==='number'){
+    calModalState = saved;
+  } else {
+    const now = new Date();
+    calModalState = { viewYear: now.getFullYear(), viewMonth: now.getMonth(), selectedKey: calDateKey(now) };
+  }
+  renderCalendarModal();
+}
+function closeCalendarModal(){ 
+  if(calModalState) saveCalModalState({viewYear: calModalState.viewYear, viewMonth: calModalState.viewMonth});
+  $('#modalRoot').innerHTML=''; 
+  calModalState = null; 
+}
+function calNavMonth(delta){
+  if(!calModalState) return;
+  let m = calModalState.viewMonth + delta, y = calModalState.viewYear;
+  if(m<0){ m=11; y--; } else if(m>11){ m=0; y++; }
+  calModalState.viewMonth = m; calModalState.viewYear = y;
+  renderCalendarModal();
+}
+function calSelectDay(key){
+  if(!calModalState) return;
+  calModalState.selectedKey = (calModalState.selectedKey===key) ? null : key;
+  renderCalendarModal();
+}
+/* Jumps to the Register page and pre-loads a class straight into batch check-in staging, so
+   clicking a "classes yet to visit" row is an actual shortcut, not just a status readout. */
+function calGoToClassCheckin(cls){
+  if(!cls) return;
+  if(!isStaff()) return requireStaff('stage check-ins');
+  closeCalendarModal();
+  route = 'register'; render();
+  const sel = document.getElementById('batchClassSelect');
+  if(sel) sel.value = cls;
+  addClassToBatch(cls);
+}
+/* Is this date within the current term? If the term dates haven't been set in Setup, every day
+   is treated as in-term (no basis to say otherwise). Outside a configured term range, the
+   weekday's gold "library visit day" pulse is suppressed — no point promising a class visit on
+   a day school isn't in session. */
+function calIsInTerm(key){
+  const start = DB.setup && DB.setup.currentTermStart ? parseAnyDate(DB.setup.currentTermStart) : null;
+  const end = DB.setup && DB.setup.currentTermEnd ? parseAnyDate(DB.setup.currentTermEnd) : null;
+  if(!start && !end) return true;
+  const d = parseAnyDate(key);
+  if(!d) return true;
+  if(start && d < start) return false;
+  if(end && d > end) return false;
+  return true;
+}
+// A loan's due date is fixed, so every open loan due on a given calendar date shares the same
+// status relative to "today". Thresholds are scaled to the standard 7-day loan period (see the
+// issue flow's addDays(now,7)) so all four tiers are actually reachable across that window:
+// overdue (date passed) → the last 2 days (due soon) → the middle stretch (due this week) →
+// the first few days after checkout, still comfortably far from due (active loan).
+const CAL_LOAN_PERIOD_DAYS = 7;
+function calLoanStatusForDate(key){
+  const openLoans = (DB.circulation||[]).filter(t=> !t.returnDate && (t.dueDate||'').slice(0,10)===key);
+  if(!openLoans.length) return null;
+  if(openLoans.some(t=>txnStatus(t)==='OVERDUE')) return 'overdue';
+  const days = daysBetween(new Date(), parseAnyDate(key));
+  if(days===null) return null;
+  if(days<=1) return 'duesoon';                    // due today or tomorrow
+  if(days<=Math.ceil(CAL_LOAN_PERIOD_DAYS*4/7)) return 'due'; // ~mid-week (days 2-4 of a 7-day loan)
+  return 'active';                                  // freshly checked out, well within the period
+}
+/* Detect if a date has reservations ready for pickup. READY reservations with a readyDate field
+   on this date are shown with a purple indicator. If no readyDate is tracked, all READY items
+   can be shown as "ready today" on today's date. */
+function calHasReadyReservations(key){
+  if(!DB || !Array.isArray(DB.reservations)) return false;
+  const ready = DB.reservations.filter(r=>r.status==='READY');
+  if(!ready.length) return false;
+  // If readyDate is tracked, use it; otherwise show all READY on today only
+  const readyOnDate = ready.filter(r=> r.readyDate ? (r.readyDate||'').slice(0,10)===key : key===calDateKey(new Date()));
+  return readyOnDate.length > 0;
+}
+function calendarMonthGridHtml(year, month, selectedKey){
+  const scheduleWeekdayIdx = new Set((DB.scheduleDays||[]).map(r=>CAL_DAY_NAME_TO_INDEX[r[0]]).filter(i=>i!==undefined));
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const totalCells = Math.ceil((firstDow+daysInMonth)/7)*7;
+  const todayKey = calDateKey(new Date());
+  let out = '';
+  for(let i=0;i<totalCells;i++){
+    const cellDate = new Date(year, month, 1 - firstDow + i);
+    const key = calDateKey(cellDate);
+    const otherMonth = cellDate.getMonth()!==month;
+    const isToday = key===todayKey;
+    const hasVisit = scheduleWeekdayIdx.has(cellDate.getDay()) && calIsInTerm(key);
+    const hasReady = calHasReadyReservations(key);
+    const loanStatus = calLoanStatusForDate(key); // null | 'overdue' | 'duesoon' | 'due' | 'active'
+    const loanDotClass = loanStatus==='overdue' ? 'red' : loanStatus==='duesoon' ? 'amber' : loanStatus==='due' ? 'green' : loanStatus==='active' ? 'blue' : '';
+    out += `<button type="button" class="cal-cell ${otherMonth?'other-month':''} ${isToday?'today':''} ${key===selectedKey?'selected':''} ${loanStatus?'has-'+loanStatus:''} ${hasVisit?'has-visit':''} ${hasReady?'has-ready':''}" data-key="${key}" onclick="calSelectDay('${key}')" aria-label="${esc(cellDate.toDateString())}">
+      <span class="cal-daynum">${cellDate.getDate()}</span>
+      ${hasVisit?'<span class="cal-dot gold"></span>':''}${hasReady?'<span class="cal-dot purple"></span>':''}${loanDotClass?`<span class="cal-dot ${loanDotClass}"></span>`:''}
+    </button>`;
+  }
+  return out;
+}
+function calendarDayDetailsHtml(key){
+  if(!key) return '';
+  const d = parseAnyDate(key);
+  if(!d) return '';
+  const dayName = CAL_INDEX_TO_DAY_NAME[d.getDay()];
+
+  // ---- classes yet to visit (expected classes for this weekday, minus those already logged this date) ----
+  let classesHtml;
+  if(dayName){
+    const periods = (DB.scheduleDays||[]).filter(r=>r[0]===dayName);
+    const visitedClasses = new Set((DB.registerLog||[]).filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===key).map(r=>r.cls));
+    const pending = [];
+    periods.forEach(r=>{
+      String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(cls=>{
+        if(!visitedClasses.has(cls)) pending.push({period:r[1]||'', time:(r[2]||'').slice(0,5), cls});
+      });
+    });
+    pending.sort((a,b)=> (a.period||'').localeCompare(b.period||''));
+    classesHtml = pending.length
+      ? pending.map(r=>`<div class="cal-event-row"><span class="badge gold">${esc(r.period)}</span> <strong>${esc(r.cls)}</strong>${r.time?` <span style="color:var(--muted);font-size:12px">· ${esc(r.time)}</span>`:''}</div>`).join('')
+      : (periods.length ? `<div class="cal-empty-note">✓ All expected classes have visited</div>` : `<div class="cal-empty-note">No classes scheduled this day</div>`);
+  } else {
+    classesHtml = `<div class="cal-empty-note">No classes scheduled — weekend</div>`;
+  }
+
+  // ---- other events: loans due/overdue on this date — red=overdue, amber=due soon,
+  // green=due this week, blue=active loan (checked out, still far from due) ----
+  const loanRows = (DB.circulation||[]).filter(t=> !t.returnDate && (t.dueDate||'').slice(0,10)===key);
+  const loanStatus = calLoanStatusForDate(key); // shared by every row above, since due date is fixed
+  const LOAN_BADGE = {
+    overdue: {cls:'red pulse-red', label:'OVERDUE'},
+    duesoon: {cls:'amber pulse-amber', label:'DUE SOON'},
+    due:     {cls:'green pulse-green', label:'DUE THIS WEEK'},
+    active:  {cls:'blue pulse-blue', label:'ACTIVE LOAN'},
+  };
+  const badgeInfo = LOAN_BADGE[loanStatus] || {cls:'grey', label:'—'};
+  const CAL_DUE_LIST_CAP = 6;
+  let eventsHtml;
+  if(loanRows.length){
+    const displayed = loanRows.slice(0, CAL_DUE_LIST_CAP);
+    const hidden = loanRows.length - CAL_DUE_LIST_CAP;
+    eventsHtml = displayed.map(t=>`<div class="cal-event-row"><span class="badge ${badgeInfo.cls}">${esc(badgeInfo.label)}</span> <strong>${esc(t.title||t.acc||'')}</strong> <span style="color:var(--muted);font-size:12px">${esc(t.name||'')}</span></div>`).join('');
+    if(hidden > 0){
+      eventsHtml += `<div style="margin-top:8px;padding:8px;background:var(--dim);border-radius:4px;font-size:12px;color:var(--muted);text-align:center"><strong>+${hidden} more</strong> — <a href="#" onclick="closeCalendarModal();route='reminders';render();return false;" style="color:inherit;text-decoration:underline">view in Reminders</a></div>`;
+    }
+  } else {
+    eventsHtml = `<div class="cal-empty-note">No loans due this date</div>`;
+  }
+
+  // ---- reservations ready for pickup on this date ----
+  let reservationsHtml;
+  if(DB && Array.isArray(DB.reservations)){
+    const ready = DB.reservations.filter(r=>r.status==='READY' && (r.readyDate ? (r.readyDate||'').slice(0,10)===key : key===calDateKey(new Date())));
+    reservationsHtml = ready.length
+      ? ready.map(r=>`<div class="cal-event-row"><span class="badge purple" style="background:#9B7FB8">${esc('READY FOR PICKUP')}</span> <strong>${esc(r.title)}</strong> <span style="color:var(--muted);font-size:12px">${esc(r.name||r.cls||'')}</span></div>`).join('')
+      : '';
+  } else {
+    reservationsHtml = '';
+  }
+  
+  return `
+  <div class="cal-day-dropdown">
+    <h4 style="margin:0 0 10px;font-size:13px">${esc(d.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'short',year:'numeric'}))}</h4>
+    <div class="cal-section-label">📚 Classes yet to visit</div>
+    ${classesHtml}
+    ${reservationsHtml ? `<div class="cal-section-label" style="margin-top:12px">🎁 Reservations</div>${reservationsHtml}` : ''}
+    <div class="cal-section-label" style="margin-top:${reservationsHtml ? '12px' : '12px'}">🔔 Other events</div>
+    ${eventsHtml}
+  </div>`;
+}
+function renderCalendarModal(){
+  if(!calModalState) return;
+  const {viewYear, viewMonth, selectedKey} = calModalState;
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-GB',{month:'long', year:'numeric'});
+  const html = `
+  <div class="modal-backdrop cal-modal" id="mb">
+    <div class="modal">
+      <div class="modal-head"><h3>📅 Library calendar</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div class="cal-nav">
+          <button class="btn secondary small" id="calPrev" aria-label="Previous month">‹</button>
+          <strong>${esc(monthLabel)}</strong>
+          <button class="btn secondary small" id="calNext" aria-label="Next month">›</button>
+          <button class="btn secondary small" id="calToday" title="Jump to today" style="margin-left:auto">Today</button>
+        </div>
+        <div class="cal-legend">
+          <span><span class="cal-dot gold static"></span> Library visit day</span>
+          <span><span class="cal-dot purple static"></span> Reservation ready</span>
+          <span><span class="cal-dot blue static"></span> Active loan</span>
+          <span><span class="cal-dot green static"></span> Due this week</span>
+          <span><span class="cal-dot amber static"></span> Due soon</span>
+          <span><span class="cal-dot red static"></span> Overdue</span>
+        </div>
+        <div class="cal-grid">
+          ${['S','M','T','W','T','F','S'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+          ${calendarMonthGridHtml(viewYear, viewMonth, selectedKey)}
+        </div>
+        <div id="calDayDetails">${calendarDayDetailsHtml(selectedKey)}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="calFullSchedule">Full weekly schedule</button>
+        <button class="btn secondary" id="mCancel">Close</button>
+      </div>
+    </div>
+  </div>`;
+  $('#modalRoot').innerHTML = html;
+  $('#mClose').onclick = closeCalendarModal;
+  $('#mCancel').onclick = closeCalendarModal;
+  $('#mb').addEventListener('click', e=>{ if(e.target.id==='mb') closeCalendarModal(); });
+  $('#calPrev').onclick = ()=> calNavMonth(-1);
+  $('#calNext').onclick = ()=> calNavMonth(1);
+  $('#calToday').onclick = ()=> { const now = new Date(); calModalState.viewYear = now.getFullYear(); calModalState.viewMonth = now.getMonth(); calModalState.selectedKey = calDateKey(now); renderCalendarModal(); };
+  $('#calFullSchedule').onclick = ()=>{ closeCalendarModal(); route='schedule'; render(); };
+  
+  // Swipe gestures for month navigation on mobile
+  if(window.innerWidth <= 900){
+    let swipeStartX = 0;
+    const gridEl = document.querySelector('.cal-grid');
+    if(gridEl){
+      gridEl.addEventListener('touchstart', e=>{ swipeStartX = e.touches[0].clientX; }, false);
+      gridEl.addEventListener('touchend', e=>{
+        const swipeEndX = e.changedTouches[0].clientX;
+        const diff = swipeEndX - swipeStartX;
+        if(Math.abs(diff) > 40){
+          if(diff > 0) calNavMonth(-1);  // swipe right = previous month
+          else calNavMonth(1);           // swipe left = next month
+        }
+      }, false);
+    }
+  }
 }
 
 /* ================= generic modal ================= */
@@ -12094,9 +12496,9 @@ function renderBatchStagingHtml(){
   ` : `<div class="stage-empty">No students staged yet — add one by ID, or add a whole class above.</div>`}
   `;
 }
-function addClassToBatch(){
+function addClassToBatch(clsOverride){
   if(!isStaff()) return requireStaff('stage check-ins');
-  const cls = document.getElementById('batchClassSelect').value;
+  const cls = clsOverride || document.getElementById('batchClassSelect').value;
   if(!cls){ toast('Select a class first'); return; }
   const members = DB.users.filter(u=>u.cls===cls);
   if(!members.length){ toast('No members found in that class'); return; }
@@ -14355,7 +14757,8 @@ const GUIDE_SECTIONS = [
   {h:'Setup', ic:'gear', b:'Library configuration: classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list, fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
   {h:'Personalization', ic:'palette', b:'Everything else: theme and colour palette, clock style and date format (the analogue clock now shows the date on its face), typography, icons, lockscreen appearance and backgrounds — including separate Section and Modal background colours, and a notification bell you can show or hide on the sign-in screen.'},
   {h:'Lockscreen', ic:'lock', b:'Before signing in you can still check your own loans — there\'s a search bar directly above the sign-in box (with live suggestions as you type a name or ID), the notification bell previews what\'s waiting for you, and Create Account opens as a wider card centred over the whole screen so every field fits without excess scrolling.'},
-  {h:'My Account', ic:'fingerprint', b:'Your profile photo, name, email, phone, password and security question, and — for admins — role and other accounts. Also home to Fingerprint &amp; Face ID sign-in: register this device once (needs https:// or localhost, plus a fingerprint/face sensor) to add a one-touch "Sign in with fingerprint / Face ID" button to the sign-in screen. Your username and password always keep working alongside it, and are what you use to register or remove a device.'},
+  {h:'My Account', ic:'fingerprint', b:'Your profile photo, name, email, phone, password and security question, and — for admins — your own access level. Also home to Fingerprint &amp; Face ID sign-in: register this device once (needs https:// or localhost, plus a fingerprint/face sensor) to add a one-touch "Sign in with fingerprint / Face ID" button to the sign-in screen. Your username and password always keep working alongside it, and are what you use to register or remove a device.'},
+  {h:'Privacy & Security', ic:'lock', b:'Admin-only: the admin key, login lockout after repeated wrong passwords, inactivity auto-lock, whether new signups need the admin key, and the full list of other accounts on this device (delete any except your own). Also explains what data this app stores and where.'},
   {h:'About', ic:'info', b:'What alcms does, how your data is stored, account roles, version info, and how to reach support — plus a "Download PDF" button for this entire user guide.'},
 ];
 function pageGuide(){
@@ -15141,14 +15544,36 @@ function pageSecurity(){
     <button class="btn secondary" onclick="saveSignupSecurity()">Save</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Session</h3><div class="hint">Signed in right now</div></div>
-    <p style="font-size:12.5px;color:var(--muted)">${esc(SESSION.fullName)} (${esc(SESSION.username)}) · <span class="badge ${SESSION.role==='ADMIN'?'gold':SESSION.role==='STAFF'?'blue':'grey'}">${esc(SESSION.role)}</span></p>
-    <p class="field-hint" style="margin-top:6px">A page refresh always signs everyone out and returns to the sign-in screen — sessions never persist silently across reloads.</p>
+    <div class="panel-head"><h3>Other accounts</h3><div class="hint">${ACCOUNTS.length} total</div></div>
+    <p class="field-hint" style="margin-bottom:8px">You can delete any account except the one you're currently signed in as — at least one account must always remain.</p>
+    <div class="table-wrap"><table class="datatable"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+    <tbody id="otherAccountsBody">${renderOtherAccountRows()}</tbody></table></div>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Data &amp; privacy</h3><div class="hint">What this app stores, and where</div></div>
     <p style="font-size:12.5px;color:var(--muted);line-height:1.7">Everything — catalogue, members, loans, accounts, preferences — is stored only in this browser (or wherever you explicitly sync it: GitHub, a downloaded backup, or Google Drive). Nothing is sent to Claude or any third party automatically. WhatsApp receipts and reminders, when enabled, render a designed image (or PDF) card on your device and share it via WhatsApp, your clipboard, or a download — the card itself isn't stored or sent anywhere by this app besides that.</p>
   </div>`;
+}
+function bindSecurityPage(){
+  if(!isAdmin()) return;
+  const bindDeleteButtons = ()=>{
+    document.querySelectorAll('[data-del-account]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const uname = btn.dataset.delAccount;
+        if(uname===SESSION.username) return; // guard: never allow deleting yourself
+        if(ACCOUNTS.length<=1) return; // guard: never allow the last account to be removed
+        confirmModal(`Delete the account "${uname}"? This cannot be undone.`, async ()=>{
+          ACCOUNTS = ACCOUNTS.filter(a=>a.username!==uname);
+          await saveAccounts(ACCOUNTS);
+          const tbody = document.getElementById('otherAccountsBody');
+          if(tbody) tbody.innerHTML = renderOtherAccountRows();
+          bindDeleteButtons();
+          toast('Account deleted');
+        }, {confirmLabel:'Delete', danger:true});
+      };
+    });
+  };
+  bindDeleteButtons();
 }
 function saveSignupSecurity(){
   DB.setup.requireKeyForAllSignups = document.getElementById('setRequireKeyForAllSignups')?.checked ?? false;
@@ -15511,6 +15936,7 @@ function render(){
   if(route==='setup' && isAdmin()){ renderPromoteSourceList(); renderPromoteStaging(); }
   if((route==='settings'||route==='setup') && isAdmin()){ bindSettingsUploaders(); }
   if(route==='account'){ bindAccountPage(); }
+  if(route==='security'){ bindSecurityPage(); }
   if(route==='circulation'){ bindCirculationPickers(); renderIssueStaging(); renderReturnStaging(); }
   if(route==='reservations'){ bindReservationPickers(); }
 
