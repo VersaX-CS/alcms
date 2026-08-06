@@ -3513,10 +3513,11 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
      on modules that have both — the extra offset is simply unused space on pages without one. */
   bottom:calc(72px + env(safe-area-inset-bottom,0) + 14px + 52px + 12px);
   width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
-  background:var(--forest); color:#F3EEDD; font-size:22px; line-height:1;
+  background:var(--forest); color:#F3EEDD; font-size:20px; line-height:1;
   display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.28);
-  transition:transform .12s ease;
+  transition:transform .12s ease; font-weight:700;
 }
+#fabDate{ font-family:Montserrat, -apple-system, system-ui, sans-serif; }
 .calendar-fab:active{ transform:scale(.92);}
 .calendar-fab.active{ background:var(--brass); color:#221704;}
 /* Needs-attention states: overdue loans/reminders take priority (red, faster pulse) over the
@@ -3553,6 +3554,9 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 .cal-modal .modal{ max-width:480px; }
 .cal-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
 .cal-nav strong{ font-size:14px; }
+.cal-nav-btn{ background:none; border:none; cursor:pointer; font-size:16px; padding:4px 8px; color:var(--text); font-weight:600; transition:color .12s ease; }
+.cal-nav-btn:hover{ color:var(--brass); }
+.cal-nav-btn:active{ transform:scale(.95); }
 .cal-legend{ display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:10px; }
 .cal-legend span{ display:inline-flex; align-items:center; gap:6px; }
 .cal-dot.static{ position:static; display:inline-block; }
@@ -3573,12 +3577,15 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 .cal-dot.amber{ background:var(--amber); left:calc(50% + 2px); }
 .cal-dot.green{ background:var(--ok); left:calc(50% + 2px); }
 .cal-dot.blue{ background:var(--active-loan); left:calc(50% + 2px); }
-.cal-cell.has-visit .cal-dot.gold{ animation:calPulseGold 1.4s ease-in-out infinite; }
-.cal-cell.has-ready .cal-dot.purple{ animation:calPulsePurple 1.6s ease-in-out infinite; }
-.cal-cell.has-overdue .cal-dot.red{ animation:calPulseRed 1.4s ease-in-out infinite; }
-.cal-cell.has-duesoon .cal-dot.amber{ animation:calPulseAmber 1.4s ease-in-out infinite; }
-.cal-cell.has-due .cal-dot.green{ animation:calPulseGreen 1.4s ease-in-out infinite; }
-.cal-cell.has-active .cal-dot.blue{ animation:calPulseBlue 2.2s ease-in-out infinite; }
+/* Pulsing is reserved for TODAY's cell only — every other day with the same status still shows
+   its dot (see calendarMonthGridHtml), just static, so the eye is drawn to "what's happening
+   now" instead of every date on the grid animating at once. */
+.cal-cell.today.has-visit .cal-dot.gold{ animation:calPulseGold 1.4s ease-in-out infinite; }
+.cal-cell.today.has-ready .cal-dot.purple{ animation:calPulsePurple 1.6s ease-in-out infinite; }
+.cal-cell.today.has-overdue .cal-dot.red{ animation:calPulseRed 1.4s ease-in-out infinite; }
+.cal-cell.today.has-duesoon .cal-dot.amber{ animation:calPulseAmber 1.4s ease-in-out infinite; }
+.cal-cell.today.has-due .cal-dot.green{ animation:calPulseGreen 1.4s ease-in-out infinite; }
+.cal-cell.today.has-active .cal-dot.blue{ animation:calPulseBlue 2.2s ease-in-out infinite; }
 @keyframes calPulseGold{ 0%,100%{ box-shadow:0 0 0 0 rgba(184,134,62,.55);} 50%{ box-shadow:0 0 0 5px rgba(184,134,62,0);} }
 @keyframes calPulsePurple{ 0%,100%{ box-shadow:0 0 0 0 rgba(155,127,184,.5);} 50%{ box-shadow:0 0 0 5px rgba(155,127,184,0);} }
 @keyframes calPulseRed{ 0%,100%{ box-shadow:0 0 0 0 rgba(168,69,47,.55);} 50%{ box-shadow:0 0 0 5px rgba(168,69,47,0);} }
@@ -3935,7 +3942,7 @@ html, body{ overflow-x:hidden;}
     <div class="content" id="content"></div>
   </div>
   <button class="mobile-fab" id="mobileFab" style="display:none" aria-label="Add"><span>+</span></button>
-  <button class="calendar-fab" id="calendarFab" title="Calendar" aria-label="Open calendar" onclick="openCalendarModal();">📅</button>
+  <button class="calendar-fab" id="calendarFab" title="Calendar" aria-label="Open calendar" onclick="openCalendarModal();"><span id="fabDate">12</span></button>
   <button class="scroll-top-btn" id="scrollTopBtn" style="display:none" aria-label="Scroll to top">↑</button>
   <div class="pull-refresh-indicator" id="pullRefreshIndicator"><span class="prf-spinner"></span></div>
   <nav class="bottom-nav" id="bottomNav">
@@ -6525,6 +6532,10 @@ function reminderNeedsCount(){
   return overdue + dueSoon;
 }
 
+function updateFabDate(){
+  const fabDate = document.getElementById('fabDate');
+  if(fabDate) fabDate.textContent = new Date().getDate();
+}
 function setHeader(){
   const [t,s] = PAGE_META[route] || ['','']
   $('#pageTitle').textContent = t; $('#pageSubtitle').textContent = s;
@@ -6532,6 +6543,7 @@ function setHeader(){
   if(homeBtn) homeBtn.style.display = route==='home' ? 'none' : '';
   const calFab = document.getElementById('calendarFab');
   if(calFab) calFab.classList.toggle('active', route==='schedule');
+  updateFabDate();
   updateCalendarFabAttention();
 }
 
@@ -6707,13 +6719,16 @@ function calendarMonthGridHtml(year, month, selectedKey){
     const key = calDateKey(cellDate);
     const otherMonth = cellDate.getMonth()!==month;
     const isToday = key===todayKey;
-    const hasVisit = scheduleWeekdayIdx.has(cellDate.getDay()) && calIsInTerm(key);
+    // Only show pulsing visit day indicator on TODAY if it's a scheduled visit day
+    const hasVisit = isToday && scheduleWeekdayIdx.has(cellDate.getDay()) && calIsInTerm(key);
+    // But show a static dot on all other scheduled visit days (non-pulsing)
+    const isScheduledDay = scheduleWeekdayIdx.has(cellDate.getDay()) && calIsInTerm(key) && !isToday;
     const hasReady = calHasReadyReservations(key);
     const loanStatus = calLoanStatusForDate(key); // null | 'overdue' | 'duesoon' | 'due' | 'active'
     const loanDotClass = loanStatus==='overdue' ? 'red' : loanStatus==='duesoon' ? 'amber' : loanStatus==='due' ? 'green' : loanStatus==='active' ? 'blue' : '';
     out += `<button type="button" class="cal-cell ${otherMonth?'other-month':''} ${isToday?'today':''} ${key===selectedKey?'selected':''} ${loanStatus?'has-'+loanStatus:''} ${hasVisit?'has-visit':''} ${hasReady?'has-ready':''}" data-key="${key}" onclick="calSelectDay('${key}')" aria-label="${esc(cellDate.toDateString())}">
       <span class="cal-daynum">${cellDate.getDate()}</span>
-      ${hasVisit?'<span class="cal-dot gold"></span>':''}${hasReady?'<span class="cal-dot purple"></span>':''}${loanDotClass?`<span class="cal-dot ${loanDotClass}"></span>`:''}
+      ${hasVisit?'<span class="cal-dot gold"></span>':''}${isScheduledDay?'<span class="cal-dot gold static" style="opacity:.4"></span>':''}${hasReady?'<span class="cal-dot purple"></span>':''}${loanDotClass?`<span class="cal-dot ${loanDotClass}"></span>`:''}
     </button>`;
   }
   return out;
@@ -6788,6 +6803,48 @@ function calendarDayDetailsHtml(key){
     ${eventsHtml}
   </div>`;
 }
+function openScheduleModalFromCalendar(){
+  if(!DB || !Array.isArray(DB.scheduleDays) || !DB.scheduleDays.length){
+    alert('No schedule data available');
+    return;
+  }
+  const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
+  const byDay = {};
+  DB.scheduleDays.forEach((r,i)=>{ (byDay[r[0]]=byDay[r[0]]||[]).push({...r, __i:i}); });
+  
+  const scheduleHtml = days.filter(d=>byDay[d]).map(d=>`
+    <div style="margin-bottom:14px">
+      <h4 style="margin:0 0 8px;font-size:12px;color:var(--muted-label);letter-spacing:.5px;font-weight:700">${d}</h4>
+      <div class="table-wrap"><table class="datatable" style="font-size:13px"><thead><tr><th>Period</th><th>Time</th><th>Class(es)</th><th>Notes</th></tr></thead>
+      <tbody>${byDay[d].map(r=>`<tr><td>${esc(r[1]||'')}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td style="color:var(--muted);font-size:12px">${esc(r[4]||'')}</td></tr>`).join('')}</tbody></table></div>
+    </div>
+  `).join('');
+
+  const html = `
+  <div class="modal-backdrop" id="scheduleModalBg">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-head"><h3>Weekly schedule</h3><button id="scheduleClose" aria-label="Close">✕</button></div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+        ${scheduleHtml}
+      </div>
+      <div class="modal-foot">
+        <button class="cal-nav-btn" id="scheduleModalClose">Close</button>
+      </div>
+    </div>
+  </div>`;
+  
+  const backdrop = document.getElementById('mb') || document.body;
+  const wrap = document.createElement('div');
+  wrap.id = 'scheduleModalWrapper';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+  
+  const closeScheduleModal = ()=>{ wrap.remove(); };
+  document.getElementById('scheduleClose').onclick = closeScheduleModal;
+  document.getElementById('scheduleModalClose').onclick = closeScheduleModal;
+  document.getElementById('scheduleModalBg').addEventListener('click', e=>{ if(e.target.id==='scheduleModalBg') closeScheduleModal(); });
+}
+
 function renderCalendarModal(){
   if(!calModalState) return;
   const {viewYear, viewMonth, selectedKey} = calModalState;
@@ -6798,10 +6855,10 @@ function renderCalendarModal(){
       <div class="modal-head"><h3>📅 Library calendar</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <div class="cal-nav">
-          <button class="btn secondary small" id="calPrev" aria-label="Previous month">‹</button>
+          <button class="cal-nav-btn" id="calPrev" aria-label="Previous month">‹</button>
           <strong>${esc(monthLabel)}</strong>
-          <button class="btn secondary small" id="calNext" aria-label="Next month">›</button>
-          <button class="btn secondary small" id="calToday" title="Jump to today" style="margin-left:auto">Today</button>
+          <button class="cal-nav-btn" id="calNext" aria-label="Next month">›</button>
+          <button class="cal-nav-btn" id="calToday" title="Jump to today" style="margin-left:auto">Today</button>
         </div>
         <div class="cal-legend">
           <span><span class="cal-dot gold static"></span> Library visit day</span>
@@ -6818,8 +6875,8 @@ function renderCalendarModal(){
         <div id="calDayDetails">${calendarDayDetailsHtml(selectedKey)}</div>
       </div>
       <div class="modal-foot">
-        <button class="btn secondary" id="calFullSchedule">Full weekly schedule</button>
-        <button class="btn secondary" id="mCancel">Close</button>
+        <button class="cal-nav-btn" id="calFullSchedule">Full weekly schedule →</button>
+        <button class="cal-nav-btn" id="mCancel">Close</button>
       </div>
     </div>
   </div>`;
@@ -6830,7 +6887,7 @@ function renderCalendarModal(){
   $('#calPrev').onclick = ()=> calNavMonth(-1);
   $('#calNext').onclick = ()=> calNavMonth(1);
   $('#calToday').onclick = ()=> { const now = new Date(); calModalState.viewYear = now.getFullYear(); calModalState.viewMonth = now.getMonth(); calModalState.selectedKey = calDateKey(now); renderCalendarModal(); };
-  $('#calFullSchedule').onclick = ()=>{ closeCalendarModal(); route='schedule'; render(); };
+  $('#calFullSchedule').onclick = ()=>{ openScheduleModalFromCalendar(); };
   
   // Swipe gestures for month navigation on mobile
   if(window.innerWidth <= 900){
