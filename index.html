@@ -3577,15 +3577,12 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 .cal-dot.amber{ background:var(--amber); left:calc(50% + 2px); }
 .cal-dot.green{ background:var(--ok); left:calc(50% + 2px); }
 .cal-dot.blue{ background:var(--active-loan); left:calc(50% + 2px); }
-/* Pulsing is reserved for TODAY's cell only — every other day with the same status still shows
-   its dot (see calendarMonthGridHtml), just static, so the eye is drawn to "what's happening
-   now" instead of every date on the grid animating at once. */
-.cal-cell.today.has-visit .cal-dot.gold{ animation:calPulseGold 1.4s ease-in-out infinite; }
-.cal-cell.today.has-ready .cal-dot.purple{ animation:calPulsePurple 1.6s ease-in-out infinite; }
-.cal-cell.today.has-overdue .cal-dot.red{ animation:calPulseRed 1.4s ease-in-out infinite; }
-.cal-cell.today.has-duesoon .cal-dot.amber{ animation:calPulseAmber 1.4s ease-in-out infinite; }
-.cal-cell.today.has-due .cal-dot.green{ animation:calPulseGreen 1.4s ease-in-out infinite; }
-.cal-cell.today.has-active .cal-dot.blue{ animation:calPulseBlue 2.2s ease-in-out infinite; }
+.cal-cell.has-visit .cal-dot.gold{ animation:calPulseGold 1.4s ease-in-out infinite; }
+.cal-cell.has-ready .cal-dot.purple{ animation:calPulsePurple 1.6s ease-in-out infinite; }
+.cal-cell.has-overdue .cal-dot.red{ animation:calPulseRed 1.4s ease-in-out infinite; }
+.cal-cell.has-duesoon .cal-dot.amber{ animation:calPulseAmber 1.4s ease-in-out infinite; }
+.cal-cell.has-due .cal-dot.green{ animation:calPulseGreen 1.4s ease-in-out infinite; }
+.cal-cell.has-active .cal-dot.blue{ animation:calPulseBlue 2.2s ease-in-out infinite; }
 @keyframes calPulseGold{ 0%,100%{ box-shadow:0 0 0 0 rgba(184,134,62,.55);} 50%{ box-shadow:0 0 0 5px rgba(184,134,62,0);} }
 @keyframes calPulsePurple{ 0%,100%{ box-shadow:0 0 0 0 rgba(155,127,184,.5);} 50%{ box-shadow:0 0 0 5px rgba(155,127,184,0);} }
 @keyframes calPulseRed{ 0%,100%{ box-shadow:0 0 0 0 rgba(168,69,47,.55);} 50%{ box-shadow:0 0 0 5px rgba(168,69,47,0);} }
