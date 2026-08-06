@@ -2534,7 +2534,7 @@ input,select,textarea{font-family:inherit;}
 
 /* --- App name: building up letter by letter with Segoe UI --- */
 .splash-title{ 
-  font-size:24px; letter-spacing:-.5px; font-weight:700; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size:38px; letter-spacing:-.5px; font-weight:700; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   text-transform:lowercase; display:flex; gap:0px; align-items:baseline;
 }
 .splash-title .letter{ 
@@ -4417,6 +4417,21 @@ function tickClocks(){
 }
 setInterval(tickClocks, 1000);
 
+/* The Home page's "today" KPIs (Returned today, Library visits today, etc.) are computed at
+   render time from todayISO() — accurate whenever a render happens, but nothing re-renders the
+   page on its own. A desk terminal realistically stays open on the Home screen for days at a
+   time, so without this check those numbers just freeze at whatever they were before midnight
+   until something else happens to trigger a re-render. Poll for the calendar day changing and
+   force one when it does. */
+let __lastKnownDate = todayISO();
+setInterval(()=>{
+  const d = todayISO();
+  if(d !== __lastKnownDate){
+    __lastKnownDate = d;
+    if(route==='home') render();
+  }
+}, 30000);
+
 /* ================= mobile sidebar ================= */
 function closeMobileSidebar(){
   if(window.innerWidth > 900) return; // desktop sidebar stays as the person left it
@@ -4750,6 +4765,7 @@ function mobileAuthGo(tab){
   const scr = $('#authScreen');
   if(scr) scr.classList.add('mobile-step-form');
   setAuthTab(tab);
+  maybeAutoPromptBiometric();
 }
 function mobileAuthBack(){
   const scr = $('#authScreen');
@@ -4971,6 +4987,12 @@ function maybeAutoPromptBiometric(){
   if(authTab!=='signin') return;
   if(!webauthnSupported()) return;
   if(!ACCOUNTS.some(a=>(a.biometricCredentials||[]).length)) return;
+  // On mobile, sign-in starts on the welcome/carousel step (no form visible yet) and only
+  // switches to the actual sign-in form once the person taps the "Sign in" tab. Don't fire the
+  // OS biometric prompt while they're still looking at the welcome carousel.
+  const scr = $('#authScreen');
+  const isMobileStep = window.matchMedia('(max-width:820px)').matches;
+  if(isMobileStep && !(scr && scr.classList.contains('mobile-step-form'))) return;
   clearTimeout(autoBiometricTimer);
   autoBiometricTimer = setTimeout(()=>{ if(authTab==='signin' && $('#authScreen').classList.contains('show')) signInWithBiometric(true); }, 500);
 }
@@ -6802,6 +6824,53 @@ function GenericModule(cfg){
       </table></div>
       <div class="table-count">${cfg.selectable? `<label class="mobile-selall"><input type="checkbox" id="selallmobile_${cfg.key}" ${rows.length && selCount===rows.length?'checked':''}> Select all</label>`:''}${capped? `Showing first ${CAP} of ${total} matches — refine your search to narrow it down` : `${total} of ${cfg.data().length} records`}${cfg.selectable && selCount? ` · ${selCount} selected`:''}</div>`;
   }
+  function selectedRows(){
+    if(!cfg.selectable) return [];
+    return filteredRows().filter(r=>state.selected.has(keyOf(r)));
+  }
+  // Builds the "Print/Export/Import/⋯ More" cluster in the panel head. Pulled out of render()
+  // so it can also be recomputed on its own whenever the selection changes — some extraActions
+  // labels (e.g. Catalogue's Withdraw/Reinstate toggle) depend on what's currently selected, and
+  // the head only otherwise re-renders when the whole module does.
+  function headActionsHtml(){
+    const items = [];
+    if(cfg.exportColumns){
+      // cfg.hidePrint: skip the generic table Print when the module already has its
+      // own dedicated print action (e.g. Circulation's "Print transactions", Register's
+      // "Print register") in extraActions — having both is redundant.
+      if(!cfg.hidePrint) items.push({act:`print-${cfg.key}`, label:'🖶 Print', primary:true});
+      items.push({act:`pdf-${cfg.key}`, label:'⭳ Download PDF'});
+      items.push({act:`export-${cfg.key}`, label:'⭳ Export'});
+    }
+    if(cfg.onImport && isAdmin()) items.push({act:`import-${cfg.key}`, label:'⭱ Import'});
+    (cfg.extraActions||[]).forEach((a,i)=>{
+      if(a.alwaysShow||isAdmin()){
+        const label = typeof a.label==='function' ? a.label(selectedRows()) : a.label;
+        items.push({act:`extra${i}-${cfg.key}`, label:esc(label), danger:a.danger, primary:!!a.primary});
+      }
+    });
+    let menuHtml = '';
+    if(items.length){
+      // cfg.onAdd is what puts an Add button (admin) or a "View only" badge (non-admin)
+      // next to More — when it's absent, More would be the only thing in the header, so
+      // promote the most-used action to a standalone button beside it instead: normally
+      // the generic Print, or — for modules that hide it in favor of their own dedicated
+      // print action (cfg.hidePrint) — whichever extraAction is flagged primary:true.
+      let promoted = null;
+      if(!cfg.onAdd){
+        const idx = items.findIndex(it=>it.primary);
+        if(idx!==-1) promoted = items.splice(idx,1)[0];
+      }
+      const promotedHtml = promoted ? `<button class="btn secondary small" data-act="${promoted.act}">${promoted.label}</button>` : '';
+      menuHtml = items.length ? `${promotedHtml}<div class="dropdown-wrap">
+        <button class="btn secondary small" data-dropdown-toggle="moremenu_${cfg.key}">⋯ More</button>
+        <div class="dropdown-menu" id="moremenu_${cfg.key}">${items.map(it=>`<a data-act="${it.act}" ${it.danger?'class="danger-text"':''}>${it.label}</a>`).join('')}</div>
+      </div>` : promotedHtml;
+    }
+    return `${menuHtml}
+      ${cfg.onAdd && isAdmin() ? `<button class="btn small" data-act="add-${cfg.key}">${cfg.addLabel||'+ Add'}</button>`:''}
+      ${cfg.onAdd && !isAdmin() ? `<span class="badge grey">View only</span>`:''}`;
+  }
   return {
     resultsHtml,
     render(){
@@ -6809,42 +6878,7 @@ function GenericModule(cfg){
       <div class="card panel">
         <div class="panel-head" data-mod="${cfg.key}">
           <div><h3>${esc(cfg.title)}</h3><div class="hint">${esc(cfg.hint||'')}</div></div>
-          <div class="panel-head-actions">
-            ${(()=>{
-              const items = [];
-              if(cfg.exportColumns){
-                // cfg.hidePrint: skip the generic table Print when the module already has its
-                // own dedicated print action (e.g. Circulation's "Print transactions", Register's
-                // "Print register") in extraActions — having both is redundant.
-                if(!cfg.hidePrint) items.push({act:`print-${cfg.key}`, label:'🖶 Print', primary:true});
-                items.push({act:`pdf-${cfg.key}`, label:'⭳ Download PDF'});
-                items.push({act:`export-${cfg.key}`, label:'⭳ Export'});
-              }
-              if(cfg.onImport && isAdmin()) items.push({act:`import-${cfg.key}`, label:'⭱ Import'});
-              (cfg.extraActions||[]).forEach((a,i)=>{
-                if(a.alwaysShow||isAdmin()) items.push({act:`extra${i}-${cfg.key}`, label:esc(a.label), danger:a.danger, primary:!!a.primary});
-              });
-              if(!items.length) return '';
-              // cfg.onAdd is what puts an Add button (admin) or a "View only" badge (non-admin)
-              // next to More — when it's absent, More would be the only thing in the header, so
-              // promote the most-used action to a standalone button beside it instead: normally
-              // the generic Print, or — for modules that hide it in favor of their own dedicated
-              // print action (cfg.hidePrint) — whichever extraAction is flagged primary:true.
-              let promoted = null;
-              if(!cfg.onAdd){
-                const idx = items.findIndex(it=>it.primary);
-                if(idx!==-1) promoted = items.splice(idx,1)[0];
-              }
-              const promotedHtml = promoted ? `<button class="btn secondary small" data-act="${promoted.act}">${promoted.label}</button>` : '';
-              if(!items.length) return promotedHtml;
-              return `${promotedHtml}<div class="dropdown-wrap">
-                <button class="btn secondary small" data-dropdown-toggle="moremenu_${cfg.key}">⋯ More</button>
-                <div class="dropdown-menu" id="moremenu_${cfg.key}">${items.map(it=>`<a data-act="${it.act}" ${it.danger?'class="danger-text"':''}>${it.label}</a>`).join('')}</div>
-              </div>`;
-            })()}
-            ${cfg.onAdd && isAdmin() ? `<button class="btn small" data-act="add-${cfg.key}">${cfg.addLabel||'+ Add'}</button>`:''}
-            ${cfg.onAdd && !isAdmin() ? `<span class="badge grey">View only</span>`:''}
-          </div>
+          <div class="panel-head-actions" id="headactions_${cfg.key}">${headActionsHtml()}</div>
         </div>
         <div class="toolbar">
           <div class="search-input-wrap">
@@ -6900,43 +6934,54 @@ function GenericModule(cfg){
         if(fromEl) fromEl.onchange = e=>{ state.filters.__from = e.target.value; updateResultsOnly(); };
         if(toEl) toEl.onchange = e=>{ state.filters.__to = e.target.value; updateResultsOnly(); };
       }
-      const addBtn = document.querySelector(`[data-act="add-${cfg.key}"]`);
-      if(addBtn) addBtn.onclick = ()=> cfg.onAdd();
-      // Mobile FAB mirrors whatever the "+ Add" button does for this module — one shared
-      // floating button instead of hunting for the toolbar action on a small screen.
-      if(cfg.onAdd && isAdmin()) showMobileFab(cfg.addLabel||'+ Add', cfg.onAdd);
-      else hideMobileFab();
-      const importBtn = document.querySelector(`[data-act="import-${cfg.key}"]`);
-      if(importBtn) importBtn.onclick = ()=> cfg.onImport();
-      (cfg.extraActions||[]).forEach((a,i)=>{
-        const btn = document.querySelector(`[data-act="extra${i}-${cfg.key}"]`);
-        if(btn) btn.onclick = ()=> a.onClick();
-      });
-      const rowsForAction = ()=>{
-        const rows = filteredRows();
-        if(cfg.selectable && state.selected.size) return rows.filter(r=>state.selected.has(keyOf(r)));
-        return rows;
-      };
-      const exportBtn = document.querySelector(`[data-act="export-${cfg.key}"]`);
-      if(exportBtn) exportBtn.onclick = ()=>{
-        openExportModal(cfg.title, cfg.key+'_export_'+todayISO(), cfg.exportColumns, rowsForAction);
-      };
-      const printBtn = document.querySelector(`[data-act="print-${cfg.key}"]`);
-      if(printBtn) printBtn.onclick = ()=>{
-        const rows = rowsForAction();
-        if(!rows.length) return toast('No records match the current search/filters');
-        const usingSelection = cfg.selectable && state.selected.size>0;
-        printReport(cfg.title, `${rows.length} record(s) ${usingSelection? 'selected' : 'matching current search/filters'}`, cfg.exportColumns, rows);
-      };
-      // "Download PDF" builds the exact same jsPDF document as Print (same header, table
-      // styling, footer placement — see buildReportPdf/outputReportPdf), then saves it directly
-      // instead of opening the browser print dialog on it.
-      const pdfBtn = document.querySelector(`[data-act="pdf-${cfg.key}"]`);
-      if(pdfBtn) pdfBtn.onclick = ()=>{
-        const rows = rowsForAction();
-        if(!rows.length) return toast('No records match the current search/filters');
-        const usingSelection = cfg.selectable && state.selected.size>0;
-        printReport(cfg.title, `${rows.length} record(s) ${usingSelection? 'selected' : 'matching current search/filters'}`, cfg.exportColumns, rows, {asPdf:true, filename: filenameWithPeriod(cfg.key+'_'+todayISO())});
+      function bindHeadActions(){
+        const addBtn = document.querySelector(`[data-act="add-${cfg.key}"]`);
+        if(addBtn) addBtn.onclick = ()=> cfg.onAdd();
+        // Mobile FAB mirrors whatever the "+ Add" button does for this module — one shared
+        // floating button instead of hunting for the toolbar action on a small screen.
+        if(cfg.onAdd && isAdmin()) showMobileFab(cfg.addLabel||'+ Add', cfg.onAdd);
+        else hideMobileFab();
+        const importBtn = document.querySelector(`[data-act="import-${cfg.key}"]`);
+        if(importBtn) importBtn.onclick = ()=> cfg.onImport();
+        (cfg.extraActions||[]).forEach((a,i)=>{
+          const btn = document.querySelector(`[data-act="extra${i}-${cfg.key}"]`);
+          if(btn) btn.onclick = ()=> a.onClick(selectedRows());
+        });
+        const rowsForAction = ()=>{
+          const rows = filteredRows();
+          if(cfg.selectable && state.selected.size) return rows.filter(r=>state.selected.has(keyOf(r)));
+          return rows;
+        };
+        const exportBtn = document.querySelector(`[data-act="export-${cfg.key}"]`);
+        if(exportBtn) exportBtn.onclick = ()=>{
+          openExportModal(cfg.title, cfg.key+'_export_'+todayISO(), cfg.exportColumns, rowsForAction);
+        };
+        const printBtn = document.querySelector(`[data-act="print-${cfg.key}"]`);
+        if(printBtn) printBtn.onclick = ()=>{
+          const rows = rowsForAction();
+          if(!rows.length) return toast('No records match the current search/filters');
+          const usingSelection = cfg.selectable && state.selected.size>0;
+          printReport(cfg.title, `${rows.length} record(s) ${usingSelection? 'selected' : 'matching current search/filters'}`, cfg.exportColumns, rows);
+        };
+        // "Download PDF" builds the exact same jsPDF document as Print (same header, table
+        // styling, footer placement — see buildReportPdf/outputReportPdf), then saves it directly
+        // instead of opening the browser print dialog on it.
+        const pdfBtn = document.querySelector(`[data-act="pdf-${cfg.key}"]`);
+        if(pdfBtn) pdfBtn.onclick = ()=>{
+          const rows = rowsForAction();
+          if(!rows.length) return toast('No records match the current search/filters');
+          const usingSelection = cfg.selectable && state.selected.size>0;
+          printReport(cfg.title, `${rows.length} record(s) ${usingSelection? 'selected' : 'matching current search/filters'}`, cfg.exportColumns, rows, {asPdf:true, filename: filenameWithPeriod(cfg.key+'_'+todayISO())});
+        };
+      }
+      bindHeadActions();
+      // Re-render just the head-actions cluster (and rebind its buttons) whenever the selection
+      // changes — some extraActions labels depend on what's selected (e.g. Catalogue's
+      // Withdraw/Reinstate toggle), and this is the only thing that needs to reflect that live.
+      const updateHeadActionsOnly = ()=>{
+        const el = document.getElementById('headactions_'+cfg.key);
+        if(el) el.innerHTML = headActionsHtml();
+        bindHeadActions();
       };
       function bindRowSelection(){
         if(!cfg.selectable) return;
@@ -6945,6 +6990,7 @@ function GenericModule(cfg){
           let rows = filteredRows(); const CAP = cfg.cap || 250; if(rows.length>CAP) rows = rows.slice(0,CAP);
           rows.forEach(r=> e.target.checked ? state.selected.add(keyOf(r)) : state.selected.delete(keyOf(r)));
           updateResultsOnly();
+          updateHeadActionsOnly();
         };
         if(selAll) selAll.onchange = toggleAll;
         const selAllMobile = document.getElementById('selallmobile_'+cfg.key);
@@ -6954,6 +7000,7 @@ function GenericModule(cfg){
             if(e.target.checked) state.selected.add(e.target.dataset.k); else state.selected.delete(e.target.dataset.k);
             const countEl = document.querySelector(`#results_${cfg.key} .table-count`);
             if(countEl) updateResultsOnly();
+            updateHeadActionsOnly();
           };
         });
       }
@@ -8469,7 +8516,10 @@ function pageCatalogue(){
       {label:'🏷 Print codes only', alwaysShow:true, onClick:()=> openAllBookCodesModal()},
       {label:'📍 Reassign shelf (selected)', onClick:()=> bulkReassignShelf()},
       {label:'🔖 Reserve selected (kept back)', onClick:()=> bulkReserveCatalogue()},
-      {label:'🗃 Withdraw selected', onClick:()=> bulkWithdrawCatalogue()},
+      {
+        label: sel => (sel.length && sel.every(r=>r.available==='WITHDRAWN')) ? '♻ Reinstate selected' : '🗃 Withdraw selected',
+        onClick: sel => (sel.length && sel.every(r=>r.available==='WITHDRAWN')) ? bulkReinstateCatalogue() : bulkWithdrawCatalogue(),
+      },
       {label:'🗑 Delete selected', onClick:()=> bulkDeleteCatalogue(), danger:true},
       {label:'⚠ Clear all titles', onClick:clearAllCatalogue, danger:true},
     ],
@@ -8909,6 +8959,22 @@ function bulkWithdrawCatalogue(){
     logActivity('catalogue', 'withdraw', `Withdrew ${eligible.length} title(s) in bulk`);
     saveDB(); render(); toast(`${eligible.length} title(s) withdrawn — still in the catalogue, greyed out`);
   }, {confirmLabel:'Withdraw', danger:false});
+}
+function bulkReinstateCatalogue(){
+  if(!isAdmin()) return requireAdmin('reinstate titles');
+  const accs = [...(catalogueModuleState.selected||[])];
+  if(!accs.length){ toast('Tick one or more titles first'); return; }
+  // Mirrors the single-item rule (see reinstateBook): only a title that's currently Withdrawn
+  // can be reinstated — anything else in the selection is left alone.
+  const eligible = DB.catalogue.filter(b=>accs.includes(b.acc) && b.available==='WITHDRAWN');
+  const skipped = accs.length - eligible.length;
+  if(!eligible.length){ toast('None of the selected titles can be reinstated — only Withdrawn titles qualify'); return; }
+  confirmModal(`Reinstate ${eligible.length} title(s) to circulation?${skipped? ` (${skipped} of the selected title(s) skipped — only Withdrawn titles can be reinstated.)`:''} They become available to issue and reserve again.`, ()=>{
+    eligible.forEach(b=> b.available = 'AVAILABLE');
+    catalogueModuleState.selected.clear();
+    logActivity('catalogue', 'reinstate', `Reinstated ${eligible.length} title(s) in bulk`);
+    saveDB(); render(); toast(`${eligible.length} title(s) reinstated — available again`);
+  }, {confirmLabel:'Reinstate', danger:false});
 }
 function bulkReassignShelf(){
   if(!isAdmin()) return requireAdmin('edit the catalogue');
@@ -10548,6 +10614,15 @@ function openDropdownMenu(menu, trigger){
   document.body.appendChild(menu);
   menu.classList.add('open');
   trigger.setAttribute('aria-expanded','true');
+  if(menu.classList.contains('topbar-nav-menu')){
+    // This one already has its own fixed top/height/overflow-y in CSS, designed to fill the
+    // screen below the topbar and scroll through every destination. The generic anchor-relative
+    // positioning below measures its (near full-viewport) height, decides there's "no room"
+    // under the trigger, and flips it almost entirely off-screen above the topbar — clear any
+    // leftover inline overrides from a previous open and let the CSS positioning stand.
+    menu.style.position=''; menu.style.top=''; menu.style.left=''; menu.style.width='';
+    return;
+  }
   positionFloatingPanel(menu, trigger, {align: trigger.dataset.dropdownAlign || 'right'});
 }
 function closeDropdownMenu(menu, trigger){
