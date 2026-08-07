@@ -6650,7 +6650,15 @@ function calNavMonth(delta){
 function calSelectDay(key){
   if(!calModalState) return;
   calModalState.selectedKey = key;
-  renderCalendarModal();
+  // Just move the "selected" highlight to the clicked cell in place — don't rebuild the whole
+  // calendar modal (that was retriggering its fade/scale-in animation on every click, which
+  // read as the calendar "closing" right before the day modal opened on top of it).
+  const grid = document.querySelector('.cal-grid');
+  if(grid){
+    grid.querySelectorAll('.cal-cell.selected').forEach(el=>el.classList.remove('selected'));
+    const cell = grid.querySelector(`.cal-cell[data-key="${key}"]`);
+    if(cell) cell.classList.add('selected');
+  }
   openCalDayModal(key);
 }
 /* Day drill-down now opens as its own modal stacked above the mini calendar, instead of an
