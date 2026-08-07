@@ -6649,8 +6649,39 @@ function calNavMonth(delta){
 }
 function calSelectDay(key){
   if(!calModalState) return;
-  calModalState.selectedKey = (calModalState.selectedKey===key) ? null : key;
+  calModalState.selectedKey = key;
   renderCalendarModal();
+  openCalDayModal(key);
+}
+/* Day drill-down now opens as its own modal stacked above the mini calendar, instead of an
+   inline dropdown rendered below the grid — keeps the calendar itself short and lets the day's
+   schedule/events breathe in their own scrollable panel. */
+function openCalDayModal(key){
+  if(!key) return;
+  const d = parseAnyDate(key);
+  if(!d) return;
+  const title = d.toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  const html = `
+  <div class="modal-backdrop" id="calDayModalBg">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-head"><h3>${esc(title)}</h3><button id="calDayModalClose" aria-label="Close">✕</button></div>
+      <div class="modal-body" style="max-height:65vh;overflow-y:auto">
+        ${calendarDayDetailsHtml(key)}
+      </div>
+      <div class="modal-foot">
+        <button class="cal-nav-btn" id="calDayModalCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>`;
+  const wrap = document.createElement('div');
+  wrap.id = 'calDayModalWrapper';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+
+  const closeCalDayModal = ()=> wrap.remove();
+  document.getElementById('calDayModalClose').onclick = closeCalDayModal;
+  document.getElementById('calDayModalCloseBtn').onclick = closeCalDayModal;
+  document.getElementById('calDayModalBg').addEventListener('click', e=>{ if(e.target.id==='calDayModalBg') closeCalDayModal(); });
 }
 /* Jumps to the Register page and pre-loads a class straight into batch check-in staging, so
    clicking a "classes yet to visit" row is an actual shortcut, not just a status readout. */
@@ -6869,7 +6900,6 @@ function renderCalendarModal(){
           ${['S','M','T','W','T','F','S'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
           ${calendarMonthGridHtml(viewYear, viewMonth, selectedKey)}
         </div>
-        <div id="calDayDetails">${calendarDayDetailsHtml(selectedKey)}</div>
       </div>
       <div class="modal-foot">
         <button class="cal-nav-btn" id="calFullSchedule">Full weekly schedule →</button>
