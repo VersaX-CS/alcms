@@ -5565,6 +5565,7 @@ function migrateNewFeatureData(db){
     if(it.photo===undefined) it.photo = null;
     if(!Array.isArray(it.history)) it.history = [{date:it.dateAdded||todayISO(), condition:it.condition, location:it.location, assignedTo:it.assignedTo, note:'Added to inventory'}];
     if(!it.tag) it.tag = it.id;
+    if(!it.conditionCounts) it.conditionCounts = equipmentConditionCounts(it);
   });
   if(!db.setup) db.setup = {};
   if(!Array.isArray(db.setup.equipmentCategories) || !db.setup.equipmentCategories.length) db.setup.equipmentCategories = DEFAULT_EQUIPMENT_CATEGORIES.slice();
@@ -12254,7 +12255,7 @@ function waEquipmentCardHtml(rows){
       shown++;
       return `<div style="padding:7px 0;border-bottom:1px dashed ${T.line};">
         <div style="font-size:13px;font-weight:600;color:${T.ink};">${esc(r.name)}${r.tag?` <span style="color:${T.muted};font-weight:400;">(${esc(r.tag)})</span>`:''}</div>
-        <div style="font-size:11px;color:${T.muted};margin-top:2px;">Qty ${+r.quantity||0}${r.unit?' '+esc(r.unit):''} · ${esc(r.condition||'—')}${r.location?' · '+esc(r.location):''}</div>
+        <div style="font-size:11px;color:${T.muted};margin-top:2px;">Qty ${+r.quantity||0}${r.unit?' '+esc(r.unit):''} · ${esc(equipmentConditionBreakdownText(equipmentConditionCounts(r)))}${r.location?' · '+esc(r.location):''}</div>
       </div>`;
     }).join('');
     return `<div style="margin-top:12px;font-size:11px;font-weight:700;letter-spacing:.05em;color:${T.brass};">${esc(cat.toUpperCase())}</div>${items}`;
@@ -12980,8 +12981,117 @@ function setFeedbackStatus(entryId, status){
 /* ================= PAGE: ASSETS & EQUIPMENT ================= */
 let equipmentModule;
 let equipmentModuleState = {q:'', filters:{}, sort:''};
+const EQUIPMENT_CONDITIONS = ['GOOD','FAIR','DAMAGED','OUT OF SERVICE'];
 function equipmentCondBadgeClass(c){
   return c==='GOOD' ? 'green' : c==='FAIR' ? 'gold' : c==='DAMAGED' ? 'red' : c==='OUT OF SERVICE' ? 'grey' : 'grey';
+}
+/* Per-condition quantity breakdown for one asset row — lets identical items (e.g. "30 chairs")
+   be recorded as some-good/some-fair/some-damaged/some-out-of-service instead of forcing the
+   whole stack to a single condition. Falls back to putting the item's old single condition+
+   quantity into one bucket, so pre-existing records (and any code path that hasn't been updated
+   to read conditionCounts yet) keep working unchanged. */
+function equipmentConditionCounts(item){
+  if(item && item.conditionCounts){
+    const c = item.conditionCounts;
+    return {GOOD:+c.GOOD||0, FAIR:+c.FAIR||0, DAMAGED:+c.DAMAGED||0, 'OUT OF SERVICE':+c['OUT OF SERVICE']||0};
+  }
+  const counts = {GOOD:0, FAIR:0, DAMAGED:0, 'OUT OF SERVICE':0};
+  if(item && item.condition!==undefined) counts[item.condition] = Math.max(0, +item.quantity||0);
+  return counts;
+}
+function equipmentConditionTotal(counts){
+  return EQUIPMENT_CONDITIONS.reduce((s,c)=>s+(+counts[c]||0), 0);
+}
+/* The single "dominant" condition for an item — kept alongside the full breakdown so existing
+   filter/sort/badge/history code that only knows about one condition per item still has
+   something sensible to show. Ties break toward the better condition (GOOD before FAIR, etc). */
+function equipmentDominantCondition(counts){
+  let best = 'GOOD', bestN = -1;
+  EQUIPMENT_CONDITIONS.forEach(c=>{ const n=+counts[c]||0; if(n>bestN){ bestN=n; best=c; } });
+  return best;
+}
+/* Short inline breakdown like "6 Good · 2 Fair · 1 Damaged · 1 Out of service" — only the
+   conditions actually present. Used in the table's Condition column and the day/share cards. */
+function equipmentConditionBreakdownText(counts){
+  return EQUIPMENT_CONDITIONS.filter(c=>(+counts[c]||0)>0).map(c=>`${+counts[c]} ${titleCaseCond(c)}`).join(' · ') || '—';
+}
+function titleCaseCond(c){ return c.split(' ').map(w=>w[0]+w.slice(1).toLowerCase()).join(' '); }
+/* Colored-badge version of the breakdown, for the table cell. */
+function equipmentConditionBreakdownHtml(counts){
+  const parts = EQUIPMENT_CONDITIONS.filter(c=>(+counts[c]||0)>0)
+    .map(c=>`<span class="badge ${equipmentCondBadgeClass(c)}" style="margin:1px 4px 1px 0">${+counts[c]} ${esc(titleCaseCond(c))}</span>`);
+  return parts.length ? parts.join('') : `<span class="badge grey">—</span>`;
+}
+/* The 4 number-input condition fields, rendered as a 'custom' modal field so they can live-update
+   a running total as the person types. Reused by both the add/edit asset form and the "Log
+   update" form. */
+const EQUIPMENT_COND_FIELD_IDS = {GOOD:'f_condGood', FAIR:'f_condFair', DAMAGED:'f_condDamaged', 'OUT OF SERVICE':'f_condOOS'};
+const EQUIPMENT_COND_BAR_COLORS = {GOOD:'var(--ok)', FAIR:'var(--brass)', DAMAGED:'var(--warn)', 'OUT OF SERVICE':'var(--muted)'};
+function equipmentConditionFieldsHtml(counts){
+  const total = equipmentConditionTotal(counts);
+  return `
+  <div class="field">
+    <label>Condition breakdown *</label>
+    <p class="field-hint" style="margin-top:-2px;margin-bottom:8px">Split this item's quantity across its current condition — e.g. 30 chairs might be 20 Good, 5 Fair, 3 Damaged, 2 Out of service.</p>
+    <div class="field-row" style="margin-top:0">
+      <div class="field" style="margin:0"><label style="font-weight:400;font-size:11.5px">🟢 Good</label><input id="f_condGood" type="number" min="0" step="1" inputmode="numeric" value="${+counts.GOOD||0}"></div>
+      <div class="field" style="margin:0"><label style="font-weight:400;font-size:11.5px">🟡 Fair</label><input id="f_condFair" type="number" min="0" step="1" inputmode="numeric" value="${+counts.FAIR||0}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field" style="margin:0"><label style="font-weight:400;font-size:11.5px">🔴 Damaged</label><input id="f_condDamaged" type="number" min="0" step="1" inputmode="numeric" value="${+counts.DAMAGED||0}"></div>
+      <div class="field" style="margin:0"><label style="font-weight:400;font-size:11.5px">⚪ Out of service</label><input id="f_condOOS" type="number" min="0" step="1" inputmode="numeric" value="${+counts['OUT OF SERVICE']||0}"></div>
+    </div>
+    <div id="condBar" style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:10px;background:var(--border)">${equipmentConditionBarSegmentsHtml(counts)}</div>
+    <p class="field-hint" id="condTotalRow" style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>Total quantity: <b id="condTotalDisplay">${total}</b></span>
+      <span style="display:flex;gap:6px">
+        <button type="button" class="btn secondary small" id="condFillGoodBtn" style="padding:2px 8px;font-size:11px">All Good</button>
+        <button type="button" class="btn secondary small" id="condClearBtn" style="padding:2px 8px;font-size:11px">Clear</button>
+      </span>
+    </p>
+    <p class="field-hint" id="condZeroWarning" style="display:none;color:var(--terracotta)">Enter a quantity in at least one condition.</p>
+  </div>`;
+}
+/* The colored proportion bar inside the condition widget — one flex segment per non-zero
+   condition, width proportional to its share of the total. Regenerated (not just resized) on
+   every keystroke since a segment can appear/disappear as a field goes from 0 to >0. */
+function equipmentConditionBarSegmentsHtml(counts){
+  const total = equipmentConditionTotal(counts);
+  if(total<=0) return '';
+  return EQUIPMENT_CONDITIONS.filter(c=>(+counts[c]||0)>0)
+    .map(c=>`<div style="flex:${+counts[c]} 0 0;background:${EQUIPMENT_COND_BAR_COLORS[c]}" title="${titleCaseCond(c)}: ${+counts[c]}"></div>`).join('');
+}
+/* Wires the live total/bar display + quick-fill shortcuts for equipmentConditionFieldsHtml —
+   call from the modal's postRender. */
+function bindEquipmentConditionFields(root){
+  const els = {}; EQUIPMENT_CONDITIONS.forEach(c=> els[c] = root.querySelector('#'+EQUIPMENT_COND_FIELD_IDS[c]));
+  const totalEl = root.querySelector('#condTotalDisplay');
+  const barEl = root.querySelector('#condBar');
+  const warnEl = root.querySelector('#condZeroWarning');
+  if(!totalEl) return;
+  const currentCounts = ()=>{
+    const counts = {};
+    EQUIPMENT_CONDITIONS.forEach(c=>{ counts[c] = Math.max(0, Math.round(+(els[c]&&els[c].value)||0)); });
+    return counts;
+  };
+  const update = ()=>{
+    const counts = currentCounts();
+    const sum = equipmentConditionTotal(counts);
+    totalEl.textContent = sum;
+    if(barEl) barEl.innerHTML = equipmentConditionBarSegmentsHtml(counts);
+    if(warnEl) warnEl.style.display = sum<=0 ? '' : 'none';
+  };
+  EQUIPMENT_CONDITIONS.forEach(c=>{ if(els[c]) els[c].oninput = update; });
+  const fillGoodBtn = root.querySelector('#condFillGoodBtn');
+  if(fillGoodBtn) fillGoodBtn.onclick = ()=>{
+    const sum = equipmentConditionTotal(currentCounts());
+    if(els.GOOD) els.GOOD.value = sum>0 ? sum : 1;
+    EQUIPMENT_CONDITIONS.filter(c=>c!=='GOOD').forEach(c=>{ if(els[c]) els[c].value = 0; });
+    update();
+  };
+  const clearBtn = root.querySelector('#condClearBtn');
+  if(clearBtn) clearBtn.onclick = ()=>{ EQUIPMENT_CONDITIONS.forEach(c=>{ if(els[c]) els[c].value = 0; }); update(); };
+  update();
 }
 function pageEquipment(){
   const categories = (DB.setup.equipmentCategories && DB.setup.equipmentCategories.length) ? DB.setup.equipmentCategories : DEFAULT_EQUIPMENT_CATEGORIES;
@@ -13006,7 +13116,7 @@ function pageEquipment(){
       {key:'name', label:'Item', render:r=>`${esc(r.name)}${r.photo?` <span style="cursor:pointer" onclick="openEquipmentPhoto('${esc(r.id)}')" title="View photo">🖼️</span>`:''}${r.description?`<div style="font-size:10.5px;color:var(--muted);margin-top:2px" title="${esc(r.description)}">${esc(r.description.length>70? r.description.slice(0,70)+'…' : r.description)}</div>`:''}`},
       {key:'tag', label:'Asset Tag', render:r=>esc(r.tag||'—')},
       {key:'quantity', label:'Qty', render:r=>`${+r.quantity||0} ${esc(r.unit||'')}`},
-      {key:'condition', label:'Condition', render:r=>`<span class="badge ${equipmentCondBadgeClass(r.condition)}">${esc(r.condition||'—')}</span>`},
+      {key:'condition', label:'Condition', render:r=>equipmentConditionBreakdownHtml(equipmentConditionCounts(r))},
       {key:'location', label:'Location'},
       {key:'assignedTo', label:'Assigned to', render:r=>esc(r.assignedTo||'—')},
       {key:'dateAdded', label:'Added', render:r=>fmtDate(r.dateAdded)},
@@ -13018,6 +13128,11 @@ function pageEquipment(){
       {label:'Quantity', get:r=>r.quantity||0},
       {label:'Unit', get:r=>r.unit||''},
       {label:'Condition', get:r=>r.condition||''},
+      {label:'Condition breakdown', get:r=>equipmentConditionBreakdownText(equipmentConditionCounts(r))},
+      {label:'Good', get:r=>equipmentConditionCounts(r).GOOD},
+      {label:'Fair', get:r=>equipmentConditionCounts(r).FAIR},
+      {label:'Damaged', get:r=>equipmentConditionCounts(r).DAMAGED},
+      {label:'Out of service', get:r=>equipmentConditionCounts(r)['OUT OF SERVICE']},
       {label:'Location', get:r=>r.location||''},
       {label:'Assigned to', get:r=>r.assignedTo||''},
       {label:'Description', get:r=>r.description||''},
@@ -13027,6 +13142,74 @@ function pageEquipment(){
       {label:'Notes', get:r=>r.notes||''},
     ],
     addLabel:'+ Add asset', onAdd:()=>openEquipmentForm(),
+    onImport:()=>openImportModal({
+      title:'assets & equipment',
+      hint:'Upload a spreadsheet of assets. Give per-condition quantities in separate Good/Fair/Damaged/"Out of service" columns (recommended for identical items like "30 chairs"), or a single Condition + Quantity column if every unit is in the same condition. Rows matching an existing Asset Tag are skipped to avoid duplicates.',
+      columns:[
+        {key:'name', label:'Item', required:true, synonyms:['item','item name','asset','asset name']},
+        {key:'category', label:'Category', synonyms:['type']},
+        {key:'tag', label:'Asset Tag', synonyms:['tag','asset tag','serial','serial no','serial number']},
+        {key:'unit', label:'Unit', synonyms:['unit(s)','units']},
+        {key:'good', label:'Good', synonyms:['good qty','qty good','good count','#good']},
+        {key:'fair', label:'Fair', synonyms:['fair qty','qty fair','fair count','#fair']},
+        {key:'damaged', label:'Damaged', synonyms:['damaged qty','qty damaged','damaged count','#damaged']},
+        {key:'oos', label:'Out of service', synonyms:['out of service','oos','retired','decommissioned','qty out of service']},
+        {key:'condition', label:'Condition (single, optional fallback)', synonyms:['condition','status']},
+        {key:'quantity', label:'Quantity (single, optional fallback)', synonyms:['qty','quantity','count']},
+        {key:'location', label:'Location', synonyms:['location','shelf','room']},
+        {key:'assignedTo', label:'Assigned to', synonyms:['assigned to','assignee','custodian','department']},
+        {key:'supplier', label:'Supplier', synonyms:['supplier','vendor']},
+        {key:'cost', label:'Cost', synonyms:['cost','price','unit cost']},
+        {key:'dateAdded', label:'Date added', synonyms:['date added','date','purchase date']},
+        {key:'notes', label:'Notes', synonyms:['notes','remarks']},
+      ],
+      onConfirm:(rows)=>{
+        let added=0, skipped=0;
+        const existingTags = new Set(DB.equipment.map(x=>(x.tag||'').toUpperCase()).filter(Boolean));
+        rows.forEach(r=>{
+          if(!r.name){ skipped++; return; }
+          const tag = (r.tag||'').trim();
+          if(tag && existingTags.has(tag.toUpperCase())){ skipped++; return; }
+          // Prefer the four explicit per-condition columns; only fall back to a single
+          // Condition+Quantity pair when none of the per-condition columns had a value at all
+          // (so a row that legitimately has 0 Good but some Fair/Damaged isn't misread as "no
+          // breakdown given").
+          const hasBreakdown = ['good','fair','damaged','oos'].some(k=> String(r[k]||'').trim()!=='');
+          let counts;
+          if(hasBreakdown){
+            counts = {
+              GOOD: Math.max(0, Math.round(+r.good||0)),
+              FAIR: Math.max(0, Math.round(+r.fair||0)),
+              DAMAGED: Math.max(0, Math.round(+r.damaged||0)),
+              'OUT OF SERVICE': Math.max(0, Math.round(+r.oos||0)),
+            };
+          } else {
+            const qty = Math.max(0, Math.round(+r.quantity||0)) || 1;
+            const cond = EQUIPMENT_CONDITIONS.includes((r.condition||'').toUpperCase().trim()) ? (r.condition||'').toUpperCase().trim() : 'GOOD';
+            counts = {GOOD:0, FAIR:0, DAMAGED:0, 'OUT OF SERVICE':0};
+            counts[cond] = qty;
+          }
+          const total = equipmentConditionTotal(counts);
+          if(total<=0){ skipped++; return; }
+          const id = uid('EQP');
+          const finalTag = tag || id;
+          if(tag) existingTags.add(tag.toUpperCase());
+          const dateAdded = r.dateAdded || todayISO();
+          const item = {
+            id, name:r.name, category:r.category||'', tag:finalTag, unit:r.unit||'unit(s)',
+            quantity: total, conditionCounts: counts, condition: equipmentDominantCondition(counts),
+            location:r.location||'', assignedTo:r.assignedTo||'', supplier:r.supplier||'',
+            cost: r.cost!=='' && r.cost!=null && !isNaN(+r.cost) ? +r.cost : '',
+            dateAdded, description:'', notes:r.notes||'', photo:null,
+          };
+          item.history = [{date:dateAdded, condition:item.condition, conditionCounts:counts, location:item.location, assignedTo:item.assignedTo, note:'Added via import'}];
+          DB.equipment.unshift(item);
+          added++;
+        });
+        if(added) logActivity('equipment', 'import', `Imported ${added} asset(s)${skipped?` (${skipped} skipped)`:''}`);
+        return {added, skipped};
+      }
+    }),
     extraActions:[
       {label:'📱 Share via WhatsApp', onClick:shareEquipmentViaWhatsApp, alwaysShow:true},
       {label:'✉ Share via Email', onClick:shareEquipmentViaEmail, alwaysShow:true},
@@ -13059,6 +13242,12 @@ function openEquipmentForm(id){
   openModal({
     title: existing ? 'Edit asset' : 'Add asset',
     wide:true,
+    validate:()=>{
+      const g = document.getElementById('f_condGood'), f = document.getElementById('f_condFair'), d = document.getElementById('f_condDamaged'), o = document.getElementById('f_condOOS');
+      const total = Math.max(0,+(g&&g.value)||0)+Math.max(0,+(f&&f.value)||0)+Math.max(0,+(d&&d.value)||0)+Math.max(0,+(o&&o.value)||0);
+      if(total<=0) return 'Enter a quantity in at least one condition (Good/Fair/Damaged/Out of service)';
+      return null;
+    },
     fields:[
       {key:'photoWidget', type:'custom', html: equipmentPhotoFieldHtml(pendingPhoto)},
       {row:[
@@ -13070,13 +13259,10 @@ function openEquipmentForm(id){
         {key:'location', label:'Location / Shelf', default:existing?existing.location:''},
       ]},
       {row:[
-        {key:'quantity', label:'Quantity', type:'number', required:true, default:existing?existing.quantity:1},
         {key:'unit', label:'Unit', default:existing?existing.unit:'unit(s)'},
-      ]},
-      {row:[
-        {key:'condition', label:'Condition', type:'select', options:['GOOD','FAIR','DAMAGED','OUT OF SERVICE'], required:true, default:existing?existing.condition:'GOOD'},
         {key:'assignedTo', label:'Assigned to (person/department, optional)', default:existing?existing.assignedTo:''},
       ]},
+      {key:'conditionWidget', type:'custom', html: equipmentConditionFieldsHtml(equipmentConditionCounts(existing))},
       {row:[
         {key:'dateAdded', label:'Date added', type:'date', default:existing?existing.dateAdded:todayISO()},
         {key:'supplier', label:'Supplier (optional)', default:existing?existing.supplier:''},
@@ -13085,8 +13271,7 @@ function openEquipmentForm(id){
       {key:'description', label:'Description', type:'textarea', default:existing?existing.description:''},
       {key:'notes', label:'Notes', type:'textarea', default:existing?existing.notes:''},
     ],
-    postRender:(root)=>{
-      const preview = root.querySelector('#eqPhotoPreview');
+    postRender:(root)=>{      const preview = root.querySelector('#eqPhotoPreview');
       const removeBtn = root.querySelector('#eqPhotoRemove');
       const autoBtn = root.querySelector('#eqAutoDescribeBtn');
       const hint = root.querySelector('#eqAutoDescribeHint');
@@ -13110,27 +13295,38 @@ function openEquipmentForm(id){
       if(preview) preview.onclick = ()=>{ if(pendingPhoto) openImageLightbox(pendingPhoto); };
       if(removeBtn) removeBtn.onclick = ()=>{ pendingPhoto = null; updatePreview(); };
       if(autoBtn) autoBtn.onclick = ()=> generateEquipmentDescription(pendingPhoto, {btn:autoBtn, hint, textarea:descArea});
+      bindEquipmentConditionFields(root);
     },
     onSave:(vals)=>{
       vals.photo = pendingPhoto;
-      vals.quantity = Math.max(0, +vals.quantity||0);
+      const gEl = document.getElementById('f_condGood'), fEl = document.getElementById('f_condFair'), dEl = document.getElementById('f_condDamaged'), oEl = document.getElementById('f_condOOS');
+      const counts = {
+        GOOD: Math.max(0, Math.round(+(gEl&&gEl.value)||0)),
+        FAIR: Math.max(0, Math.round(+(fEl&&fEl.value)||0)),
+        DAMAGED: Math.max(0, Math.round(+(dEl&&dEl.value)||0)),
+        'OUT OF SERVICE': Math.max(0, Math.round(+(oEl&&oEl.value)||0)),
+      };
+      delete vals.condGood; delete vals.condFair; delete vals.condDamaged; delete vals.condOOS; delete vals.conditionWidget;
+      vals.conditionCounts = counts;
+      vals.quantity = equipmentConditionTotal(counts);
+      vals.condition = equipmentDominantCondition(counts);
       vals.cost = vals.cost!=='' ? +vals.cost : '';
       if(existing){
-        const condChanged = vals.condition!==existing.condition;
+        const condChanged = JSON.stringify(counts)!==JSON.stringify(equipmentConditionCounts(existing));
         const locChanged = (vals.location||'')!==(existing.location||'');
         const assignChanged = (vals.assignedTo||'')!==(existing.assignedTo||'');
         vals.tag = (vals.tag||'').trim() || existing.tag || existing.id;
         Object.assign(existing, vals);
         if(condChanged || locChanged || assignChanged){
           if(!Array.isArray(existing.history)) existing.history = [];
-          existing.history.unshift({date:todayISO(), condition:vals.condition, location:vals.location, assignedTo:vals.assignedTo, note:'Updated via edit'});
+          existing.history.unshift({date:todayISO(), condition:vals.condition, conditionCounts:counts, location:vals.location, assignedTo:vals.assignedTo, note:'Updated via edit'});
         }
         saveDB(); render(); toast('Asset updated');
         logActivity('equipment', 'edit', `Updated asset "${existing.name}" (${existing.tag})`);
       } else {
         vals.id = uid('EQP');
         vals.tag = (vals.tag||'').trim() || vals.id;
-        vals.history = [{date: vals.dateAdded||todayISO(), condition:vals.condition, location:vals.location, assignedTo:vals.assignedTo, note:'Added to inventory'}];
+        vals.history = [{date: vals.dateAdded||todayISO(), condition:vals.condition, conditionCounts:counts, location:vals.location, assignedTo:vals.assignedTo, note:'Added to inventory'}];
         DB.equipment.unshift(vals); saveDB(); render(); toast('Asset added to inventory');
         logActivity('equipment', 'add', `Added asset "${vals.name}" (${vals.tag})`);
       }
@@ -13244,20 +13440,34 @@ function openEquipmentLogUpdateForm(id){
   const item = DB.equipment.find(x=>x.id===id); if(!item) return;
   openModal({
     title:'Log update — '+item.name,
+    validate:()=>{
+      const g = document.getElementById('f_condGood'), f = document.getElementById('f_condFair'), d = document.getElementById('f_condDamaged'), o = document.getElementById('f_condOOS');
+      const total = Math.max(0,+(g&&g.value)||0)+Math.max(0,+(f&&f.value)||0)+Math.max(0,+(d&&d.value)||0)+Math.max(0,+(o&&o.value)||0);
+      if(total<=0) return 'Enter a quantity in at least one condition (Good/Fair/Damaged/Out of service)';
+      return null;
+    },
     fields:[
-      {row:[
-        {key:'condition', label:'Condition', type:'select', options:['GOOD','FAIR','DAMAGED','OUT OF SERVICE'], required:true, default:item.condition},
-        {key:'location', label:'Location / Shelf', default:item.location},
-      ]},
+      {key:'conditionWidget', type:'custom', html: equipmentConditionFieldsHtml(equipmentConditionCounts(item))},
+      {key:'location', label:'Location / Shelf', default:item.location},
       {key:'assignedTo', label:'Assigned to (person/department, optional)', default:item.assignedTo||''},
       {key:'note', label:'Note for this update (optional)', type:'textarea', default:''},
     ],
+    postRender:(root)=> bindEquipmentConditionFields(root),
     onSave:(vals)=>{
-      const changed = vals.condition!==item.condition || (vals.location||'')!==(item.location||'') || (vals.assignedTo||'')!==(item.assignedTo||'');
-      item.condition = vals.condition; item.location = vals.location; item.assignedTo = vals.assignedTo;
+      const gEl = document.getElementById('f_condGood'), fEl = document.getElementById('f_condFair'), dEl = document.getElementById('f_condDamaged'), oEl = document.getElementById('f_condOOS');
+      const counts = {
+        GOOD: Math.max(0, Math.round(+(gEl&&gEl.value)||0)),
+        FAIR: Math.max(0, Math.round(+(fEl&&fEl.value)||0)),
+        DAMAGED: Math.max(0, Math.round(+(dEl&&dEl.value)||0)),
+        'OUT OF SERVICE': Math.max(0, Math.round(+(oEl&&oEl.value)||0)),
+      };
+      const condition = equipmentDominantCondition(counts);
+      const quantity = equipmentConditionTotal(counts);
+      const changed = JSON.stringify(counts)!==JSON.stringify(equipmentConditionCounts(item)) || (vals.location||'')!==(item.location||'') || (vals.assignedTo||'')!==(item.assignedTo||'');
+      item.condition = condition; item.conditionCounts = counts; item.quantity = quantity; item.location = vals.location; item.assignedTo = vals.assignedTo;
       if(changed || vals.note){
         if(!Array.isArray(item.history)) item.history = [];
-        item.history.unshift({date:todayISO(), condition:vals.condition, location:vals.location, assignedTo:vals.assignedTo, note:vals.note||''});
+        item.history.unshift({date:todayISO(), condition, conditionCounts:counts, location:vals.location, assignedTo:vals.assignedTo, note:vals.note||''});
       }
       saveDB(); render(); toast('Update logged');
     }
@@ -13266,8 +13476,8 @@ function openEquipmentLogUpdateForm(id){
 function openEquipmentHistoryModal(id){
   const item = DB.equipment.find(x=>x.id===id); if(!item) return;
   const log = (Array.isArray(item.history) && item.history.length) ? item.history
-    : [{date:item.dateAdded, condition:item.condition, location:item.location, assignedTo:item.assignedTo, note:'Added to inventory'}];
-  const rows = log.map(h=>`<tr><td>${fmtDate(h.date)}</td><td><span class="badge ${equipmentCondBadgeClass(h.condition)}">${esc(h.condition||'—')}</span></td><td>${esc(h.location||'—')}</td><td>${esc(h.assignedTo||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('');
+    : [{date:item.dateAdded, condition:item.condition, conditionCounts:equipmentConditionCounts(item), location:item.location, assignedTo:item.assignedTo, note:'Added to inventory'}];
+  const rows = log.map(h=>`<tr><td>${fmtDate(h.date)}</td><td>${h.conditionCounts ? equipmentConditionBreakdownHtml(h.conditionCounts) : `<span class="badge ${equipmentCondBadgeClass(h.condition)}">${esc(h.condition||'—')}</span>`}</td><td>${esc(h.location||'—')}</td><td>${esc(h.assignedTo||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('');
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop'; wrap.id = 'mb';
   wrap.innerHTML = `
@@ -13366,7 +13576,7 @@ function formatEquipmentSummaryText(rows){
     lines.push(`*${cat}*`);
     for(const r of grouped[cat]){
       if(shown>=CAP){ lines.push(`…and ${rows.length-shown} more item(s) — use Export for the complete list.`); truncated = true; break; }
-      lines.push(`• ${r.name}${r.tag?' ('+r.tag+')':''} — Qty ${+r.quantity||0}${r.unit?' '+r.unit:''}, ${r.condition||'—'}${r.location?', '+r.location:''}${r.assignedTo?', assigned to '+r.assignedTo:''}`);
+      lines.push(`• ${r.name}${r.tag?' ('+r.tag+')':''} — Qty ${+r.quantity||0}${r.unit?' '+r.unit:''}, ${equipmentConditionBreakdownText(equipmentConditionCounts(r))}${r.location?', '+r.location:''}${r.assignedTo?', assigned to '+r.assignedTo:''}`);
       shown++;
     }
     lines.push('');
