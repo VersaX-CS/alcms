@@ -7313,7 +7313,7 @@ function GenericModule(cfg){
       <div class="table-wrap"><table class="datatable cards-on-mobile">
         <thead><tr>${cfg.selectable?`<th style="width:28px"><input type="checkbox" id="selall_${cfg.key}" ${rows.length && selCount===rows.length?'checked':''}></th>`:''}${cfg.columns.map(c=>`<th>${esc(c.label)}</th>`).join('')}${cfg.rowActions?'<th></th>':''}</tr></thead>
         <tbody>
-        ${rows.length? rows.map(r=>`<tr${cfg.rowClass && cfg.rowClass(r)? ` class="${esc(cfg.rowClass(r))}"`:''}>${cfg.selectable?`<td data-label="Select"><input type="checkbox" class="rowsel_${cfg.key}" data-k="${esc(keyOf(r))}" ${state.selected.has(keyOf(r))?'checked':''}></td>`:''}${cfg.columns.map(c=>`<td data-label="${esc(c.label)}">${c.render? c.render(r): esc(r[c.key])}</td>`).join('')}${cfg.rowActions? `<td data-label="Actions"><div class="actions-collapse">${isAdmin()? cfg.rowActions(r):''}</div></td>`:''}</tr>`).join('')
+        ${rows.length? rows.map(r=>`<tr${cfg.rowClass && cfg.rowClass(r)? ` class="${esc(cfg.rowClass(r))}"`:''}${cfg.onRowDblClick? ` ondblclick="${cfg.onRowDblClick(r)}" style="cursor:pointer" title="Double-click to open"`:''}>${cfg.selectable?`<td data-label="Select"><input type="checkbox" class="rowsel_${cfg.key}" data-k="${esc(keyOf(r))}" ${state.selected.has(keyOf(r))?'checked':''}></td>`:''}${cfg.columns.map(c=>`<td data-label="${esc(c.label)}">${c.render? c.render(r): esc(r[c.key])}</td>`).join('')}${cfg.rowActions? `<td data-label="Actions"><div class="actions-collapse">${isAdmin()? cfg.rowActions(r):''}</div></td>`:''}</tr>`).join('')
           : `<tr><td colspan="${cfg.columns.length+(cfg.rowActions?1:0)+(cfg.selectable?1:0)}"><div class="empty"><div class="big">·</div>No matching records</div></td></tr>`}
         </tbody>
       </table></div>
@@ -9055,6 +9055,7 @@ function pageCatalogue(){
       : r.available==='AVAILABLE' ? `<button class="btn secondary small" onclick="reserveBook('${r.acc}')">Reserve</button> <button class="btn secondary small" onclick="withdrawBook('${r.acc}')">Withdraw</button>`
       : ''
     } <button class="btn danger small" onclick="deleteBook('${r.acc}')">Delete</button>`,
+    onRowDblClick:r=>`viewBook('${esc(r.acc)}')`,
   });
   return `<div id="mod_catalogue"></div>`;
 }
@@ -9570,6 +9571,7 @@ function pageUsers(){
       }
     }),
     rowActions:r=>`<button class="btn secondary small" onclick="openMemberProfile('${esc(r.id)}')">Profile</button> <button class="btn secondary small" onclick="openUserForm('${r.id}')">Edit</button> <button class="btn danger small" onclick="deleteUser('${r.id}')">Delete</button>`,
+    onRowDblClick:r=>`openMemberProfile('${esc(r.id)}')`,
   });
   return `<div id="mod_users"></div>`;
 }
