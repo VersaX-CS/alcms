@@ -9936,9 +9936,101 @@ const MEMBER_DOC_TYPES = [
 ];
 function memberDocTypeInfo(type){ return MEMBER_DOC_TYPES.find(t=>t.value===type) || MEMBER_DOC_TYPES[MEMBER_DOC_TYPES.length-1]; }
 
+/* ---- External (GitHub) storage for member document files ----
+   Local mode (default): the file sits as base64 inside u.documents[].base64Data, which
+   travels with every local backup and with the main GitHub data-sync JSON.
+   GitHub mode (opt-in per upload): the file bytes are pushed as their own file to
+   alcms-documents/<memberId>/<docId>.<ext> in the same GitHub repo used for data sync,
+   and only a path reference is kept in the database — keeping local storage/backups small.
+   Fetching a GitHub-stored file needs the same GitHub sync credentials configured in
+   Backup & Restore, since the request has to carry the access token. */
+const MEMBER_DOC_MIME_EXT = {
+  'application/pdf':'pdf', 'image/jpeg':'jpg', 'image/png':'png', 'image/gif':'gif',
+  'image/webp':'webp', 'text/plain':'txt', 'application/msword':'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx',
+};
+function memberDocFileExt(mimeType){
+  if(MEMBER_DOC_MIME_EXT[mimeType]) return MEMBER_DOC_MIME_EXT[mimeType];
+  const sub = (mimeType||'').split('/')[1];
+  return sub ? sub.replace(/[^a-z0-9]/gi,'').slice(0,10) || 'dat' : 'dat';
+}
+function memberDocGithubPath(memberId, doc){
+  return `alcms-documents/${memberId}/${doc.id}.${memberDocFileExt(doc.mimeType)}`;
+}
+async function githubUploadDocumentFile(cfg, path, base64Content, message){
+  let sha;
+  try{ const getRes = await githubRequest(cfg,'GET',null,{path}); if(getRes.ok){ sha = (await getRes.json()).sha; } }catch(e){}
+  const doPut = (shaVal)=> githubRequest(cfg,'PUT',{
+    message: message || ('alcms document upload — '+new Date().toISOString()),
+    content: base64Content,
+    branch: cfg.branch||'main',
+    ...(shaVal ? {sha:shaVal} : {})
+  },{path});
+  let res = await doPut(sha);
+  if(!res.ok){
+    const j = await res.json().catch(()=>({}));
+    if(/sha/i.test(j.message||'') && (res.status===409||res.status===422)){
+      const getRes2 = await githubRequest(cfg,'GET',null,{path});
+      if(getRes2.ok){ sha = (await getRes2.json()).sha; res = await doPut(sha); }
+    }
+  }
+  if(!res.ok){ const j2 = await res.json().catch(()=>({})); throw new Error(j2.message || ('GitHub error '+res.status)); }
+  return true;
+}
+async function githubFetchDocumentBytes(cfg, path){
+  const res = await githubRequest(cfg,'GET',null,{path, raw:true});
+  if(res.status===404) throw new Error('File not found on GitHub — it may have been moved, renamed, or the repo/branch has changed');
+  if(!res.ok) throw new Error('GitHub error '+res.status);
+  return res.blob();
+}
+async function githubDeleteDocumentFile(cfg, path){
+  const getRes = await githubRequest(cfg,'GET',null,{path});
+  if(getRes.status===404) return true;
+  if(!getRes.ok) throw new Error('GitHub error '+getRes.status+' while checking the file before delete');
+  const sha = (await getRes.json()).sha;
+  const delRes = await githubRequest(cfg,'DELETE',{message:'alcms document delete — '+new Date().toISOString(), sha, branch:cfg.branch||'main'},{path});
+  if(!delRes.ok){ const j = await delRes.json().catch(()=>({})); throw new Error(j.message || ('GitHub error '+delRes.status)); }
+  return true;
+}
+const MEMBER_DOC_BLOB_CACHE = {};
+async function resolveMemberDocUrl(doc){
+  if(doc.storage!=='github') return doc.base64Data;
+  if(MEMBER_DOC_BLOB_CACHE[doc.id]) return MEMBER_DOC_BLOB_CACHE[doc.id];
+  const cfg = await loadGithubConfig();
+  if(!cfg || !cfg.owner || !cfg.repo || !cfg.token) throw new Error("GitHub sync isn't configured on this device — set it up in Backup & Restore");
+  const blob = await githubFetchDocumentBytes(cfg, doc.githubPath);
+  const url = URL.createObjectURL(blob);
+  MEMBER_DOC_BLOB_CACHE[doc.id] = url;
+  return url;
+}
+async function migrateMemberDocumentsToGithub(memberId){
+  const cfg = await loadGithubConfig();
+  if(!cfg || !cfg.owner || !cfg.repo || !cfg.token){ toast('Set up GitHub sync first (Backup & Restore)'); openGithubConfigForm(); return; }
+  const u = DB.users.find(x=>x.id===memberId);
+  const targets = (u?.documents||[]).filter(d=>d.storage!=='github' && d.base64Data);
+  if(!targets.length){ toast('No local documents to move — everything is already on GitHub'); return; }
+  toast(`Moving ${targets.length} document(s) to GitHub…`);
+  let ok=0, fail=0;
+  for(const doc of targets){
+    try{
+      const path = memberDocGithubPath(memberId, doc);
+      await githubUploadDocumentFile(cfg, path, doc.base64Data.split(',')[1], `alcms document upload — ${doc.name}`);
+      doc.storage = 'github'; doc.githubPath = path; delete doc.base64Data;
+      ok++;
+    }catch(e){ fail++; console.warn('Migrate to GitHub failed for', doc.name, e); }
+  }
+  await saveDB();
+  toast(`Moved ${ok} document(s) to GitHub${fail?`, ${fail} failed — try again later`:''}`);
+  render();
+}
+
 function renderMemberDocumentsTab(memberId, documents){
   if(!isAdmin()) return `<div class="empty"><div class="big">🔒</div>Only admins can view member documents</div>`;
-  let html = `<div style="margin-bottom:14px"><button class="btn small" onclick="openMemberDocumentUploadModal('${esc(memberId)}')">➕ Add document</button></div>`;
+  const hasLocal = documents.some(d=>d.storage!=='github');
+  let html = `<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn small" onclick="openMemberDocumentUploadModal('${esc(memberId)}')">➕ Add document</button>
+    ${hasLocal? `<button class="btn secondary small" onclick="migrateMemberDocumentsToGithub('${esc(memberId)}')">☁️ Move local documents to GitHub</button>` : ''}
+  </div>`;
   if(!documents.length){
     html += `<div class="empty" style="padding:20px"><div class="big">📄</div>No documents on file yet</div>`;
     return html;
@@ -9947,28 +10039,84 @@ function renderMemberDocumentsTab(memberId, documents){
   html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
     ${sorted.map(doc=>{
       const info = memberDocTypeInfo(doc.type);
+      const onGithub = doc.storage==='github';
       const isImage = (doc.mimeType||'').startsWith('image/');
-      return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+      return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px;cursor:pointer" ondblclick="previewMemberDocument('${esc(memberId)}','${esc(doc.id)}')" title="Double-click to preview">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="flex:1;min-width:0">
-            ${isImage ? `<img src="${doc.base64Data}" alt="" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-bottom:6px">` : `<div style="font-size:26px">${info.icon}</div>`}
+            ${isImage && !onGithub ? `<img src="${doc.base64Data}" alt="" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-bottom:6px">` : `<div style="font-size:26px">${info.icon}</div>`}
             <div style="font-weight:600;font-size:13.5px;line-height:1.3;word-break:break-word">${esc(doc.name)}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:2px">${info.label}</div>
           </div>
-          <div style="display:flex;gap:4px;flex-shrink:0">
-            <button class="btn secondary small" title="Download" onclick="downloadMemberDocument('${esc(memberId)}','${esc(doc.id)}')">⬇️</button>
-            <button class="btn danger small" title="Delete" onclick="deleteMemberDocument('${esc(memberId)}','${esc(doc.id)}')">🗑️</button>
+          <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn secondary small" title="Preview" onclick="event.stopPropagation();previewMemberDocument('${esc(memberId)}','${esc(doc.id)}')">👁️</button>
+            <button class="btn secondary small" title="Download" onclick="event.stopPropagation();downloadMemberDocument('${esc(memberId)}','${esc(doc.id)}')">⬇️</button>
+            <button class="btn danger small" title="Delete" onclick="event.stopPropagation();deleteMemberDocument('${esc(memberId)}','${esc(doc.id)}')">🗑️</button>
           </div>
         </div>
         ${doc.summary ? `<div style="font-size:12px;line-height:1.4;color:var(--muted)">${esc(doc.summary)}</div>` : ''}
         <div style="border-top:1px solid var(--line);padding-top:6px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-          <span>${fmtDate(doc.dateUploaded)}</span><span>${esc(doc.fileSize||'—')}</span>
+          <span>${fmtDate(doc.dateUploaded)}</span>
+          <span title="${onGithub?'Stored on GitHub':'Stored locally in this database'}">${onGithub?'☁️ GitHub':'💾 Local'} · ${esc(doc.fileSize||'—')}</span>
         </div>
         ${doc.tags && doc.tags.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${doc.tags.map(t=>`<span class="badge grey">${esc(t)}</span>`).join('')}</div>` : ''}
       </div>`;
     }).join('')}
   </div>`;
   return html;
+}
+
+async function previewMemberDocument(memberId, docId){
+  const u = DB.users.find(x=>x.id===memberId);
+  const doc = u?.documents?.find(d=>d.id===docId);
+  if(!doc){ toast('Document not found'); return; }
+  const info = memberDocTypeInfo(doc.type);
+  const mime = doc.mimeType || '';
+  let url;
+  if(doc.storage==='github') toast('Fetching from GitHub…');
+  try{ url = await resolveMemberDocUrl(doc); }
+  catch(e){ toast('Could not open document: '+e.message); return; }
+  let body;
+  if(mime.startsWith('image/')){
+    body = `<div style="text-align:center"><img src="${url}" alt="${esc(doc.name)}" style="max-width:100%;max-height:70vh;border-radius:8px;object-fit:contain"></div>`;
+  } else if(mime==='application/pdf'){
+    body = `<iframe src="${url}" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px" title="${esc(doc.name)}"></iframe>`;
+  } else if(mime.startsWith('text/')){
+    let text = '';
+    try{ text = await (await fetch(url)).text(); }catch(e){ text = '(Could not read text content)'; }
+    body = `<pre style="white-space:pre-wrap;word-break:break-word;max-height:65vh;overflow:auto;background:var(--panel-2);padding:12px;border-radius:8px;font-size:12.5px;line-height:1.5">${esc(text)}</pre>`;
+  } else {
+    body = `<div class="empty" style="padding:24px">
+      <div class="big">${info.icon}</div>
+      Preview isn't available in-browser for this file type (${esc(mime||'unknown')}).<br>
+      <button class="btn" style="margin-top:12px" onclick="downloadMemberDocument('${esc(memberId)}','${esc(doc.id)}')">⬇️ Download to view</button>
+    </div>`;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal" style="max-width:720px">
+      <div class="modal-head">
+        <h3 style="word-break:break-word">${info.icon} ${esc(doc.name)}</h3>
+        <button id="mClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        ${doc.summary? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${esc(doc.summary)}</p>`:''}
+        ${body}
+        <div style="margin-top:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span>${info.label} · ${fmtDate(doc.dateUploaded)}</span><span>${doc.storage==='github'?'☁️ GitHub':'💾 Local'} · ${esc(doc.fileSize||'—')}</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" onclick="downloadMemberDocument('${esc(memberId)}','${esc(doc.id)}')">⬇️ Download</button>
+        <button class="btn secondary" id="mCancel">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> wrap.remove();
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#mCancel').onclick = close;
+  wrap.addEventListener('click', e=>{ if(e.target.id==='mb') close(); });
 }
 
 function openMemberDocumentUploadModal(memberId){
@@ -10001,6 +10149,12 @@ function openMemberDocumentUploadModal(memberId){
           <label>Tags (comma-separated)</label>
           <input id="docTagsInput" type="text" placeholder="e.g., warning, follow-up, 2024">
         </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:normal;font-size:12.5px;color:var(--text)">
+            <input type="checkbox" id="docStoreGithub" style="width:auto">
+            <span>☁️ Store this file on GitHub instead of the local database (keeps local storage &amp; backups smaller — needs GitHub sync configured in Backup &amp; Restore)</span>
+          </label>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn secondary" id="mCancel">Cancel</button>
@@ -10021,6 +10175,7 @@ function saveMemberDocument(memberId, close){
   const summary = $('#docSummaryInput')?.value?.trim() || '';
   const tagsInput = $('#docTagsInput')?.value?.trim() || '';
   const fileInput = $('#docFileInput');
+  const storeOnGithub = !!$('#docStoreGithub')?.checked;
   if(!name){ toast('Please enter a document name'); return; }
   if(!fileInput || !fileInput.files || !fileInput.files.length){ toast('Please choose a file'); return; }
   const file = fileInput.files[0];
@@ -10034,7 +10189,7 @@ function saveMemberDocument(memberId, close){
     const u = DB.users.find(x=>x.id===memberId);
     if(!u){ toast('Member not found'); return; }
     if(!Array.isArray(u.documents)) u.documents = [];
-    u.documents.push({
+    const doc = {
       id: 'doc-'+Date.now()+'-'+Math.random().toString(36).slice(2,9),
       name, type, summary,
       dateUploaded: new Date().toISOString().split('T')[0],
@@ -10042,11 +10197,32 @@ function saveMemberDocument(memberId, close){
       fileSize: (file.size/1024/1024).toFixed(2)+' MB',
       mimeType: file.type,
       tags: tagsInput.split(',').map(t=>t.trim()).filter(Boolean),
-      base64Data: e.target.result
-    });
+      storage: 'local',
+    };
+
+    if(storeOnGithub){
+      const cfg = await loadGithubConfig();
+      if(!cfg || !cfg.owner || !cfg.repo || !cfg.token){
+        toast("GitHub sync isn't configured — set it up in Backup & Restore first, or untick the GitHub option");
+        if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='Upload'; }
+        return;
+      }
+      const path = memberDocGithubPath(memberId, doc);
+      try{
+        await githubUploadDocumentFile(cfg, path, e.target.result.split(',')[1], `alcms document upload — ${name}`);
+        doc.storage = 'github'; doc.githubPath = path;
+      }catch(err){
+        toast('Upload to GitHub failed — saved locally instead ('+err.message+')');
+        doc.storage = 'local'; doc.base64Data = e.target.result;
+      }
+    } else {
+      doc.base64Data = e.target.result;
+    }
+
+    u.documents.push(doc);
     const ok = await saveDB();
     if(!ok){ toast('⚠ Save failed — your browser storage is likely full'); if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='Upload'; } return; }
-    toast(`Document "${name}" uploaded`);
+    toast(`Document "${name}" uploaded${doc.storage==='github'?' to GitHub':''}`);
     if(close) close();
     setMemberProfileTab('documents');
     render();
@@ -10055,13 +10231,17 @@ function saveMemberDocument(memberId, close){
   reader.readAsDataURL(file);
 }
 
-function downloadMemberDocument(memberId, docId){
+async function downloadMemberDocument(memberId, docId){
   const u = DB.users.find(x=>x.id===memberId);
   const doc = u?.documents?.find(d=>d.id===docId);
   if(!doc){ toast('Document not found'); return; }
-  const ext = doc.mimeType==='application/pdf' ? 'pdf' : (doc.mimeType.split('/')[1]||'dat');
+  const ext = memberDocFileExt(doc.mimeType);
+  let url;
+  if(doc.storage==='github') toast('Fetching from GitHub…');
+  try{ url = await resolveMemberDocUrl(doc); }
+  catch(e){ toast('Could not download: '+e.message); return; }
   const link = document.createElement('a');
-  link.href = doc.base64Data;
+  link.href = url;
   link.download = doc.name.replace(/[^\w\- ]+/g,'').trim()+'.'+ext;
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
@@ -10072,9 +10252,14 @@ function deleteMemberDocument(memberId, docId){
   if(!u) return;
   const idx = (u.documents||[]).findIndex(d=>d.id===docId);
   if(idx<0) return;
-  const docName = u.documents[idx].name;
+  const doc = u.documents[idx];
+  const docName = doc.name;
+  const cleanupCloud = doc.storage==='github'
+    ? loadGithubConfig().then(cfg=> cfg && cfg.owner && cfg.repo && cfg.token ? githubDeleteDocumentFile(cfg, doc.githubPath) : null).catch(e=>{ console.warn('GitHub file delete failed:', e); toast('Removed locally, but the copy on GitHub could not be deleted — remove it manually if needed'); })
+    : Promise.resolve();
+  if(MEMBER_DOC_BLOB_CACHE[doc.id]){ URL.revokeObjectURL(MEMBER_DOC_BLOB_CACHE[doc.id]); delete MEMBER_DOC_BLOB_CACHE[doc.id]; }
   u.documents.splice(idx,1);
-  saveDB().then(()=>{ toast(`Deleted: ${docName}`); render(); });
+  cleanupCloud.finally(()=>{ saveDB().then(()=>{ toast(`Deleted: ${docName}`); render(); }); });
 }
 
 function pageCirculation(){
@@ -15722,8 +15907,8 @@ async function loadGithubConfig(){
 async function saveGithubConfigObj(cfg){ await storeSet(GITHUB_CFG_KEY, JSON.stringify(cfg)); }
 function b64EncodeUnicode(str){ return btoa(unescape(encodeURIComponent(str))); }
 function b64DecodeUnicode(str){ return decodeURIComponent(escape(atob(str))); }
-function githubApiUrl(cfg){
-  const cleanPath = String(cfg.path||'alcms-data.json').replace(/^\/+/, '');
+function githubApiUrl(cfg, pathOverride){
+  const cleanPath = String(pathOverride || cfg.path||'alcms-data.json').replace(/^\/+/, '');
   return `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${cleanPath.split('/').map(encodeURIComponent).join('/')}`;
 }
 async function githubRequest(cfg, method, body, opts={}){
@@ -15734,7 +15919,7 @@ async function githubRequest(cfg, method, body, opts={}){
   // plus a cache-busting query param forces every check to hit the network for real.
   const bust = '_='+Date.now();
   const qs = (method==='GET') ? ('?'+[cfg.branch?('ref='+encodeURIComponent(cfg.branch)):'', bust].filter(Boolean).join('&')) : '';
-  return fetch(githubApiUrl(cfg)+qs, {
+  return fetch(githubApiUrl(cfg, opts.path)+qs, {
     method,
     cache: 'no-store',
     headers:{
