@@ -3856,7 +3856,7 @@ html, body{ overflow-x:hidden;}
         <button type="button" class="auth-mobile-back" onclick="mobileAuthBack()">← Back</button>
         <div class="lock-loan-search">
           <span class="lls-ic">🔎</span>
-          <input type="text" id="lockLoanSearchInput" placeholder="Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}">
+          <input type="text" id="lockLoanSearchInput" placeholder="Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
           <button type="button" class="icon-btn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔍</button>
           <div id="lockLoanSuggest" class="scan-suggest lock-search-suggest"></div>
         </div>
@@ -7410,6 +7410,12 @@ function GenericModule(cfg){
       const doSearch = debounce(v=>{ state.q=v; updateResultsOnly(); }, 180);
       if(qEl){
         qEl.oninput = e=>{ doSearch(e.target.value); if(qClearEl) qClearEl.style.display = e.target.value ? '' : 'none'; };
+        qEl.onkeydown = e=>{
+          if(e.key==='Escape'){
+            if(qEl.value){ e.stopPropagation(); qEl.value=''; state.q=''; if(qClearEl) qClearEl.style.display='none'; updateResultsOnly(); }
+            else { qEl.blur(); }
+          }
+        };
         // keep focus + cursor position if this module re-mounted while the field was focused
         if(state.q){ qEl.focus(); const l=qEl.value.length; qEl.setSelectionRange(l,l); }
       }
