@@ -9832,6 +9832,7 @@ function pageMemberProfile(){
   const outstanding = fines.reduce((s,x)=>s+fineStatus(x.t).outstanding,0);
   const visits = DB.registerLog.filter(r=>r.id===u.id).sort((a,b)=>(parseAnyDate(b.date)||0)-(parseAnyDate(a.date)||0)).slice(0,15);
   const holds = DB.reservations.filter(r=>r.userId===u.id);
+  const documents = u.documents || [];
 
   const tabs = [
     {key:'loans', label:`Loans (${active.length})`},
@@ -9840,6 +9841,7 @@ function pageMemberProfile(){
   tabs.push({key:'visits', label:`Visits (${visits.length})`});
   if(DB.setup.fineEnabled && fines.length) tabs.push({key:'fines', label:`Fines (${fines.length})`});
   if(holds.length) tabs.push({key:'reservations', label:`Reservations (${holds.length})`});
+  if(isAdmin()) tabs.push({key:'documents', label:`Documents (${documents.length})`});
   const activeTab = tabs.some(t=>t.key===memberProfileTab) ? memberProfileTab : 'loans';
 
   let tabBody = '';
@@ -9885,6 +9887,8 @@ function pageMemberProfile(){
     tabBody = `<table class="datatable cards-on-mobile"><thead><tr><th>Title</th><th>Requested</th><th>Status</th></tr></thead><tbody>
       ${holds.map(r=>`<tr><td data-label="Title">${esc(r.title)}</td><td data-label="Requested">${fmtDate(r.dateRequested)}</td><td data-label="Status"><span class="badge ${r.status==='READY'?'green':r.status==='FULFILLED'?'grey':'gold'}">${esc(r.status)}</span></td></tr>`).join('')}
     </tbody></table>`;
+  } else if(activeTab==='documents'){
+    tabBody = renderMemberDocumentsTab(u.id, documents);
   }
 
   return `
@@ -9918,6 +9922,157 @@ function pageMemberProfile(){
     </div>
     <div class="profile-tab-body">${tabBody}</div>
   </div>`;
+}
+
+/* ---- Member documents (reports, scans, images, PDFs attached to a member) ---- */
+const MEMBER_DOC_TYPES = [
+  {value:'behavior', label:'🎭 Behavior report', icon:'🎭'},
+  {value:'academic', label:'📚 Academic report', icon:'📚'},
+  {value:'medical', label:'⚕️ Medical report', icon:'⚕️'},
+  {value:'disciplinary', label:'⚠️ Disciplinary notice', icon:'⚠️'},
+  {value:'other', label:'📄 Other document', icon:'📄'},
+];
+function memberDocTypeInfo(type){ return MEMBER_DOC_TYPES.find(t=>t.value===type) || MEMBER_DOC_TYPES[MEMBER_DOC_TYPES.length-1]; }
+
+function renderMemberDocumentsTab(memberId, documents){
+  if(!isAdmin()) return `<div class="empty"><div class="big">🔒</div>Only admins can view member documents</div>`;
+  let html = `<div style="margin-bottom:14px"><button class="btn small" onclick="openMemberDocumentUploadModal('${esc(memberId)}')">➕ Add document</button></div>`;
+  if(!documents.length){
+    html += `<div class="empty" style="padding:20px"><div class="big">📄</div>No documents on file yet</div>`;
+    return html;
+  }
+  const sorted = [...documents].sort((a,b)=>(parseAnyDate(b.dateUploaded)||0)-(parseAnyDate(a.dateUploaded)||0));
+  html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
+    ${sorted.map(doc=>{
+      const info = memberDocTypeInfo(doc.type);
+      const isImage = (doc.mimeType||'').startsWith('image/');
+      return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="flex:1;min-width:0">
+            ${isImage ? `<img src="${doc.base64Data}" alt="" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-bottom:6px">` : `<div style="font-size:26px">${info.icon}</div>`}
+            <div style="font-weight:600;font-size:13.5px;line-height:1.3;word-break:break-word">${esc(doc.name)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">${info.label}</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn secondary small" title="Download" onclick="downloadMemberDocument('${esc(memberId)}','${esc(doc.id)}')">⬇️</button>
+            <button class="btn danger small" title="Delete" onclick="deleteMemberDocument('${esc(memberId)}','${esc(doc.id)}')">🗑️</button>
+          </div>
+        </div>
+        ${doc.summary ? `<div style="font-size:12px;line-height:1.4;color:var(--muted)">${esc(doc.summary)}</div>` : ''}
+        <div style="border-top:1px solid var(--line);padding-top:6px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span>${fmtDate(doc.dateUploaded)}</span><span>${esc(doc.fileSize||'—')}</span>
+        </div>
+        ${doc.tags && doc.tags.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${doc.tags.map(t=>`<span class="badge grey">${esc(t)}</span>`).join('')}</div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>`;
+  return html;
+}
+
+function openMemberDocumentUploadModal(memberId){
+  if(!isAdmin()){ toast('Only admins can upload documents'); return; }
+  const u = DB.users.find(x=>x.id===memberId);
+  if(!u) return;
+  const html = `
+  <div class="modal-backdrop" id="mb">
+    <div class="modal">
+      <div class="modal-head"><h3>Add document — ${esc(u.name)}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Document type</label>
+          <select id="docTypeSelect">${MEMBER_DOC_TYPES.map(t=>`<option value="${t.value}">${t.label}</option>`).join('')}</select>
+        </div>
+        <div class="field">
+          <label>Document name *</label>
+          <input id="docNameInput" type="text" placeholder="e.g., Incident report — 15 Jan">
+        </div>
+        <div class="field">
+          <label>Summary / notes</label>
+          <textarea id="docSummaryInput" placeholder="Brief description of the document..."></textarea>
+        </div>
+        <div class="field">
+          <label>File *</label>
+          <input id="docFileInput" type="file" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.txt">
+          <p class="field-hint" style="margin-top:4px">PDF, image, Word or text file — max 10MB</p>
+        </div>
+        <div class="field">
+          <label>Tags (comma-separated)</label>
+          <input id="docTagsInput" type="text" placeholder="e.g., warning, follow-up, 2024">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="mCancel">Cancel</button>
+        <button class="btn" id="mSaveDoc">Upload</button>
+      </div>
+    </div>
+  </div>`;
+  $('#modalRoot').innerHTML = html;
+  const close = ()=> $('#modalRoot').innerHTML='';
+  $('#mClose').onclick=close; $('#mCancel').onclick=close;
+  $('#mb').addEventListener('click', e=>{ if(e.target.id==='mb') close(); });
+  $('#mSaveDoc').onclick = ()=> saveMemberDocument(memberId, close);
+}
+
+function saveMemberDocument(memberId, close){
+  const name = $('#docNameInput')?.value?.trim();
+  const type = $('#docTypeSelect')?.value || 'other';
+  const summary = $('#docSummaryInput')?.value?.trim() || '';
+  const tagsInput = $('#docTagsInput')?.value?.trim() || '';
+  const fileInput = $('#docFileInput');
+  if(!name){ toast('Please enter a document name'); return; }
+  if(!fileInput || !fileInput.files || !fileInput.files.length){ toast('Please choose a file'); return; }
+  const file = fileInput.files[0];
+  if(file.size > 10*1024*1024){ toast('File too large — max 10MB'); return; }
+
+  const saveBtn = $('#mSaveDoc');
+  if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    const u = DB.users.find(x=>x.id===memberId);
+    if(!u){ toast('Member not found'); return; }
+    if(!Array.isArray(u.documents)) u.documents = [];
+    u.documents.push({
+      id: 'doc-'+Date.now()+'-'+Math.random().toString(36).slice(2,9),
+      name, type, summary,
+      dateUploaded: new Date().toISOString().split('T')[0],
+      uploadedBy: (typeof currentAccountId!=='undefined' && currentAccountId) || (SESSION && SESSION.username) || 'admin',
+      fileSize: (file.size/1024/1024).toFixed(2)+' MB',
+      mimeType: file.type,
+      tags: tagsInput.split(',').map(t=>t.trim()).filter(Boolean),
+      base64Data: e.target.result
+    });
+    const ok = await saveDB();
+    if(!ok){ toast('⚠ Save failed — your browser storage is likely full'); if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='Upload'; } return; }
+    toast(`Document "${name}" uploaded`);
+    if(close) close();
+    setMemberProfileTab('documents');
+    render();
+  };
+  reader.onerror = ()=> toast('Failed to read file');
+  reader.readAsDataURL(file);
+}
+
+function downloadMemberDocument(memberId, docId){
+  const u = DB.users.find(x=>x.id===memberId);
+  const doc = u?.documents?.find(d=>d.id===docId);
+  if(!doc){ toast('Document not found'); return; }
+  const ext = doc.mimeType==='application/pdf' ? 'pdf' : (doc.mimeType.split('/')[1]||'dat');
+  const link = document.createElement('a');
+  link.href = doc.base64Data;
+  link.download = doc.name.replace(/[^\w\- ]+/g,'').trim()+'.'+ext;
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+
+function deleteMemberDocument(memberId, docId){
+  if(!confirm('Delete this document? This cannot be undone.')) return;
+  const u = DB.users.find(x=>x.id===memberId);
+  if(!u) return;
+  const idx = (u.documents||[]).findIndex(d=>d.id===docId);
+  if(idx<0) return;
+  const docName = u.documents[idx].name;
+  u.documents.splice(idx,1);
+  saveDB().then(()=>{ toast(`Deleted: ${docName}`); render(); });
 }
 
 function pageCirculation(){
