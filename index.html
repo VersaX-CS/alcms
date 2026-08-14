@@ -9977,11 +9977,17 @@ async function githubUploadDocumentFile(cfg, path, base64Content, message){
   if(!res.ok){ const j2 = await res.json().catch(()=>({})); throw new Error(j2.message || ('GitHub error '+res.status)); }
   return true;
 }
-async function githubFetchDocumentBytes(cfg, path){
+async function githubFetchDocumentBytes(cfg, path, mimeType){
   const res = await githubRequest(cfg,'GET',null,{path, raw:true});
   if(res.status===404) throw new Error('File not found on GitHub — it may have been moved, renamed, or the repo/branch has changed');
   if(!res.ok) throw new Error('GitHub error '+res.status);
-  return res.blob();
+  // GitHub's raw contents endpoint frequently responds with a generic Content-Type (e.g.
+  // application/octet-stream) rather than the file's real type. A Blob built straight from
+  // res.blob() inherits that wrong type, and browsers then treat an <img>/<iframe> pointed at
+  // an untyped/binary blob as something to download rather than render. Rebuilding the Blob
+  // with the document's actual stored mimeType fixes inline preview.
+  const buf = await res.arrayBuffer();
+  return new Blob([buf], {type: mimeType || res.headers.get('content-type') || 'application/octet-stream'});
 }
 async function githubDeleteDocumentFile(cfg, path){
   const getRes = await githubRequest(cfg,'GET',null,{path});
@@ -9998,7 +10004,7 @@ async function resolveMemberDocUrl(doc){
   if(MEMBER_DOC_BLOB_CACHE[doc.id]) return MEMBER_DOC_BLOB_CACHE[doc.id];
   const cfg = await loadGithubConfig();
   if(!cfg || !cfg.owner || !cfg.repo || !cfg.token) throw new Error("GitHub sync isn't configured on this device — set it up in Backup & Restore");
-  const blob = await githubFetchDocumentBytes(cfg, doc.githubPath);
+  const blob = await githubFetchDocumentBytes(cfg, doc.githubPath, doc.mimeType);
   const url = URL.createObjectURL(blob);
   MEMBER_DOC_BLOB_CACHE[doc.id] = url;
   return url;
