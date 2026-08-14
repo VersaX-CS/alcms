@@ -7313,7 +7313,7 @@ function GenericModule(cfg){
       <div class="table-wrap"><table class="datatable cards-on-mobile">
         <thead><tr>${cfg.selectable?`<th style="width:28px"><input type="checkbox" id="selall_${cfg.key}" ${rows.length && selCount===rows.length?'checked':''}></th>`:''}${cfg.columns.map(c=>`<th>${esc(c.label)}</th>`).join('')}${cfg.rowActions?'<th></th>':''}</tr></thead>
         <tbody>
-        ${rows.length? rows.map(r=>`<tr${cfg.rowClass && cfg.rowClass(r)? ` class="${esc(cfg.rowClass(r))}"`:''}${cfg.onRowDblClick? ` ondblclick="${cfg.onRowDblClick(r)}" style="cursor:pointer" title="Double-click to open"`:''}>${cfg.selectable?`<td data-label="Select"><input type="checkbox" class="rowsel_${cfg.key}" data-k="${esc(keyOf(r))}" ${state.selected.has(keyOf(r))?'checked':''}></td>`:''}${cfg.columns.map(c=>`<td data-label="${esc(c.label)}">${c.render? c.render(r): esc(r[c.key])}</td>`).join('')}${cfg.rowActions? `<td data-label="Actions"><div class="actions-collapse">${isAdmin()? cfg.rowActions(r):''}</div></td>`:''}</tr>`).join('')
+        ${rows.length? rows.map(r=>{ const dblJs = cfg.onRowDblClick? cfg.onRowDblClick(r) : ''; return `<tr${cfg.rowClass && cfg.rowClass(r)? ` class="${esc(cfg.rowClass(r))}"`:''}${dblJs? ` ondblclick="${dblJs}" style="cursor:pointer" title="Double-click to open"`:''}>${cfg.selectable?`<td data-label="Select"><input type="checkbox" class="rowsel_${cfg.key}" data-k="${esc(keyOf(r))}" ${state.selected.has(keyOf(r))?'checked':''}></td>`:''}${cfg.columns.map(c=>`<td data-label="${esc(c.label)}">${c.render? c.render(r): esc(r[c.key])}</td>`).join('')}${cfg.rowActions? `<td data-label="Actions"><div class="actions-collapse">${isAdmin()? cfg.rowActions(r):''}</div></td>`:''}</tr>`; }).join('')
           : `<tr><td colspan="${cfg.columns.length+(cfg.rowActions?1:0)+(cfg.selectable?1:0)}"><div class="empty"><div class="big">·</div>No matching records</div></td></tr>`}
         </tbody>
       </table></div>
@@ -10249,6 +10249,7 @@ function pageCirculationTable(){
       ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}
       <button class="btn secondary small" onclick="openTxnHistoryModal('${esc(r.trxId)}')">History</button>
       <button class="btn danger small" onclick="deleteTransaction('${esc(r.trxId)}')">Delete</button>`,
+    onRowDblClick:r=>`viewTransaction('${esc(r.trxId)}')`,
     hidePrint:true,
     extraActions:[
       {label:'🖨 Print transactions', onClick:openCirculationPrintModal, alwaysShow:true, primary:true},
@@ -10356,6 +10357,7 @@ function pageReservations(){
       ${r.status==='READY'? `<button class="btn secondary small" onclick="fulfillReservation('${esc(r.id)}')">Mark fulfilled</button>`:''}
       ${r.status!=='FULFILLED'? `<button class="btn danger small" onclick="cancelReservation('${esc(r.id)}')">Cancel</button>`:''}
     `,
+    onRowDblClick:r=>`openMemberProfile('${esc(r.userId)}')`,
   });
   if(!isStaff()){
     return `<div class="guest-lock">You're signed in as a guest — placing reservations needs a staff or admin account.</div>${reservationsModule.render()}`;
@@ -12156,6 +12158,7 @@ function pageReminders(){
       {label:'Reminder', get:r=>r.reminded?'SENT':'PENDING'},
     ],
     rowActions:r=>r.reminded?'':`<button class="btn small" onclick="sendReminder('${r.trxId}')">Log reminder</button>`,
+    onRowDblClick:r=>`openMemberProfile('${esc(r.userId)}')`,
   });
   nearOverdueModule = GenericModule({
     state:nearOverdueModuleState, key:'nearoverdue', title:'Due soon (within 2 days)', hint:nearOverdue.length+' loan(s) approaching their due date — not yet overdue',
@@ -12172,6 +12175,7 @@ function pageReminders(){
       {label:'Name', get:r=>r.name}, {label:'Class', get:r=>r.cls},
       {label:'Due', get:r=>fmtDate(r.dueDate)}, {label:'Days left', get:r=>r.daysLeft},
     ],
+    onRowDblClick:r=>`openMemberProfile('${esc(r.userId)}')`,
   });
   reminderHistoryModule = GenericModule({
     state:reminderHistoryModuleState, key:'reminderhistory', title:'Reminder history', hint:'Full detail of every reminder logged — tick rows, or use the date range, to export/print just those',
@@ -12194,6 +12198,7 @@ function pageReminders(){
       {label:'Days overdue', get:r=>r.daysOverdue ?? ''},{label:'Channel', get:r=>r.channel||'LOGGED ONLY'},
       {label:'Recipient', get:r=>r.recipientLabel||''},{label:'Logged by', get:r=>r.loggedBy||''},
     ],
+    onRowDblClick:r=>r.userId? `openMemberProfile('${esc(r.userId)}')` : '',
   });
   return `<div id="mod_reminders"></div>
   <div id="mod_nearoverdue"></div>
@@ -12619,6 +12624,7 @@ function pageRegister(){
       {label:'Offense', get:r=>r.offense||'—'}, {label:'Note', get:r=>r.note},
     ],
     rowActions:r=>`<button class="btn secondary small" onclick="openRegisterEdit('${esc(r.entryId)}')">Edit</button>`,
+    onRowDblClick:r=>`openRegisterEdit('${esc(r.entryId)}')`,
     hidePrint:true,
     extraActions:[
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
@@ -13022,6 +13028,7 @@ function pageRosterTable(){
       {key:'subs', label:'Subjects offered', render:r=>r.subs.map(s=>`<span class="pill">${esc(s)}</span>`).join(' ')||'—'},
     ],
     rowActions:r=>`<button class="btn secondary small" onclick="viewSubjects('${r.id}')">Edit</button>`,
+    onRowDblClick:r=>`openMemberProfile('${esc(r.id)}')`,
     exportColumns:[
       {label:'ID', get:r=>r.id},{label:'Name', get:r=>r.name},{label:'Class', get:r=>r.cls},
       {label:'Subjects offered', get:r=>r.subs.join(', ')},
@@ -13053,6 +13060,7 @@ function pageFeedback(){
       {label:'Priority', get:r=>r.priority},{label:'Status', get:r=>r.status},
     ],
     addLabel:'+ Submit feedback', onAdd:()=>openFeedbackForm(),
+    onRowDblClick:r=>`viewFeedback('${esc(r.entryId)}')`,
     extraActions: isAdmin() ? [
       {label:'🗑 Delete selected', onClick:deleteSelectedFeedback},
       {label:'⚠ Clear all', onClick:clearAllFeedback, danger:true},
@@ -13388,6 +13396,7 @@ function pageEquipment(){
       ${rowMoreButton(r.id, menuItems)}
       <button class="btn danger small" onclick="deleteEquipmentItem('${esc(r.id)}')">Delete</button>`;
     },
+    onRowDblClick:r=>`openEquipmentForm('${esc(r.id)}')`,
   });
   return `<div id="mod_equipment"></div>`;
 }
