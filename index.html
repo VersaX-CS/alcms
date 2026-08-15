@@ -2911,7 +2911,7 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
   .topbar-search{ flex:none; width:min(440px,32vw); margin-right:6px;}
   .topbar-search-icon{ display:none;}
   .topbar-search-input{ display:block; width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16);
-    color:#EFE8D3; border-radius:22px; padding:9px 16px; font-size:13px;}
+    color:#EFE8D3; border-radius:22px; padding:9px 16px 9px 36px; font-size:13px;}
   .topbar-search-input::placeholder{ color:rgba(239,232,211,.55);}
   .topbar-search-input:focus{ outline:none; border-color:var(--brass-light); background:rgba(255,255,255,.14);}
 }
@@ -3014,7 +3014,8 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
 .dropdown-wrap{ position:relative; display:inline-block;}
 .dropdown-menu{
   position:fixed; min-width:180px; background:var(--card); border:1px solid var(--line);
-  border-radius:8px; box-shadow:var(--shadow); z-index:1200; overflow:hidden; display:none;
+  border-radius:8px; box-shadow:var(--shadow); z-index:1200; overflow-y:auto; overflow-x:hidden; display:none;
+  max-height:calc(100vh - 100px); -webkit-overflow-scrolling:touch;
 }
 .dropdown-menu.open{ display:block;}
 .dropdown-menu a,.dropdown-menu button{
@@ -3903,7 +3904,7 @@ html, body{ overflow-x:hidden;}
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
-        <button class="hamburger" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
+        <button class="hamburger" onclick="handleHamburgerClick()" aria-label="Open menu">☰</button>
         <button class="icon-btn" id="topHomeBtn" onclick="route='home';render();" title="Home" style="display:none" aria-label="Home">⌂</button>
         <button type="button" class="titles topbar-title-btn" data-dropdown-toggle="topbarNavMenu" data-dropdown-align="left" onclick="prepareTopbarNavMenu()" aria-label="Go to…" aria-haspopup="true" aria-expanded="false">
           <span style="min-width:0;overflow:hidden">
@@ -4561,6 +4562,43 @@ function toggleSidebar(force){
   sb.classList.toggle('open', open);
   if(ov) ov.classList.toggle('show', open);
 }
+
+/* Double-click hamburger to persist sidebar open; single click toggles normally */
+let __hamburgerLastClickTime = 0;
+function handleHamburgerClick(){
+  const now = Date.now();
+  const isDoubleClick = (now - __hamburgerLastClickTime) < 300;
+  __hamburgerLastClickTime = now;
+  
+  if(isDoubleClick && window.innerWidth > 900){
+    // Desktop: double-click toggles persist mode and keeps sidebar open
+    sidebarPersistMode = !sidebarPersistMode;
+    const sb = document.getElementById('sidebar');
+    if(sb && sidebarPersistMode){
+      sb.classList.remove('desktop-collapsed'); // ensure it's open
+    }
+  } else {
+    // Single click or mobile: normal toggle
+    toggleSidebar();
+  }
+}
+
+/* Called when a vertical/nav item is selected — closes sidebar on mobile, 
+   collapses on desktop unless persist mode is on */
+function closeSidebarAfterNav(){
+  const isDesktop = window.innerWidth > 900;
+  if(isDesktop){
+    // Desktop: collapse sidebar unless persist mode is on
+    if(!sidebarPersistMode){
+      const sb = document.getElementById('sidebar');
+      if(sb) sb.classList.add('desktop-collapsed'); // collapse it
+    }
+  } else {
+    // Mobile: always close sidebar
+    closeMobileSidebar();
+  }
+}
+
 
 /* ================= storage shim =================
    Priority order:
@@ -5498,6 +5536,7 @@ function renderAccountChip(){
 let DB = null;
 let route = 'home';
 let homeAlertsDismissed = {}; // { dueList: 'YYYY-MM-DD' } — dismissed alerts stay hidden until a new day / new item triggers them again
+let sidebarPersistMode = false; // true when user double-clicks hamburger to lock sidebar open
 
 /* ---- Back-button navigation: the phone/browser back button should step back through the
    pages the person actually visited (like a native app), landing on Home rather than closing
@@ -6483,7 +6522,7 @@ function renderNav(){
       const badge = count>0 ? `<span class="nav-badge">${count>99?'99+':count}</span>` : '';
       b.innerHTML = `<span class="ico">${navIcon(it.id, it.ico)}</span><span>${it.label}</span>${badge}`;
       b.className = it.id===route ? 'active':'';
-      b.onclick = it.action ? ()=>{ window[it.action](); closeMobileSidebar(); } : ()=>{ route=it.id; render(); closeMobileSidebar(); };
+      b.onclick = it.action ? ()=>{ window[it.action](); closeSidebarAfterNav(); } : ()=>{ route=it.id; render(); closeSidebarAfterNav(); };
       el.appendChild(b);
     });
   });
