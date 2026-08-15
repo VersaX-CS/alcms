@@ -2847,8 +2847,9 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,30
 .sidebar-icon-row{ display:flex; gap:8px; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 .sidebar-icon-row .icon-btn{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:#EFE8D3;}
 .sidebar-icon-row .icon-btn:hover{ background:rgba(255,255,255,.18); border-color:var(--brass-light);}
-.sidebar-close{ display:none;}
-.sidebar-close:hover{ background:rgba(255,255,255,.2);}
+.sidebar-pin-toggle:hover{ background:rgba(255,255,255,.2);}
+.sidebar-pin-toggle.active{ background:var(--brass); border-color:var(--brass-light); color:#221704;}
+.sidebar-pin-toggle.active:hover{ background:var(--brass-light);}
 .brand{ padding:22px 20px 14px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 .brand .mark{ display:flex; align-items:center; gap:10px;}
 .brand .mark .stamp-badge{
@@ -2894,7 +2895,8 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .topbar-title-caret{ display:none; font-size:12px; color:rgba(239,232,211,.65); flex:none; transition:transform .15s ease;}
 .topbar-title-btn[aria-expanded="true"] .topbar-title-caret{ transform:rotate(180deg);}
 .topbar-nav-menu{ position:fixed; top:60px; left:0; width:min(250px, 90vw); height:calc(100vh - 60px); max-height:none; overflow-y:auto; overflow-x:hidden; padding:6px 8px; box-sizing:border-box; z-index:99; background:var(--sidebar-bg); border-right:1px solid rgba(255,255,255,.12); -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
-.topbar-nav-menu .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted-label); padding:8px 14px 3px; font-weight:700;}
+.topbar-nav-menu .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted-label); padding:20px 14px 6px; font-weight:700;}
+.topbar-nav-menu .navgroup-label:first-child{ padding-top:10px;} /* less empty space before the very first group */
 .topbar-nav-menu a{ display:flex; align-items:center; gap:10px;}
 .topbar-nav-menu a .ico{ width:18px; text-align:center; font-size:14px; flex:none;}
 .topbar-nav-menu a.active{ background:var(--parchment-dim); font-weight:600;}
@@ -2906,15 +2908,14 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .topbar-search-results{ display:none; position:absolute; top:calc(100% + 8px); left:0; right:0; max-height:280px; overflow-y:auto; overflow-x:hidden;
   background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,.32); padding:6px; z-index:60; flex-direction:column;}
 .topbar-search-results.open{ display:flex;}
-@media (min-width:821px){
+@media (min-width:901px){
   .topbar-right{ justify-content:flex-end;}
   .topbar-search{ flex:none; width:min(440px,32vw); margin-right:6px;}
-  .topbar-search-icon{ display:block;} /* Show on mobile */
-  @media (min-width:901px){ .topbar-search-icon{ display:none;} } /* Hide on desktop - search bar is visible there */
   .topbar-search-input{ display:block; width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16);
     color:#EFE8D3; border-radius:22px; padding:9px 16px 9px 36px; font-size:13px;}
   .topbar-search-input::placeholder{ color:rgba(239,232,211,.55);}
   .topbar-search-input:focus{ outline:none; border-color:var(--brass-light); background:rgba(255,255,255,.14);}
+  .topbar-search-icon{ display:none;} /* Full search bar replaces the icon on desktop */
 }
 body[data-topbar-style="blank"] .topbar-search-input{ color:var(--ink); border-color:var(--line);}
 body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--muted);}
@@ -2935,17 +2936,26 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
   user-select:none;
   display:flex;
   align-items:center;
-  gap:4px;
+  gap:7px;
   background:rgba(0,0,0,.05);
   color:var(--muted);
 }
-#connectivityIcon{ font-size:14px; }
+#connectivityIcon{
+  width:9px; height:9px; border-radius:50%; flex:none;
+  background:#2fb35c; /* online = green */
+  box-shadow:0 0 0 3px rgba(47,179,92,.18);
+  font-size:0; line-height:0; /* hide any leftover emoji text content */
+}
 #connectivityText{ font-size:11px; font-weight:500; }
 .connectivity-status.offline{
   color:var(--terracotta);
   opacity:1;
   background:rgba(255,100,0,.1);
   animation:blink 1s infinite;
+}
+.connectivity-status.offline #connectivityIcon{
+  background:#e0473e; /* offline = red */
+  box-shadow:0 0 0 3px rgba(224,71,62,.2);
 }
 @keyframes blink{
   0%, 50%, 100% { opacity:1; }
@@ -3722,8 +3732,12 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   .topbar .titles p{ font-size:11px; margin-top:0;}
   .topbar-title-btn{ pointer-events:auto; cursor:pointer;}
   .topbar-title-caret{ display:inline-block;}
-  .topbar-right{ flex:1 1 auto; min-width:0; justify-content:flex-end; gap:2px;}
+  .topbar-right{ flex:0 0 auto; min-width:0; justify-content:flex-end; gap:2px;}
+  .topbar-right > *{ flex:none;} /* icons, connectivity dot & account chip keep their size — the title (which has its own ellipsis) absorbs any shrinking instead, so nothing gets squished off-screen */
   .clock-chip{ display:none;}
+  .connectivity-status{ padding:0 6px; background:none; opacity:1;}
+  .connectivity-status.offline{ background:none; animation:blink 1s infinite;}
+  #connectivityText{ display:none;} /* dot only on mobile — saves space in a crowded topbar */
   .topbar .icon-btn{
     background:none; border:none; width:38px; height:38px; padding:0; border-radius:50%;
     display:flex; align-items:center; justify-content:center; font-size:17px;
@@ -3939,7 +3953,7 @@ html, body{ overflow-x:hidden;}
       <button class="icon-btn" id="sidebarSaveBtn" onclick="saveNow()" title="Save changes" aria-label="Save changes">💾</button>
       <button class="icon-btn" id="navLockBtn" onclick="lockSession()" title="Lock (sign out)" aria-label="Lock and sign out">🔒</button>
       <button class="icon-btn" id="themeToggle" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
-      <button class="icon-btn sidebar-close" onclick="toggleSidebar(false)" title="Close menu" aria-label="Close menu">✕</button>
+      <button class="icon-btn sidebar-pin-toggle" id="sidebarPinBtn" onclick="toggleSidebarPersist()" title="Keep menu open — click to pin" aria-label="Keep menu open" aria-pressed="false">📌</button>
     </div>
     <nav class="navlist" id="navlist"></nav>
     <div class="sidebar-foot">
@@ -4924,6 +4938,29 @@ function toggleSidebar(force){
   if(ov) ov.classList.toggle('show', open);
 }
 
+/* Pin toggle (replaces the old close ✕ button) — lets the person choose whether the
+   desktop sidebar stays persistently open, or closes (collapses) right away. Keeping this
+   as one function means the pin button and the hamburger double-click shortcut below always
+   agree on state. */
+function setSidebarPersist(persist){
+  sidebarPersistMode = persist;
+  const btn = document.getElementById('sidebarPinBtn');
+  const sb = document.getElementById('sidebar');
+  if(btn){
+    btn.classList.toggle('active', sidebarPersistMode);
+    btn.setAttribute('aria-pressed', sidebarPersistMode ? 'true' : 'false');
+    btn.title = sidebarPersistMode ? 'Menu pinned open — click to unpin' : 'Menu is closed — click to pin open';
+    btn.setAttribute('aria-label', sidebarPersistMode ? 'Unpin menu' : 'Keep menu open');
+  }
+  if(sb){
+    if(sidebarPersistMode) sb.classList.remove('desktop-collapsed'); // pin it open now
+    else sb.classList.add('desktop-collapsed'); // close it now
+  }
+}
+function toggleSidebarPersist(){
+  setSidebarPersist(!sidebarPersistMode);
+}
+
 /* Double-click hamburger to persist sidebar open; single click toggles normally */
 let __hamburgerLastClickTime = 0;
 function handleHamburgerClick(){
@@ -4932,12 +4969,8 @@ function handleHamburgerClick(){
   __hamburgerLastClickTime = now;
   
   if(isDoubleClick && window.innerWidth > 900){
-    // Desktop: double-click toggles persist mode and keeps sidebar open
-    sidebarPersistMode = !sidebarPersistMode;
-    const sb = document.getElementById('sidebar');
-    if(sb && sidebarPersistMode){
-      sb.classList.remove('desktop-collapsed'); // ensure it's open
-    }
+    // Desktop: double-click toggles persist mode, kept in sync with the pin button
+    setSidebarPersist(!sidebarPersistMode);
   } else {
     // Single click or mobile: normal toggle
     toggleSidebar();
@@ -15373,7 +15406,7 @@ const GUIDE_QUICKSTART = [
 ];
 const GUIDE_TIPS = [
   'Search boxes never lose focus while you type — search freely, results update as you go.',
-  'On desktop, the 🔎 in the topbar is a full search bar — just start typing and matching titles, members and transactions drop down underneath it, grouped by type. Type a pure number (an accession number, member ID, or phone) to search the Catalogue and Members together with more results. Ctrl/Cmd+K jumps straight into it.',
+  'On desktop, the search bar in the topbar is a full search box — just start typing and matching titles, members and transactions drop down underneath it, grouped by type. Type a pure number (an accession number, member ID, or phone) to search the Catalogue and Members together with more results. Ctrl/Cmd+K jumps straight into it.',
   'Every table can be searched and filtered; long lists show the first matches with a note to narrow your search further.',
   'The scan/verify box (Circulation, self-check, etc.) filters as you type — a partial number or name shows a pick-list, so you never have to type a code exactly. A successful match shows a ✓ Verified badge and keeps a running count for back-to-back scans.',
   'Setup → Codes lets you choose whether member/catalogue cards use a barcode or a QR code — QR codes read well with any phone camera and work fully offline (no internet needed to generate one).',
@@ -17161,13 +17194,13 @@ function updateConnectivityStatus(){
   if(!status || !icon || !text) return;
   
   if(navigator.onLine){
-    icon.textContent = '🌐';
+    icon.textContent = '';
     text.textContent = 'Online';
     status.classList.remove('offline');
     status.setAttribute('title', 'Network status: Online - all features available');
     status.setAttribute('aria-label', 'Network status: Online');
   } else {
-    icon.textContent = '📴';
+    icon.textContent = '';
     text.textContent = 'Offline';
     status.classList.add('offline');
     status.setAttribute('title', 'Network status: Offline - app works locally, data will sync when online');
