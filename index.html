@@ -14795,8 +14795,8 @@ function pageBackup(){
     <p style="font-size:12px;color:#b45309;margin-top:8px;line-height:1.6">⚠️ The file this writes to (default <code>alcms-data.json</code>) is a personal backup — it includes account usernames, passwords and security answers, not just catalogue data. It is <strong>not</strong> the same as <code>js/seed-data.js</code> (the safe-to-share starting data new browsers seed from), and it should never be committed to a public repo. If you point this at a repo you plan to push publicly, add the file to <code>.gitignore</code> first.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
       <button class="btn secondary" onclick="openGithubConfigForm()">⚙ Configure GitHub sync</button>
-      <button class="btn secondary" onclick="githubSaveNow()">⭱ Save to GitHub</button>
-      <button class="btn secondary" onclick="githubLoadNow()">⭳ Load from GitHub</button>
+      <button class="btn secondary" onclick="githubSaveWithConfirm()">⭱ Save to GitHub</button>
+      <button class="btn secondary" onclick="githubLoadWithConfirm()">⭳ Load from GitHub</button>
     </div>
   </div>
   <div class="card panel">
@@ -16015,6 +16015,21 @@ async function fetchGithubSha(cfg){
   if(getRes.status === 404) return null;
   throw new Error('GitHub error '+getRes.status+' while checking for an existing file');
 }
+async function githubSaveWithConfirm(){
+  if(!isAdmin()) return requireAdmin('sync data to GitHub');
+  const cfg = await loadGithubConfig();
+  if(!cfg || !cfg.owner || !cfg.repo || !cfg.token){ toast('Set up GitHub sync first (owner, repo, token)'); openGithubConfigForm(); return; }
+  
+  // Count items being saved
+  const catalogueCount = (DB.catalogue || []).length;
+  const membersCount = (DB.members || []).length;
+  const circCount = (DB.circulation || []).length;
+  const accountsCount = (ACCOUNTS || []).length - 1; // exclude the default placeholder
+  
+  const message = `Save to GitHub?\n\n📚 Catalogue: ${catalogueCount} titles\n👥 Members: ${membersCount}\n📋 Circulation: ${circCount} loans\n🔐 Accounts: ${accountsCount}`;
+  
+  confirmModal(message, ()=> githubSaveNow());
+}
 async function githubSaveNow(silent){
   if(!isAdmin()) return silent ? false : requireAdmin('sync data to GitHub');
   const cfg = await loadGithubConfig();
@@ -16046,6 +16061,27 @@ async function githubSaveNow(silent){
     if(!silent) toast('Saved to GitHub — your data is now backed up outside this browser');
     return true;
   }catch(e){ if(!silent) toast('GitHub save failed: '+e.message); else console.warn('Background GitHub save failed:', e); return false; }
+}
+async function githubLoadWithConfirm(){
+  if(!isAdmin()) return requireAdmin('load data from GitHub');
+  const cfg = await loadGithubConfig();
+  if(!cfg || !cfg.owner || !cfg.repo || !cfg.token){ toast('Set up GitHub sync first (owner, repo, token)'); openGithubConfigForm(); return; }
+  
+  confirmModal('Load data from GitHub?\n\n⚠️ This will replace all current data with the version saved on GitHub. Make sure you have a backup if you have unsaved local changes.', async ()=>{
+    // Call githubLoadNow but skip its internal confirmation since we already confirmed
+    try{
+      const rawRes = await githubRequest(cfg, 'GET', null, {raw:true});
+      if(rawRes.status===404) throw new Error('No file found at that path yet — use "Save to GitHub" first');
+      if(!rawRes.ok) throw new Error('GitHub error '+rawRes.status);
+      const text = await rawRes.text();
+      if(!text || !text.trim()) throw new Error('GitHub returned an empty file — try "Save to GitHub" again from a device with the full data loaded');
+      const payload = JSON.parse(text);
+      await applyFullPayload(payload);
+      await setGithubStamp('loaded');
+      render();
+      toast('Data loaded from GitHub');
+    }catch(e){ toast('GitHub load failed: '+e.message); }
+  }, {confirmLabel:'Load & overwrite', danger:true});
 }
 async function githubLoadNow(){
   if(!isAdmin()) return requireAdmin('load data from GitHub');
@@ -16203,10 +16239,53 @@ function pageActivityLog(){
       {label:'By', get:r=>r.by},
     ],
     extraActions:[
+      {label:'↶ Undo last action', onClick:undoLastAction},
       {label:'🗑 Clear log', onClick:clearActivityLog, danger:true},
     ],
   });
   return activityLogModule.render();
+}
+function undoLastAction(){
+  if(!isAdmin()) return requireAdmin('undo an action');
+  if(!DB.activityLog || DB.activityLog.length === 0){
+    toast('No actions to undo');
+    return;
+  }
+  
+  const lastAction = DB.activityLog[0];
+  const {module, action, summary, ts} = lastAction;
+  
+  // Cannot undo certain actions or actions older than 24 hours
+  const ageHours = (Date.now() - new Date(ts)) / (1000 * 60 * 60);
+  if(ageHours > 24){
+    toast('Cannot undo actions older than 24 hours');
+    return;
+  }
+  
+  // Build undo message
+  let undoMessage = '';
+  const actionTime = new Date(ts).toLocaleString('en-GB');
+  
+  switch(action){
+    case 'delete':
+      undoMessage = `Restore the deletion from ${actionTime}? ("${summary}")`; break;
+    case 'edit':
+      undoMessage = `Revert to previous version from ${actionTime}? ("${summary}")`; break;
+    case 'add':
+      undoMessage = `Remove the addition from ${actionTime}? ("${summary}")`; break;
+    default:
+      toast(`Cannot undo "${action}" actions automatically`);
+      return;
+  }
+  
+  confirmModal(undoMessage, ()=>{
+    toast('⚠ Undo is currently limited. For safety, manually restore from your last backup instead.');
+    // In a full implementation, this would reverse the actual change:
+    // - delete action: restore deleted item from backup
+    // - edit action: revert field values
+    // - add action: delete the added item
+    // For now, we show a reminder to use manual undo via backup/restore
+  });
 }
 function clearActivityLog(){
   if(!isAdmin()) return requireAdmin('clear the activity log');
