@@ -2909,7 +2909,8 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 @media (min-width:821px){
   .topbar-right{ justify-content:flex-end;}
   .topbar-search{ flex:none; width:min(440px,32vw); margin-right:6px;}
-  .topbar-search-icon{ display:none;}
+  .topbar-search-icon{ display:block;} /* Show on mobile */
+  @media (min-width:901px){ .topbar-search-icon{ display:none;} } /* Hide on desktop - search bar is visible there */
   .topbar-search-input{ display:block; width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16);
     color:#EFE8D3; border-radius:22px; padding:9px 16px 9px 36px; font-size:13px;}
   .topbar-search-input::placeholder{ color:rgba(239,232,211,.55);}
@@ -2925,17 +2926,25 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .clock-chip .time{ font-size:15px; font-weight:700; letter-spacing:.5px; font-family:var(--clock-font);}
 .clock-chip .date{ font-size:10.5px; color:rgba(239,232,211,.62); text-transform:uppercase; letter-spacing:.4px; font-family:var(--date-font);}
 .connectivity-status{ 
-  font-size:14px; 
+  font-size:12px; 
   cursor:default; 
-  padding:4px 6px; 
-  border-radius:4px; 
-  transition:opacity .3s ease;
-  opacity:0.6;
+  padding:6px 10px; 
+  border-radius:6px; 
+  transition:opacity .3s ease, background .3s ease;
+  opacity:0.7;
   user-select:none;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  background:rgba(0,0,0,.05);
+  color:var(--muted);
 }
+#connectivityIcon{ font-size:14px; }
+#connectivityText{ font-size:11px; font-weight:500; }
 .connectivity-status.offline{
   color:var(--terracotta);
   opacity:1;
+  background:rgba(255,100,0,.1);
   animation:blink 1s infinite;
 }
 @keyframes blink{
@@ -3955,7 +3964,7 @@ html, body{ overflow-x:hidden;}
         <div class="topbar-search" id="topbarSearch">
           <button class="icon-btn topbar-search-icon" id="globalSearchBtn" onclick="openGlobalSearch()" title="Search everything (Ctrl/Cmd+K)" aria-label="Search everything">🔎</button>
           <input type="text" class="topbar-search-input" id="topbarSearchInput" placeholder="Search titles, members, transactions…" autocomplete="off"
-            oninput="renderTopbarSearchResults(this.value)" onfocus="renderTopbarSearchResults(this.value)"
+            oninput="debouncedTopbarSearch(this.value)" onfocus="renderTopbarSearchResults(this.value)"
             onkeydown="if(event.key==='Escape'){this.value=''; this.blur(); closeTopbarSearch();}">
           <div class="topbar-search-results" id="topbarSearchResults"></div>
         </div>
@@ -3963,7 +3972,7 @@ html, body{ overflow-x:hidden;}
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
         </button>
         <button class="icon-btn" id="themeToggleMobile" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
-        <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online">🌐</div>
+        <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online"><span id="connectivityIcon">🌐</span><span id="connectivityText">Online</span></div>
         <div class="clock-chip" id="topClock"></div>
         <div class="account-chip" id="accountChip" onclick="openAccountQuickModal()">
           <div class="av" id="accountAv">?</div>
@@ -17147,16 +17156,21 @@ async function enterApp(){
 /* Connectivity status indicator */
 function updateConnectivityStatus(){
   const status = document.getElementById('connectivityStatus');
-  if(!status) return;
+  const icon = document.getElementById('connectivityIcon');
+  const text = document.getElementById('connectivityText');
+  if(!status || !icon || !text) return;
+  
   if(navigator.onLine){
-    status.textContent = '🌐';
+    icon.textContent = '🌐';
+    text.textContent = 'Online';
     status.classList.remove('offline');
-    status.setAttribute('title', 'Network status: Online');
+    status.setAttribute('title', 'Network status: Online - all features available');
     status.setAttribute('aria-label', 'Network status: Online');
   } else {
-    status.textContent = '📴';
+    icon.textContent = '📴';
+    text.textContent = 'Offline';
     status.classList.add('offline');
-    status.setAttribute('title', 'Network status: Offline - app works locally');
+    status.setAttribute('title', 'Network status: Offline - app works locally, data will sync when online');
     status.setAttribute('aria-label', 'Network status: Offline');
   }
 }
