@@ -4996,10 +4996,10 @@ function closeSidebarAfterNav(){
 
 /* ================= storage shim =================
    Priority order:
-   1. window.storage    — only exists inside Claude's own artifact preview.
+   1. window.storage    — only exists in certain hosted preview environments.
    2. localStorage       — real, durable browser storage. This is what makes the
                             app actually persist your data once you download it
-                            and open it as a normal file/site outside Claude.
+                            and open it as a normal file/site.
    3. in-memory object   — last-resort fallback (e.g. localStorage blocked by
                             private/incognito mode or browser settings); data
                             will NOT survive closing the tab in this case.
@@ -5067,7 +5067,7 @@ function clearBrowserStorage(){
   setTimeout(()=> window.location.reload(), 600);
 }
 function storageStatusInfo(){
-  if(STORAGE_BACKEND==='claude') return {label:'Claude account storage', detail:'Saved to this Claude account/conversation. Works here; won\u2019t follow you if you download and open this app elsewhere.', ok:true};
+  if(STORAGE_BACKEND==='claude') return {label:'In-app account storage', detail:'Saved to your account inside this app. Works here; won\u2019t follow you if you download and open this app elsewhere.', ok:true};
   if(STORAGE_BACKEND==='local') return {label:'This browser (localStorage)', detail:'Saved on this device, in this browser. It will still be here next time you open this app in the same browser — but not in a different browser, device, or private/incognito window.', ok:true};
   return {label:'Not persisted (this session only)', detail:'Your browser is blocking local storage (e.g. private/incognito mode), so nothing will survive closing this tab. Download a backup before you close it, or enable storage for this site.', ok:false};
 }
@@ -5338,7 +5338,6 @@ function renderAuthForm(){
       <div class="field"><label>Password</label>${pwFieldHtml('siPass','••••••••')}</div>
       <button class="btn auth-submit" onclick="doSignin()">Sign in</button>
       ${biometricSignInButtonHtml()}
-      <p class="field-hint" style="margin-top:14px">Try <strong>admin / admin123</strong> for full access, or <strong>guest / guest123</strong> to browse.</p>
       <p class="field-hint" style="margin-top:8px"><a href="#" onclick="authTab='forgot';renderAuthForm();return false;" style="color:var(--forest);font-weight:600">Forgot your password?</a></p>
     `;
     $('#siPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignin(); });
@@ -5411,7 +5410,7 @@ function renderAuthForm(){
         </div>
       </div>
       <div id="suAdminKeyWrap" style="${signupRole==='ADMIN'||(DB&&DB.setup&&DB.setup.requireKeyForAllSignups)?'':'display:none'}">
-        <div class="field"><label>Admin key</label>${pwFieldHtml('suAdminKey','Ask your librarian/administrator for this')}<p class="field-hint">Required to create an account — set in Personalization by an existing admin.</p></div>
+        <div class="field"><label>Admin key</label>${pwFieldHtml('suAdminKey','Ask your librarian/administrator for this')}</div>
       </div>
       <button class="btn auth-submit" onclick="doSignup()">Create account</button>
       <p class="field-hint" style="margin-top:8px"><a href="#" onclick="authTab='signin';renderAuthForm();return false;" style="color:var(--forest);font-weight:600">← Back to sign in</a></p>
@@ -5702,7 +5701,6 @@ function openAccountQuickModal(){
           <div class="field"><label>Current password</label>${pwFieldHtml('qCurrentPw','Only needed to set a new one')}</div>
           <div class="field"><label>New password</label>${pwFieldHtml('qNewPw','')}</div>
         </div>
-        <p class="field-hint">For roles, use the full My Account page. For account deletion, other accounts, or the admin key, use Privacy &amp; Security.</p>
       </div>
       <div class="modal-foot">
         <button class="btn danger" id="qSignOut" style="margin-right:auto">Sign out</button>
@@ -5808,12 +5806,11 @@ function pageAccount(){
     <button class="btn secondary" onclick="saveAccountSecurity()">Save password &amp; security</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Fingerprint &amp; Face ID sign-in</h3><div class="hint">Optional — your username and password always still work</div></div>
+    <div class="panel-head"><h3>Fingerprint &amp; Face ID sign-in</h3></div>
     ${renderBiometricDevicesList(acc0)}
     ${webauthnSupported()
       ? `<button class="btn secondary" onclick="registerBiometric()">👆 Register this device</button>`
       : `<p class="field-hint">Not available right now — this needs the page to be opened over <strong>https://</strong> (or localhost) and a device with a fingerprint reader or face sensor. It won't work when the file is opened directly from disk.</p>`}
-    <p class="field-hint" style="margin-top:8px">Your fingerprint/face scan itself is read by your device's operating system and is never seen or stored by alcms — only a device sign-in token is saved.</p>
   </div>
   ${isAdmin()? `
   <div class="card panel">
@@ -5825,9 +5822,8 @@ function pageAccount(){
     <button class="btn secondary" onclick="saveAccountRole()">Save access level</button>
   </div>` : ''}
   <div class="card panel">
-    <div class="panel-head"><h3>Session</h3><div class="hint">Signed in right now</div></div>
+    <div class="panel-head"><h3>Session</h3></div>
     <p style="font-size:12.5px;color:var(--muted)">${esc(SESSION.fullName)} (${esc(SESSION.username)}) · <span class="badge ${SESSION.role==='ADMIN'?'gold':SESSION.role==='STAFF'?'blue':'grey'}">${esc(SESSION.role)}</span></p>
-    <p class="field-hint" style="margin-top:6px">A page refresh always signs everyone out and returns to the sign-in screen — sessions never persist silently across reloads.</p>
   </div>
   <div class="card panel">
     <button class="btn danger" onclick="promptSignOut()">Sign out</button>
@@ -8505,7 +8501,6 @@ function openReportModal(){
           </select>
         </div>
         <div id="repExtra"></div>
-        <p class="field-hint">Includes: overview, library visits, circulation (issued/returned/missing), discipline, and reminders.</p>
       </div>
       <div class="modal-foot">
         <button class="btn secondary" id="mCancel">Cancel</button>
@@ -8524,8 +8519,7 @@ function openReportModal(){
       area.innerHTML = `<div class="field-row"><div class="field"><label>From</label><input id="repFrom" type="date"></div><div class="field"><label>To</label><input id="repTo" type="date"></div></div>`;
     } else if(p==='TERM' || p==='SESSION'){
       const startKey = p==='TERM' ? 'currentTermStart':'currentSessionStart', endKey = p==='TERM'?'currentTermEnd':'currentSessionEnd';
-      area.innerHTML = `<p class="field-hint">Set the ${p==='TERM'?'term':'session'} date range once here (used for all future reports).</p>
-        <div class="field-row"><div class="field"><label>Start date</label><input id="repRangeStart" type="date" value="${esc(DB.setup[startKey]||'')}"></div><div class="field"><label>End date</label><input id="repRangeEnd" type="date" value="${esc(DB.setup[endKey]||'')}"></div></div>`;
+      area.innerHTML = `<div class="field-row"><div class="field"><label>Start date</label><input id="repRangeStart" type="date" value="${esc(DB.setup[startKey]||'')}"></div><div class="field"><label>End date</label><input id="repRangeEnd" type="date" value="${esc(DB.setup[endKey]||'')}"></div></div>`;
     } else { area.innerHTML=''; }
   }
   renderExtra();
@@ -8729,7 +8723,7 @@ function openExportModal(title, filenameBase, columns, getRows){
     <div class="modal">
       <div class="modal-head"><h3>Export ${esc(title)}</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
-        <p class="field-hint" style="margin-bottom:10px">Choose a format. This exports the currently filtered view.</p>
+        
         <div class="format-choice">
           <div class="format-opt" id="fmtCsv"><span class="ic">📄</span>CSV</div>
           <div class="format-opt" id="fmtXlsx"><span class="ic">📊</span>Excel</div>
@@ -8837,7 +8831,7 @@ function openMultiSectionExportModal(title, filenameBase, sections){
     <div class="modal">
       <div class="modal-head"><h3>Export ${esc(title)}</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
-        <p class="field-hint" style="margin-bottom:10px">Choose a format. Includes every section on this page — summary tables and full chart data.</p>
+        
         <div class="format-choice">
           <div class="format-opt" id="fmtCsv"><span class="ic">📄</span>CSV</div>
           <div class="format-opt" id="fmtXlsx"><span class="ic">📊</span>Excel</div>
@@ -9185,8 +9179,8 @@ function pageDashboard(){
     ${kpi('Active loans', active, overdue+' overdue')}
   </div>
   <div class="grid charts-row">
-    <div class="card chart-box"><h4>Collection by main class</h4><p class="chart-caption">Your catalogue grouped by Dewey main class, so you can see where the collection is strongest.</p><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
-    <div class="card chart-box"><h4>Members by class / role / designation</h4><p class="chart-caption">How your registered members are spread across classes, roles and staff designations.</p><div class="chart-canvas-wrap"><canvas id="chMemberClass"></canvas></div></div>
+    <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
+    <div class="card chart-box"><h4>Members by class / role / designation</h4><div class="chart-canvas-wrap"><canvas id="chMemberClass"></canvas></div></div>
   </div>
   <div class="grid two-col">
     <div class="card panel">
@@ -9255,12 +9249,12 @@ function pageAnalytics(){
     </div>
   </div>
   <div class="grid charts-row">
-    ${analyticsChartBoxHtml('chAnMonthly','Monthly circulation trend','How many titles were issued each month — spot busy and quiet periods at a glance.')}
-    ${analyticsChartBoxHtml('chCondition','Book condition analysis','A breakdown of the collection by physical condition (Good, Fair, Damaged, Missing…) — flags what may need replacing.')}
-    ${analyticsChartBoxHtml('chLoanStatus','Loan status breakdown','The share of all loans that are currently borrowed, overdue, returned, or reported missing.')}
-    ${analyticsChartBoxHtml('chMemberCat','Members by category','How your registered members split between students and staff.')}
-    ${analyticsChartBoxHtml('chClassBorrow','Borrowing by class','Which classes borrow the most — useful for targeting reading encouragement where it\'s needed.')}
-    ${analyticsChartBoxHtml('chPurpose','Register visit purpose','Why members are signing in at the desk — borrowing, research, reading, internet access, and more.')}
+    ${analyticsChartBoxHtml('chAnMonthly','Monthly circulation trend')}
+    ${analyticsChartBoxHtml('chCondition','Book condition analysis')}
+    ${analyticsChartBoxHtml('chLoanStatus','Loan status breakdown')}
+    ${analyticsChartBoxHtml('chMemberCat','Members by category')}
+    ${analyticsChartBoxHtml('chClassBorrow','Borrowing by class')}
+    ${analyticsChartBoxHtml('chPurpose','Register visit purpose')}
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Overdue detail</h3><div class="hint">${overdueRows.length} loan(s) past due date</div></div>
@@ -9275,7 +9269,7 @@ function analyticsChartBoxHtml(canvasId, heading, caption){
   const tableHtml = sec ? `
     <div class="chart-data-table"><table><thead><tr>${sec.columns.map(c=>`<th>${esc(c.label)}</th>`).join('')}</tr></thead>
     <tbody>${sec.rows.length ? sec.rows.map(r=>`<tr>${sec.columns.map(c=>`<td>${esc(c.get(r))}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${sec.columns.length}">No data yet</td></tr>`}</tbody></table></div>` : '';
-  return `<div class="card chart-box has-table"><h4>${esc(heading)}</h4><p class="chart-caption">${caption}</p>
+  return `<div class="card chart-box has-table"><h4>${esc(heading)}</h4>
     <div class="chart-box-body"><div class="chart-canvas-wrap"><canvas id="${canvasId}"></canvas></div>${tableHtml}</div></div>`;
 }
 /* Print / export for the Analytics page — the top borrowers, top titles, and full overdue
@@ -10994,7 +10988,7 @@ function pageReservations(){
   }
   return `
   <div class="card panel">
-    <div class="panel-head"><h3>Place a reservation</h3><div class="hint">For a title that's currently issued — pick who's waiting for it</div></div>
+    <div class="panel-head"><h3>Place a reservation</h3></div>
     <div class="field-row">
       <div class="field"><label>Member ID</label>${quickPickerHtml('reserveUser','Type a member ID')}</div>
       <div class="field"><label>Accession No.</label>${quickPickerHtml('reserveBook','Type an accession no. of an issued title')}</div>
@@ -13111,7 +13105,6 @@ function openWaCardModal({html, filenameBase, phone, caption}){
     <div class="modal" style="max-width:660px;">
       <div class="modal-head"><h3>📎 Share on WhatsApp</h3><button id="waCardClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
-        <p class="field-hint">This goes out as a designed image (or PDF) — not a plain-text message.</p>
         <div id="waCardPreviewWrap" style="display:flex;justify-content:center;align-items:center;min-height:160px;background:var(--parchment-dim);border-radius:10px;padding:16px;overflow:auto;">
           <span class="field-hint">Rendering card…</span>
         </div>
@@ -13264,13 +13257,13 @@ function pageRegister(){
   return `
   <div class="card panel">
     <div class="panel-head">
-      <div><h3>Batch check-in</h3><div class="hint">Stage several students, then submit them together</div></div>
+      <div><h3>Batch check-in</h3></div>
     </div>
     <div id="batchStagingArea"></div>
   </div>
   <div class="card panel">
     <div class="panel-head">
-      <div><h3>Batch check-out</h3><div class="hint">Everyone currently signed in at the desk today</div></div>
+      <div><h3>Batch check-out</h3></div>
     </div>
     <div id="checkoutStagingArea"></div>
   </div>
@@ -13518,7 +13511,7 @@ function pageSchedule(){
   return `
   <div class="card panel">
     <div class="panel-head">
-      <div><h3>Weekly library schedule</h3><div class="hint">Expected classes per period, by day</div></div>
+      <div><h3>Weekly library schedule</h3></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary" onclick="printWeeklySchedule()">🖶 Print</button>
         ${isAdmin()? `<button class="btn" onclick="openScheduleForm()">+ Add period</button>`:''}
@@ -14402,7 +14395,7 @@ function pageSetup(){
   const termIdx = DB.setup.termIndex ?? 0;
   return `
   <div class="card panel">
-    <div class="panel-head"><h3>Institution</h3><div class="hint">Displayed on the sidebar, sign-in screen and printed reports</div></div>
+    <div class="panel-head"><h3>Institution</h3></div>
     <div class="field"><label>Institution / school name</label><input id="setInstitution" value="${esc(DB.setup.institutionName||'')}" placeholder="e.g. Access International School"></div>
     <div class="avatar-upload" style="margin-top:10px">
       <div class="avatar-preview-wrap">
@@ -14413,7 +14406,7 @@ function pageSetup(){
         <label class="btn secondary small" style="cursor:pointer">Upload Institution Logo<input type="file" accept="image/*" id="logoInput" style="display:none"></label>
         ${DB.setup.institutionLogo? `<button class="btn danger small" id="logoRemove" style="margin-left:6px">Remove</button>`:''}
         ${DB.setup.institutionLogo? `<button class="btn secondary small" style="margin-left:6px" onclick="generatePaletteFromLogo(DB.setup.institutionLogo)">🎨 Regenerate palette from logo</button>`:''}
-        <p class="field-hint">Replaces the library icon in the sidebar. Under 800KB — also generates a matching colour palette (Personalization → Colour palette).</p>
+        <p class="field-hint">Max 800KB.</p>
         <div id="logoRepositionWrap" style="${DB.setup.institutionLogo?'':'display:none'};margin-top:8px">
           <label style="font-size:11px;color:var(--muted)">Reposition logo</label>
           <input type="range" id="logoPosX" min="0" max="100" value="${(DB.setup.institutionLogoPos||{x:50,y:50}).x}" style="width:100%">
@@ -14424,7 +14417,7 @@ function pageSetup(){
     <button class="btn secondary" onclick="saveInstitution()">Save</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Academic term &amp; session</h3><div class="hint">Shown on every export and printed report</div></div>
+    <div class="panel-head"><h3>Academic term &amp; session</h3></div>
     <div class="field-row">
       <div class="field"><label>Term naming style</label><select id="setTermScheme" onchange="previewTermScheme()">${Object.entries(TERM_LABEL_SCHEMES).map(([k,v])=>`<option value="${k}" ${scheme===k?'selected':''}>${v.label} (${v.terms.join(' / ')})</option>`).join('')}</select></div>
       <div class="field"><label>Current term</label><select id="setTermIndex">${TERM_LABEL_SCHEMES[scheme].terms.map((t,i)=>`<option value="${i}" ${termIdx==i?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
@@ -14445,7 +14438,7 @@ function pageSetup(){
       </div>
     </div>
     <div class="card panel">
-      <div class="panel-head"><h3>Staff designations</h3><div class="hint">Used for the "Designation" field when a member's category is Staff</div></div>
+      <div class="panel-head"><h3>Staff designations</h3></div>
       <div id="designationList">${DB.setup.staffDesignations.map(s=>`<span class="pill">${esc(s)} <a href="#" onclick="removeDesignation('${esc(s)}');return false;" style="color:#A8452F;text-decoration:none" aria-label="Remove">✕</a></span>`).join('')}</div>
       <div class="field-row" style="margin-top:12px">
         <div class="field"><label>New designation</label><input id="newDesignation" placeholder="e.g. LIBRARIAN"></div>
@@ -14454,7 +14447,7 @@ function pageSetup(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Subjects offered</h3><div class="hint">Register each subject's full name and code here — the code is what's used everywhere else in the app (class lists, member profiles, catalogue subject tags)</div></div>
+    <div class="panel-head"><h3>Subjects offered</h3></div>
     <div id="subjectList">${renderSubjectsHtml()}</div>
     <div class="field-row" style="margin-top:12px">
       <div class="field"><label>Full subject name</label><input id="newSubjectName" placeholder="e.g. MUSIC"></div>
@@ -14468,7 +14461,7 @@ function pageSetup(){
     <button class="btn secondary" onclick="saveClassSubjects()">Save subject distribution</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Schedule management</h3><div class="hint">Add, edit or remove weekly periods</div></div>
+    <div class="panel-head"><h3>Schedule management</h3></div>
     <p style="font-size:12.5px;color:var(--muted)">Manage the weekly timetable and per-student subject combinations from the <a href="#" onclick="route='schedule';render();return false;" style="color:var(--forest);font-weight:600">Schedule page</a> — every row there has Edit/Delete when you're signed in as admin.</p>
   </div>
   <div class="grid two-col">
@@ -14489,18 +14482,17 @@ function pageSetup(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Shelf mapping by main class</h3><div class="hint">Which shelf codes belong to each Dewey main class — drives "Auto-group existing items" below and auto-shelf-assignment for new titles. Every shelf can only belong to one class at a time.</div></div>
+    <div class="panel-head"><h3>Shelf mapping by main class</h3><div class="hint">Every shelf can only belong to one class at a time.</div></div>
     <div id="shelfMapGrid">${renderShelfMapHtml()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn secondary" onclick="proposeShelfMap()">🔎 Auto-propose from current collection sizes</button>
       <button class="btn" onclick="saveShelfMap()">Save shelf mapping</button>
     </div>
-    <p class="field-hint" style="margin-top:10px">Once saved, opening "+ Add title" auto-picks the least-full shelf in the chosen main class as soon as that class is set — always still yours to change before saving.</p>
     <button class="btn secondary" style="margin-top:10px" onclick="autoGroupCatalogueIntoShelves()">📦 Auto-group existing catalogue items into these shelves</button>
-    <p class="field-hint" style="margin-top:6px">Re-shelves every title in the catalogue now, spreading each main class's items evenly across its assigned shelves. Uses the mapping as last saved — save any changes above first.</p>
+    <p class="field-hint" style="margin-top:6px">Save changes above first — uses the mapping as last saved.</p>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Codes</h3><div class="hint">Used on member ID cards, catalogue cards and the scan/verify screen</div></div>
+    <div class="panel-head"><h3>Codes</h3></div>
     <div class="field">
       <label>Code type generated</label>
       <div class="role-choice">
@@ -14511,7 +14503,7 @@ function pageSetup(){
     <button class="btn secondary" onclick="saveCodeTypeSetting()">Save</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Fines &amp; renewals</h3><div class="hint">How overdue fines are calculated, and how many times a loan can be renewed</div></div>
+    <div class="panel-head"><h3>Fines &amp; renewals</h3></div>
     <div class="field"><label><input type="checkbox" id="setFineEnabled" ${DB.setup.fineEnabled?'checked':''}> Charge a fine for overdue loans</label></div>
     <div class="field-row">
       <div class="field"><label>Fine per day overdue</label><input type="number" id="setFineRate" min="0" step="1" value="${DB.setup.fineRatePerDay||0}"></div>
@@ -14525,8 +14517,8 @@ function pageSetup(){
     <button class="btn secondary" onclick="saveFineSettings()">Save</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Discipline &amp; consequences</h3><div class="hint">Applied automatically when a loan is returned — logged to the Register as a discipline entry, same as a manually-recorded offense</div></div>
-    <p class="field-hint">Overdue strikes — a member accrues one strike per overdue return; set what happens once they reach a given count</p>
+    <div class="panel-head"><h3>Discipline &amp; consequences</h3></div>
+    <p class="field-hint">Overdue strikes</p>
     <div id="overdueConsequenceList">
       ${(DB.setup.overdueConsequences||[]).map((r,i)=>`
         <div class="field-row" style="align-items:flex-end;flex-wrap:wrap">
@@ -14540,7 +14532,7 @@ function pageSetup(){
       <button class="btn secondary small" onclick="addOverdueConsequence()">+ Add threshold</button>
       <button class="btn secondary" onclick="saveOverdueConsequences()">Save overdue thresholds</button>
     </div>
-    <p class="field-hint" style="margin-top:18px">Item condition on return — e.g. mutilated (damaged) or missing items</p>
+    <p class="field-hint" style="margin-top:18px">Item condition on return</p>
     <div id="itemConsequenceList">
       ${(DB.setup.itemConsequences||[]).map((r,i)=>`
         <div class="field-row" style="align-items:flex-end;flex-wrap:wrap">
@@ -14556,7 +14548,7 @@ function pageSetup(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Promote students</h3><div class="hint">Stage students from one or more classes, then move them all together</div></div>
+    <div class="panel-head"><h3>Promote students</h3></div>
     <div class="field-row">
       <div class="field"><label>From class</label><select id="promoteFrom" onchange="onPromoteFromChange()"><option value="" selected disabled>Select class</option>${sortedClasses().map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
       <div class="field"><label>Move to</label><select id="promoteTo"><option value="" selected disabled>Select class</option>${sortedClasses().map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
@@ -14572,7 +14564,7 @@ function pageSetup(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Notifications &amp; alerts</h3><div class="hint">Choose which alerts appear, how often they check in and re-show — everything's on by default</div></div>
+    <div class="panel-head"><h3>Notifications &amp; alerts</h3></div>
     <div class="field">
       <label style="margin-bottom:6px;display:block">Notification bell &amp; pop-up alerts</label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifOverdue" ${DB.setup.notifTypes.overdue?'checked':''} onchange="saveNotifTypeSetting('overdue', this.checked)"> Loans now overdue</label>
@@ -14591,13 +14583,12 @@ function pageSetup(){
         ${[1,2,5,10].map(m=>`<option value="${m}" ${(DB.setup.alertReshowMinutes||2)===m?'selected':''}>${m} minute${m>1?'s':''}</option>`).join('')}
       </select></div>
     </div>
-    <p class="field-hint">Applies to overdue, due-soon, class-period and feedback alerts alike — each has its own View and Close button.</p>
     <button class="btn secondary" onclick="saveAlertFrequencySettings()">Save alert timing</button>
     <div class="field" style="margin-top:16px"><label><input type="checkbox" id="setWaReceipts" ${DB.setup.whatsappReceipts?'checked':''} onchange="toggleWhatsAppReceipts(this.checked)"> Send a WhatsApp transaction receipt automatically on every successful borrow/return</label></div>
     <p class="field-hint">Goes to the staff member themselves, or a student's class teacher, using the phone numbers on file. Nothing sends if no number is on file.</p>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Integrations</h3><div class="hint">Connect scans and circulation events to an external system (e.g. a Scan2Flow-style workflow endpoint). Optional — leave the URL blank to keep everything purely local.</div></div>
+    <div class="panel-head"><h3>Integrations</h3><div class="hint">Optional — leave the URL blank to keep everything purely local.</div></div>
     <div class="field"><label>Webhook URL</label><input type="url" id="setScanWebhookUrl" value="${esc(DB.setup.scanWebhookUrl||'')}" placeholder="https://your-scan2flow-endpoint.example.com/hook"></div>
     <div class="field"><label>Station ID</label><input type="text" id="setStationId" value="${esc(DB.setup.stationId||'')}" placeholder="e.g. DESK1"></div>
     <p class="field-hint">Every scan, issue, return, and check-in is POSTed here as JSON if a URL is set. A station/token can also be supplied via the URL, e.g. <code>?station=DESK1&amp;token=abc123</code>.</p>
@@ -14851,7 +14842,6 @@ function pageSettings(){
   }
   return `
   <div class="panel-head" style="margin-bottom:14px">
-    <div><div class="hint">Grouped by how they're actually used — colours &amp; type, backgrounds, icons &amp; motion, clock &amp; date, the sign-in screen, then the Home greeting.</div></div>
     <button class="btn danger" onclick="resetPersonalization()">↺ Reset personalization to default</button>
   </div>
   <div class="card panel">
@@ -15184,7 +15174,7 @@ function pageBackup(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>GitHub sync</h3><div class="hint">Cross-device backup that isn't tied to this browser</div></div>
-    <p style="font-size:12.5px;color:var(--muted);line-height:1.6">Push your current data to a file in a GitHub repo, and pull it back down on any other browser or computer. This goes straight from your browser to GitHub — it doesn't depend on this browser's storage, and it doesn't pass through Claude. Requires a GitHub personal access token with Contents read/write access on the target repo.</p>
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.6">Push your current data to a file in a GitHub repo, and pull it back down on any other browser or computer. This goes straight from your browser to GitHub — it doesn't depend on this browser's storage, and it doesn't pass through any third party. Requires a GitHub personal access token with Contents read/write access on the target repo.</p>
     <p style="font-size:12px;color:var(--muted);margin-top:4px">Last saved (upload): <strong>${esc(fmtGithubStamp(GITHUB_STAMPS.saved))}</strong> &nbsp;·&nbsp; Last loaded (download): <strong>${esc(fmtGithubStamp(GITHUB_STAMPS.loaded))}</strong></p>
     <p style="font-size:12px;color:#b45309;margin-top:8px;line-height:1.6">⚠️ The file this writes to (default <code>alcms-data.json</code>) is a personal backup — it includes account usernames, passwords and security answers, not just catalogue data. It is <strong>not</strong> the same as <code>js/seed-data.js</code> (the safe-to-share starting data new browsers seed from), and it should never be committed to a public repo. If you point this at a repo you plan to push publicly, add the file to <code>.gitignore</code> first.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
@@ -15354,7 +15344,7 @@ function pageAbout(){
     </div>
     <div class="card panel">
       <div class="panel-head"><h3>How your data is stored</h3></div>
-      <p style="font-size:13px;line-height:1.7;color:var(--muted)">Everything you add or change is saved automatically to your Claude account's private storage, and reloads the next time you open this app. Use the <strong>💾 Save changes</strong> button any time for peace of mind, <strong>🕐 Checkpoints</strong> for named restore points, and Backup &amp; Restore to download a full copy for your own Drive.</p>
+      <p style="font-size:13px;line-height:1.7;color:var(--muted)">Everything you add or change is saved automatically to this app's storage, and reloads the next time you open it. Use the <strong>💾 Save changes</strong> button any time for peace of mind, <strong>🕐 Checkpoints</strong> for named restore points, and Backup &amp; Restore to download a full copy for your own Drive.</p>
     </div>
   </div>
   <div class="card panel">
@@ -16340,7 +16330,7 @@ function restoreAccountBackup(file){
    GitHub repo, via the GitHub REST "contents" API, straight from the browser.
    This means your data can follow you to a different browser, computer, or
    account — it does not depend on this browser's storage and does not pass
-   through Claude at all; the request goes directly from your browser to
+   through any third party at all; the request goes directly from your browser to
    api.github.com. The token you provide is stored only in this browser
    (localStorage) so it has to be re-entered per browser/device. Use a
    fine-grained personal access token scoped to just this one repo's contents,
@@ -16728,7 +16718,7 @@ function pageSecurity(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Data &amp; privacy</h3><div class="hint">What this app stores, and where</div></div>
-    <p style="font-size:12.5px;color:var(--muted);line-height:1.7">Everything — catalogue, members, loans, accounts, preferences — is stored only in this browser (or wherever you explicitly sync it: GitHub, a downloaded backup, or Google Drive). Nothing is sent to Claude or any third party automatically. WhatsApp receipts and reminders, when enabled, render a designed image (or PDF) card on your device and share it via WhatsApp, your clipboard, or a download — the card itself isn't stored or sent anywhere by this app besides that.</p>
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.7">Everything — catalogue, members, loans, accounts, preferences — is stored only in this browser (or wherever you explicitly sync it: GitHub, a downloaded backup, or Google Drive). Nothing is sent to any third party automatically. WhatsApp receipts and reminders, when enabled, render a designed image (or PDF) card on your device and share it via WhatsApp, your clipboard, or a download — the card itself isn't stored or sent anywhere by this app besides that.</p>
   </div>`;
 }
 function bindSecurityPage(){
