@@ -9855,15 +9855,21 @@ async function lookupBookByIsbn(){
 
   // Source 1: Open Library
   const tryOpenLibrary = async (code)=>{
-    const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
-    const data = await res.json();
-    return data['ISBN:'+code] || null;
+    try{
+      const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      return data['ISBN:'+code] || null;
+    }catch(e){ return null; } // this source being unreachable shouldn't block trying the next one
   };
   // Source 2: Google Books
   const tryGoogleBooks = async (code)=>{
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
-    const data = await res.json();
-    return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+    try{
+      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+    }catch(e){ return null; }
   };
 
   toast('Looking up ISBN…');
