@@ -13382,7 +13382,7 @@ function waCardFooter(T){
     <div style="border-top:1px dashed ${T.line};margin:4px 24px 0;"></div>
     <div style="padding:12px 24px 18px;text-align:center;">
       <div style="font-size:10.5px;color:${T.muted};">Generated ${new Date().toLocaleDateString('en-GB')} ${new Date().toTimeString().slice(0,5)}</div>
-      <div style="font-size:10.5px;color:${T.muted};letter-spacing:.06em;margin-top:2px;">alcms</div>
+      <div style="font-size:10.5px;color:${T.muted};letter-spacing:.06em;margin-top:2px;">Automated Library &amp; Circulation Management System</div>
     </div>`;
 }
 /* Single-item card shell — one transaction, itemized as vertically-stacked label/value rows
@@ -16199,7 +16199,7 @@ function downloadUserGuidePDF(){
   doc.setFontSize(8.5); doc.setTextColor(...fade(CREAM,0.2));
   doc.text('Generated '+new Date().toLocaleString('en-GB'), pageW/2, 275, {align:'center'});
   doc.setFontSize(7.5);
-  doc.text('VersaX CS · alcms', pageW/2, 281, {align:'center'});
+  doc.text('VersaX CS · Automated Library & Circulation Management System', pageW/2, 281, {align:'center'});
 
   // ================= TABLE OF CONTENTS (reserved page 2, filled in later) =================
   doc.addPage();
@@ -16276,7 +16276,7 @@ function downloadUserGuidePDF(){
     doc.setFontSize(7.5); doc.setFont(undefined,'bold'); doc.setTextColor(...WHITE);
     doc.text(String(p-1), pageW-marginR-3.6, pageH-8.2, {align:'center'});
     doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(...MUTED);
-    doc.text('alcms — Comprehensive User Guide', marginL, pageH-8.2);
+    doc.text('Automated Library & Circulation Management System', marginL, pageH-8.2);
     if(pageMeta[p]) doc.text(pageMeta[p], pageW/2, pageH-8.2, {align:'center'});
   }
   doc.save('alcms_User_Guide.pdf');
