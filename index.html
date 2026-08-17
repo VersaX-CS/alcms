@@ -2674,6 +2674,10 @@ body[data-lockscreen-decor-style="none"] .auth-decor{ display:none;}
 .auth-top-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-start;}
 .auth-notif-bell .icon-btn{ background:transparent; border:none; color:#EFE8D3; position:relative;}
 .auth-notif-bell .icon-btn:hover{ background:transparent; border:none;}
+/* Bell sits right after "Getting started" in .auth-top-actions — size it up a bit for visibility,
+   and pull it in closer with a negative margin (rather than shrinking the shared .auth-top-actions
+   gap, which would also crowd Tips against Getting started). */
+.auth-notif-bell .auth-top-actions .icon-btn{ font-size:19px; margin-left:-4px;}
 /* Fixed (not absolute) so the dropdown is positioned straight off the viewport instead of the
    .auth-notif-bell wrapper — it can then never be clipped by .auth-info's overflow:hidden
    (desktop) or overflow-y:auto/100dvh box (mobile). Exact top/left/bottom are set inline by
