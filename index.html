@@ -2928,6 +2928,13 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
   .topbar-search-input::placeholder{ color:rgba(239,232,211,.55);}
   .topbar-search-input:focus{ outline:none; border-color:var(--brass-light); background:rgba(255,255,255,.14);}
   .topbar-search .topbar-search-icon{ display:none;} /* Full search bar replaces the icon on desktop — extra .topbar-search selector needed to outrank the later .icon-btn display rule */
+  /* The desktop sidebar (.sidebar, siblings with .main under #app) takes 230px away from .main
+     whenever it's expanded — i.e. NOT .desktop-collapsed. Left alone, flexbox would shrink the
+     title and the search bar roughly together as that room disappears. Capping the title/subtitle
+     here instead means the title truncates first and .topbar-search (flex:1 1 auto) automatically
+     claims whatever it frees up, so the search bar keeps the most room exactly when the sidebar is
+     open and the row is tightest. */
+  .sidebar:not(.desktop-collapsed) ~ .main .topbar .titles{ max-width:190px;}
 }
 body[data-topbar-style="blank"] .topbar-search-input{ color:var(--ink); border-color:var(--line);}
 body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--muted);}
@@ -2940,7 +2947,12 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
    state. */
 #topHomeBtn, #noteBtn, #notifBellBtn{ background:transparent; border:none; font-size:22px;}
 #topHomeBtn:hover, #noteBtn:hover, #notifBellBtn:hover{ background:transparent; border:none;}
-.note-btn-label{ margin-left:6px; font-size:12.5px; font-weight:600; color:#EFE8D3; white-space:nowrap; vertical-align:middle;}
+/* #noteBtn is an inline-flex box (inherited from .icon-btn) holding the 📝 icon and this label
+   as two flex items — using flex `gap` instead of a margin on the label keeps a tight, fixed
+   4px seam between icon and text regardless of font metrics, so "Quick Notes" reads as inscribed
+   right next to its icon rather than floating off with leftover centering slack. */
+#noteBtn{ gap:4px;}
+.note-btn-label{ font-size:12.5px; font-weight:600; color:#EFE8D3; white-space:nowrap; line-height:1;}
 .clock-chip{ font-family:Georgia,serif; font-size:13px; color:var(--brass-light); text-align:right; line-height:1.25;}
 .clock-chip .time{ font-size:15px; font-weight:700; letter-spacing:.5px; font-family:var(--clock-font);}
 .clock-chip .date{ font-size:10.5px; color:rgba(239,232,211,.62); text-transform:uppercase; letter-spacing:.4px; font-family:var(--date-font);}
@@ -3766,6 +3778,16 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
     display:flex; align-items:center; justify-content:center; font-size:20px;
   }
   .topbar .icon-btn:active{ background:rgba(255,255,255,.1);}
+  /* Home/Notes/Notification-bell are exempted from the pill background above (see the
+     #topHomeBtn/#noteBtn/#notifBellBtn rule near .topbar .icon-btn's definition), but that same
+     ID rule also carries a 22px font-size meant for their desktop sizing. Left unchecked on
+     mobile it wins over the 20px every other topbar icon (search, theme toggle) gets from
+     `.topbar .icon-btn` above — an ID selector beats a class selector regardless of source order
+     — so these three rendered visibly larger than their neighbours inside an identical 38x38 box.
+     Reasserting 20px here (later in the cascade, so it wins the tie) makes every mobile topbar
+     icon the same size and centered within its tap target, instead of some overflowing/deforming
+     the row. */
+  #topHomeBtn, #noteBtn, #notifBellBtn{ font-size:20px;}
   #topHomeBtn:active, #noteBtn:active, #notifBellBtn:active{ background:none;}
   .account-chip{
     background:none; border:none; padding:0 0 0 4px; gap:0; min-width:0;
