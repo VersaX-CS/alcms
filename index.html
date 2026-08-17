@@ -3403,14 +3403,17 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 
 .quickpick{ position:relative;}
 .quickpick input{ width:100%;}
-.quickpick .suggestions{ position:fixed; background:var(--card); border:1px solid var(--line); border-radius:10px;
+/* Not scoped under .quickpick — the panel is detached onto <body> while open (see
+   openSuggestions() in bindQuickPicker) to escape any ancestor's positioning context, so a
+   ".quickpick .suggestions" descendant selector would stop matching the moment it's open. */
+.suggestions{ position:fixed; background:var(--card); border:1px solid var(--line); border-radius:10px;
   max-height:190px; overflow-y:auto; box-shadow:0 14px 34px rgba(0,0,0,.18); z-index:1200; display:none; padding:4px 6px;}
-.quickpick .suggestions.show{ display:block;}
-.quickpick .sugg-item{ padding:7px 10px; font-size:12.5px; border-bottom:1px solid var(--line); cursor:pointer; border-radius:0;}
-.quickpick .sugg-item:last-child{ border-bottom:none;}
-.quickpick .sugg-item:hover, .quickpick .sugg-item.active{ background:rgba(31,58,46,.08);}
-.quickpick .sugg-item b{ color:var(--forest);}
-html[data-theme="dark"] .quickpick .sugg-item:hover, html[data-theme="dark"] .quickpick .sugg-item.active{ background:rgba(255,255,255,.08);}
+.suggestions.show{ display:block;}
+.sugg-item{ padding:7px 10px; font-size:12.5px; border-bottom:1px solid var(--line); cursor:pointer; border-radius:0;}
+.sugg-item:last-child{ border-bottom:none;}
+.sugg-item:hover, .sugg-item.active{ background:rgba(31,58,46,.08);}
+.sugg-item b{ color:var(--forest);}
+html[data-theme="dark"] .sugg-item:hover, html[data-theme="dark"] .sugg-item.active{ background:rgba(255,255,255,.08);}
 .picked-card{ margin-top:8px; padding:10px 12px; background:var(--parchment-dim); border-radius:8px; font-size:12px; display:none;}
 .picked-card.show{ display:block;}
 
