@@ -2908,8 +2908,16 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
   background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,.32); padding:6px; z-index:60; flex-direction:column;}
 .topbar-search-results.open{ display:flex;}
 @media (min-width:901px){
-  .topbar-right{ justify-content:flex-end;}
-  .topbar-search{ flex:none; width:min(440px,32vw); margin-right:6px;}
+  /* The search box used to be sized off the raw viewport (min(440px,32vw)), so it never
+     responded to how much room was actually left in the topbar — it stayed the same width
+     whether the title was long, the sidebar was expanded, or other topbar icons took more
+     space. Making it the one flex-growing element in .topbar-right (its siblings pinned to
+     flex:none) means it now expands/contracts together with the title and the rest of the
+     row, capped by min/max so it never gets unusably narrow or absurdly wide. */
+  .topbar > div:first-child{ flex:0 1 auto;}
+  .topbar-right{ justify-content:flex-end; flex:1 1 auto; min-width:0;}
+  .topbar-right > *:not(.topbar-search){ flex:none;}
+  .topbar-search{ flex:1 1 auto; min-width:200px; max-width:440px; margin-right:6px;}
   .topbar-search-input{ display:block; width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16);
     color:#EFE8D3; border-radius:22px; padding:9px 16px 9px 36px; font-size:13px;}
   .topbar-search-input::placeholder{ color:rgba(239,232,211,.55);}
