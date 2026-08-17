@@ -2915,7 +2915,7 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
     color:#EFE8D3; border-radius:22px; padding:9px 16px 9px 36px; font-size:13px;}
   .topbar-search-input::placeholder{ color:rgba(239,232,211,.55);}
   .topbar-search-input:focus{ outline:none; border-color:var(--brass-light); background:rgba(255,255,255,.14);}
-  .topbar-search-icon{ display:none;} /* Full search bar replaces the icon on desktop */
+  .topbar-search .topbar-search-icon{ display:none;} /* Full search bar replaces the icon on desktop — extra .topbar-search selector needed to outrank the later .icon-btn display rule */
 }
 body[data-topbar-style="blank"] .topbar-search-input{ color:var(--ink); border-color:var(--line);}
 body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--muted);}
