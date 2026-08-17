@@ -7568,6 +7568,8 @@ function bindSearchSelectFields(fields){
     const hidden = document.getElementById('f_'+f.key);
     const sugg = document.getElementById('ss_sugg_'+f.key);
     if(!wrap || !input || !hidden || !sugg) return;
+    const suggHome = sugg.parentElement;
+    sugg.dataset.qpInputId = input.id;
     const opts = f.options||[];
     let matches = [];
     let activeIndex = -1;
@@ -7583,10 +7585,16 @@ function bindSearchSelectFields(fields){
       sugg.innerHTML = matches.length
         ? matches.slice(0,50).map((o,i)=>`<div class="sugg-item" data-i="${i}">${esc(o)}</div>`).join('')
         : `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`;
+      // Same containing-block problem as bindQuickPicker (see its openSuggestions() comment) —
+      // detach to <body> while open so this list also lands directly under the input.
+      document.body.appendChild(sugg);
       sugg.classList.add('show');
       positionFloatingPanel(sugg, input, {matchWidth:true});
     }
-    function closeList(){ sugg.classList.remove('show'); }
+    function closeList(){
+      sugg.classList.remove('show');
+      if(sugg.parentElement !== suggHome) suggHome.appendChild(sugg);
+    }
     function pick(opt){
       input.value = opt;
       hidden.value = opt;
@@ -7606,7 +7614,7 @@ function bindSearchSelectFields(fields){
       const row = e.target.closest('.sugg-item'); if(!row || row.dataset.i===undefined) return;
       const opt = matches[+row.dataset.i]; if(opt) pick(opt);
     });
-    document.addEventListener('click', e=>{ if(!e.target.closest('#ss_'+f.key)) closeList(); });
+    document.addEventListener('click', e=>{ if(!e.target.closest('#ss_'+f.key) && !sugg.contains(e.target)) closeList(); });
   });
 }
 /* Styled in-app replacement for the browser's native confirm() — used for every destructive
@@ -7687,24 +7695,40 @@ function bindQuickPicker(id, {items, formatSuggestion, formatPicked, onPick}){
   const input = document.getElementById('qp_input_'+id);
   const sugg = document.getElementById('qp_sugg_'+id);
   const picked = document.getElementById('qp_picked_'+id);
+  const suggHome = sugg.parentElement; // put it back here once closed, so re-rendering the page doesn't leave an orphaned copy on <body>
+  sugg.dataset.qpInputId = input.id; // lets repositionOpenSuggestionPanels() find its anchor while open
   let selected = null;
+  function openSuggestions(){
+    // A themed .card (the "glassy"/"image" Personalization backgrounds put backdrop-filter on
+    // .card) creates its own containing block for position:fixed children, exactly like
+    // transform does for .dropdown-menu elsewhere in the app — so despite being computed from
+    // the input's real on-screen coordinates, the panel can render far from the input or off
+    // the edge of the card. Detach to <body> while open so it's always positioned relative to
+    // the real viewport, directly under the input, above everything else.
+    document.body.appendChild(sugg);
+    sugg.classList.add('show');
+    positionFloatingPanel(sugg, input, {matchWidth:true});
+  }
+  function closeSuggestions(){
+    sugg.classList.remove('show');
+    if(sugg.parentElement !== suggHome) suggHome.appendChild(sugg);
+  }
   const search = debounce(()=>{
     const q = input.value.trim().toLowerCase();
-    if(!q){ sugg.classList.remove('show'); sugg.innerHTML=''; return; }
+    if(!q){ closeSuggestions(); sugg.innerHTML=''; return; }
     const exact = items.find(it=> it.id.toLowerCase()===q);
     let matches;
     if(exact){ matches=[exact]; }
     else{
       matches = items.filter(it=> it.id.toLowerCase().includes(q) || it.label.toLowerCase().includes(q)).slice(0,25);
     }
-    if(!matches.length){ sugg.innerHTML = `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`; sugg.classList.add('show'); positionFloatingPanel(sugg, input, {matchWidth:true}); return; }
+    if(!matches.length){ sugg.innerHTML = `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`; openSuggestions(); return; }
     sugg.innerHTML = matches.map(it=>`<div class="sugg-item" data-id="${esc(it.id)}"><b>${esc(it.id)}</b> — ${esc(it.label)}</div>`).join('');
-    sugg.classList.add('show');
-    positionFloatingPanel(sugg, input, {matchWidth:true});
+    openSuggestions();
     if(exact && matches.length===1) pick(exact);
   }, 120);
   function pick(it){
-    selected = it; input.value = it.id; sugg.classList.remove('show');
+    selected = it; input.value = it.id; closeSuggestions();
     picked.innerHTML = formatPicked(it); picked.classList.add('show');
     onPick && onPick(it);
   }
@@ -7714,9 +7738,20 @@ function bindQuickPicker(id, {items, formatSuggestion, formatPicked, onPick}){
     const row = e.target.closest('.sugg-item'); if(!row || !row.dataset.id) return;
     const it = items.find(x=>x.id===row.dataset.id); if(it) pick(it);
   });
-  document.addEventListener('click', e=>{ if(!e.target.closest('#qp_'+id)) sugg.classList.remove('show'); });
+  document.addEventListener('click', e=>{ if(!e.target.closest('#qp_'+id) && !sugg.contains(e.target)) closeSuggestions(); });
   return { get value(){ return selected; }, clear(){ selected=null; input.value=''; picked.classList.remove('show'); }, pick(it){ pick(it); } };
 }
+// Shared by every quickpick / searchselect suggestions panel: while a panel is open (detached
+// onto <body> — see openSuggestions() above), keep it pinned under its input as the page
+// scrolls or the viewport resizes, the same way trackOpenDropdown() does for the "⋯ More" menus.
+function repositionOpenSuggestionPanels(){
+  document.querySelectorAll('.suggestions.show').forEach(sugg=>{
+    const input = document.getElementById(sugg.dataset.qpInputId||'');
+    if(input) positionFloatingPanel(sugg, input, {matchWidth:true});
+  });
+}
+window.addEventListener('scroll', repositionOpenSuggestionPanels, true);
+window.addEventListener('resize', repositionOpenSuggestionPanels);
 
 /* ================= generic table module ================= */
 function GenericModule(cfg){
@@ -10815,7 +10850,7 @@ function openCirculationPrintModal(){
   };
 }
 function bindCirculationPickers(){
-  if(!isAdmin()) return;
+  if(!isStaff()) return; // pageCirculation() itself is gated on isStaff(), not isAdmin() — keep these in sync or the Member ID / Accession No. inputs silently do nothing for STAFF accounts
   const userItems = DB.users.filter(u=>u.eligibility==='YES'&&u.status==='ACTIVE').map(u=>({id:u.id, label:u.name+' — '+u.cls}));
   issuePicker = bindQuickPicker('issueUser', {
     items:userItems,
