@@ -2935,6 +2935,11 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .topbar .icon-btn{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); color:#EFE8D3;}
 @media (min-width:901px){ #themeToggleMobile{ display:none;} }
 .topbar .icon-btn:hover{ border-color:var(--brass-light);}
+/* Home / Notes / Notification bell: kept as plain icons, no pill background or border behind
+   them (unlike the other topbar icon buttons such as search), on both desktop and the mobile tap
+   state. */
+#topHomeBtn, #noteBtn, #notifBellBtn{ background:transparent; border:none;}
+#topHomeBtn:hover, #noteBtn:hover, #notifBellBtn:hover{ background:transparent; border:none;}
 .clock-chip{ font-family:Georgia,serif; font-size:13px; color:var(--brass-light); text-align:right; line-height:1.25;}
 .clock-chip .time{ font-size:15px; font-weight:700; letter-spacing:.5px; font-family:var(--clock-font);}
 .clock-chip .date{ font-size:10.5px; color:rgba(239,232,211,.62); text-transform:uppercase; letter-spacing:.4px; font-family:var(--date-font);}
@@ -3760,6 +3765,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
     display:flex; align-items:center; justify-content:center; font-size:17px;
   }
   .topbar .icon-btn:active{ background:rgba(255,255,255,.1);}
+  #topHomeBtn:active, #noteBtn:active, #notifBellBtn:active{ background:none;}
   .account-chip{
     background:none; border:none; padding:0 0 0 4px; gap:0; min-width:0;
   }
