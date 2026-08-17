@@ -9809,69 +9809,131 @@ function autoAssignShelfForField(force){
   const hint = document.getElementById('hint_shelf');
   if(hint) hint.textContent = `Auto-assigned: "${suggestion}" (least-full shelf in this class) — change it if that's not right.`;
 }
-/* ISBN lookup: Open Library's book API is free, keyless, and CORS-enabled for client-side use —
-   fills Title/Author/Publisher/Year, pulls in whatever subject/edition/classification data it has,
-   then runs the same Dewey suggestion as a normal title entry (preferring Open Library's own
-   Dewey number when it has one). Shelf is left as "UNASSIGNED" so a fresh title never blocks on a
-   physical location nobody's picked yet. */
+/* ISBN-10 <-> ISBN-13 conversion, so a miss on one format can still be retried as the other —
+   several catalog sources index only one of the two for older titles. */
+function isbn10to13(isbn10){
+  const core = '978'+isbn10.slice(0,9);
+  let sum = 0;
+  for(let i=0;i<core.length;i++) sum += (+core[i]) * (i%2===0?1:3);
+  const check = (10 - (sum%10)) % 10;
+  return core+check;
+}
+function isbn13to10(isbn13){
+  if(!isbn13.startsWith('978')) return null;
+  const core = isbn13.slice(3,12);
+  let sum = 0;
+  for(let i=0;i<9;i++) sum += (+core[i]) * (10-i);
+  let check = (11 - (sum%11)) % 11;
+  return core + (check===10? 'X' : String(check));
+}
+/* ISBN lookup: tries Open Library first (free, keyless, CORS-enabled), then falls back to the
+   Google Books API (also free/keyless/CORS-enabled) if Open Library has no record — Open
+   Library's catalog is thin for a lot of non-US/UK editions and locally-published textbooks, so
+   relying on it alone meant plenty of real-world scans came back "no match" even though the book
+   is perfectly findable online. Each source is also retried with the other ISBN-10/13 form before
+   giving up, since sources sometimes index only one form for older titles.
+   Fills Title/Author/Publisher/Year, pulls in whatever subject/edition/classification data is
+   available, then runs the same Dewey suggestion as a normal title entry. Shelf is left as
+   "UNASSIGNED" so a fresh title never blocks on a physical location nobody's picked yet. */
 async function lookupBookByIsbn(){
   const isbnEl = document.getElementById('f_isbn');
   const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
   if(!isbn){ toast('Enter an ISBN first'); return; }
-  toast('Looking up ISBN…');
-  try{
-    const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
-    const data = await res.json();
-    const rec = data['ISBN:'+isbn];
-    if(!rec){ toast('No match found for that ISBN — enter details manually'); return; }
-    const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val && !el.value) el.value = String(val).toUpperCase(); };
+  const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
 
-    setIfEmpty('title', rec.title);
-    setIfEmpty('author', (rec.authors||[]).map(a=>a.name).join(', '));
-    setIfEmpty('publisher', (rec.publishers||[]).map(p=>p.name).join(', '));
-    const yearMatch = String(rec.publish_date||'').match(/\d{4}/);
-    setIfEmpty('year', yearMatch? yearMatch[0] : '');
-
-    // Subject / Category — Open Library's subject tags, when it has any
-    const subjects = (rec.subjects||[]).map(s=>s.name).filter(Boolean);
-    if(subjects.length) setIfEmpty('category', subjects.slice(0,3).join(' / '));
-
-    // Edition & volume — best-effort; Open Library doesn't always carry these, so we take
-    // whatever it gives us and otherwise leave the field for the librarian to fill in
-    if(rec.edition_name) setIfEmpty('edition', rec.edition_name);
-    const volMatch = String(rec.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
-    if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
-
-    // Any other cataloging details Open Library has on file — page count, physical format,
-    // place of publication, existing Dewey/LC classification numbers — kept in Additional info
-    // rather than dropped, since they're useful reference even if there's no dedicated field.
-    const catalogingNotes = [];
-    if(rec.number_of_pages) catalogingNotes.push(`${rec.number_of_pages} PAGES`);
-    if(rec.physical_format) catalogingNotes.push(String(rec.physical_format).toUpperCase());
-    if(rec.publish_places && rec.publish_places.length) catalogingNotes.push('PUBLISHED IN '+rec.publish_places.map(p=>p.name).join(', ').toUpperCase());
-    const dewey = rec.classifications && rec.classifications.dewey_decimal_class && rec.classifications.dewey_decimal_class[0];
-    const lcc = rec.classifications && rec.classifications.lc_classifications && rec.classifications.lc_classifications[0];
-    if(dewey) catalogingNotes.push('DEWEY: '+dewey);
-    if(lcc) catalogingNotes.push('LC CLASS: '+lcc);
-    if(catalogingNotes.length){
-      const infoEl = document.getElementById('f_info');
-      if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
-    }
-
-    // Main class — prefer Open Library's own Dewey number (more reliable than keyword guessing);
-    // applyMainClassSuggestion() below only fills the field in if it's still empty at that point
+  const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val && !el.value) el.value = String(val).toUpperCase(); };
+  const finishCommon = (dewey)=>{
     if(dewey){
       const bucket = deweyToMainClass(dewey);
       const sel = document.getElementById('f_mainClass');
       if(bucket && sel && !sel.value) sel.value = bucket;
     }
     applyMainClassSuggestion();
-
-    // Shelf — placeholder rather than a required field blocking save on a location nobody's set
     const shelfEl = document.getElementById('f_shelf');
     if(shelfEl && !shelfEl.value) shelfEl.value = 'UNASSIGNED';
+  };
 
-    toast('Filled in from Open Library — check it over before saving');
+  // Source 1: Open Library
+  const tryOpenLibrary = async (code)=>{
+    const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
+    const data = await res.json();
+    return data['ISBN:'+code] || null;
+  };
+  // Source 2: Google Books
+  const tryGoogleBooks = async (code)=>{
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
+    const data = await res.json();
+    return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+  };
+
+  toast('Looking up ISBN…');
+  try{
+    let rec = await tryOpenLibrary(isbn);
+    if(!rec && altIsbn) rec = await tryOpenLibrary(altIsbn);
+    if(rec){
+      setIfEmpty('title', rec.title);
+      setIfEmpty('author', (rec.authors||[]).map(a=>a.name).join(', '));
+      setIfEmpty('publisher', (rec.publishers||[]).map(p=>p.name).join(', '));
+      const yearMatch = String(rec.publish_date||'').match(/\d{4}/);
+      setIfEmpty('year', yearMatch? yearMatch[0] : '');
+
+      // Subject / Category — Open Library's subject tags, when it has any
+      const subjects = (rec.subjects||[]).map(s=>s.name).filter(Boolean);
+      if(subjects.length) setIfEmpty('category', subjects.slice(0,3).join(' / '));
+
+      // Edition & volume — best-effort; Open Library doesn't always carry these, so we take
+      // whatever it gives us and otherwise leave the field for the librarian to fill in
+      if(rec.edition_name) setIfEmpty('edition', rec.edition_name);
+      const volMatch = String(rec.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
+      if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
+
+      // Any other cataloging details Open Library has on file — page count, physical format,
+      // place of publication, existing Dewey/LC classification numbers — kept in Additional info
+      // rather than dropped, since they're useful reference even if there's no dedicated field.
+      const catalogingNotes = [];
+      if(rec.number_of_pages) catalogingNotes.push(`${rec.number_of_pages} PAGES`);
+      if(rec.physical_format) catalogingNotes.push(String(rec.physical_format).toUpperCase());
+      if(rec.publish_places && rec.publish_places.length) catalogingNotes.push('PUBLISHED IN '+rec.publish_places.map(p=>p.name).join(', ').toUpperCase());
+      const dewey = rec.classifications && rec.classifications.dewey_decimal_class && rec.classifications.dewey_decimal_class[0];
+      const lcc = rec.classifications && rec.classifications.lc_classifications && rec.classifications.lc_classifications[0];
+      if(dewey) catalogingNotes.push('DEWEY: '+dewey);
+      if(lcc) catalogingNotes.push('LC CLASS: '+lcc);
+      if(catalogingNotes.length){
+        const infoEl = document.getElementById('f_info');
+        if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
+      }
+
+      finishCommon(dewey);
+      toast('Filled in from Open Library — check it over before saving');
+      return;
+    }
+
+    // Fall back to Google Books — broader coverage, especially for editions/publishers Open
+    // Library doesn't carry.
+    let vol = await tryGoogleBooks(isbn);
+    if(!vol && altIsbn) vol = await tryGoogleBooks(altIsbn);
+    if(!vol){ toast('No match found on Open Library or Google Books — enter details manually'); return; }
+
+    setIfEmpty('title', vol.subtitle? `${vol.title}: ${vol.subtitle}` : vol.title);
+    setIfEmpty('author', (vol.authors||[]).join(', '));
+    setIfEmpty('publisher', vol.publisher);
+    const yearMatch = String(vol.publishedDate||'').match(/\d{4}/);
+    setIfEmpty('year', yearMatch? yearMatch[0] : '');
+    if((vol.categories||[]).length) setIfEmpty('category', vol.categories.slice(0,3).join(' / '));
+    const volMatch = String(vol.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
+    if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
+
+    const catalogingNotes = [];
+    if(vol.pageCount) catalogingNotes.push(`${vol.pageCount} PAGES`);
+    if(vol.printType) catalogingNotes.push(String(vol.printType).toUpperCase());
+    if(vol.language) catalogingNotes.push('LANGUAGE: '+String(vol.language).toUpperCase());
+    if(catalogingNotes.length){
+      const infoEl = document.getElementById('f_info');
+      if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
+    }
+
+    finishCommon(null);
+    toast('Filled in from Google Books — check it over before saving');
   } catch(e){
     toast('Lookup failed — check your connection, or enter details manually');
   }
@@ -10494,11 +10556,11 @@ function pageMemberProfile(){
       </div>
       ${active.length? `<table class="datatable cards-on-mobile"><thead><tr><th>Title</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
         ${active.map(t=>`<tr><td data-label="Title">${esc(t.title)}</td><td data-label="Due">${fmtDate(t.dueDate)}</td><td data-label="Status"><span class="badge ${txnStatus(t)==='OVERDUE'?'red':'gold'}">${txnStatus(t)}</span></td>
-          <td data-label="Actions"><button class="btn secondary small" onclick="renewLoan('${esc(t.trxId)}')">Renew</button></td></tr>`).join('')}
+          <td data-label="Actions"><button class="btn secondary small" onclick="openTransactionReceiptModal('${esc(t.trxId)}')">📋 Receipt</button><button class="btn secondary small" onclick="renewLoan('${esc(t.trxId)}')">Renew</button></td></tr>`).join('')}
       </tbody></table>` : `<div class="empty" style="padding:12px"><div class="big">📗</div>No active loans</div>`}
       <h4 style="margin:16px 0 6px">History (${history.length})</h4>
-      ${history.length? `<div class="table-wrap" style="max-height:240px;overflow:auto"><table class="datatable cards-on-mobile"><thead><tr><th>Title</th><th>Borrowed</th><th>Returned</th><th>Status</th></tr></thead><tbody>
-        ${history.map(t=>`<tr><td data-label="Title">${esc(t.title)}</td><td data-label="Borrowed">${fmtDate(t.dateBorrowed)}</td><td data-label="Returned">${fmtDate(t.returnDate)}</td><td data-label="Status">${esc(txnStatus(t))}</td></tr>`).join('')}
+      ${history.length? `<div class="table-wrap" style="max-height:240px;overflow:auto"><table class="datatable cards-on-mobile"><thead><tr><th>Title</th><th>Borrowed</th><th>Returned</th><th>Status</th><th></th></tr></thead><tbody>
+        ${history.map(t=>`<tr><td data-label="Title">${esc(t.title)}</td><td data-label="Borrowed">${fmtDate(t.dateBorrowed)}</td><td data-label="Returned">${fmtDate(t.returnDate)}</td><td data-label="Status">${esc(txnStatus(t))}</td><td data-label="Receipt"><button class="btn secondary small" onclick="openTransactionReceiptModal('${esc(t.trxId)}')">📋</button></td></tr>`).join('')}
       </tbody></table></div>` : `<div class="empty" style="padding:12px"><div class="big">📚</div>No past loans yet</div>`}`;
   } else if(activeTab==='subjects'){
     const subjActive = studentSubjects(u);
@@ -11075,6 +11137,7 @@ function pageCirculationTable(){
       {label:'Returned', get:r=>r.returnDate?fmtDate(r.returnDate):'—'}, {label:'Status', get:r=>r.status},
     ],
     rowActions:r=>`<button class="btn secondary small" onclick="viewTransaction('${esc(r.trxId)}')">View</button>
+      <button class="btn secondary small" onclick="openTransactionReceiptModal('${esc(r.trxId)}')">📋 Receipt</button>
       ${!r.returnDate? `<button class="btn secondary small" onclick="renewLoan('${esc(r.trxId)}')">Renew</button>`:''}
       ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}
       <button class="btn secondary small" onclick="openTxnHistoryModal('${esc(r.trxId)}')">History</button>
@@ -11228,15 +11291,41 @@ function viewTransaction(trxId){
     ['Status', status],
     ['Note', trx.note||'—'],
   ];
+  
+  // Build action buttons
+  const isReturn = !!trx.returnDate;
+  const daysOverdue = Math.max(0, daysBetween(parseAnyDate(trx.dueDate), new Date()));
+  const recipient = reminderRecipient(trx);
+  const canSendWhatsApp = recipient && DB.setup.whatsappReceipts;
+  
+  let receiptHtml = '';
+  if(isReturn){
+    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+  } else {
+    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+  }
+  
+  const receiptActionBtns = `
+    <button class="btn small" onclick="openTransactionReceiptModal('${esc(trxId)}')">👁 View Receipt</button>
+    <button class="btn secondary small" onclick="printTransactionReceipt('${esc(trxId)}')">🖨 Print</button>
+    ${canSendWhatsApp ? `<button class="btn secondary small" onclick="sendTransactionReceiptWhatsApp('${esc(trxId)}')">📱 WhatsApp</button>` : ''}
+  `;
+  
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop'; wrap.id = 'mb';
   wrap.innerHTML = `
-    <div class="modal">
+    <div class="modal wide">
       <div class="modal-head"><h3>Transaction details</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <table class="datatable">
           ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:40%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}
         </table>
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+          <div style="margin-bottom:12px;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Receipt & Actions</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${receiptActionBtns}
+          </div>
+        </div>
       </div>
       <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
     </div>`;
@@ -11245,6 +11334,75 @@ function viewTransaction(trxId){
   wrap.onclick = e=>{ if(e.target===wrap) close(); };
   wrap.querySelector('#mClose').onclick = close;
   wrap.querySelector('#mCancel').onclick = close;
+}
+function openTransactionReceiptModal(trxId){
+  const trx = DB.circulation.find(x=>x.trxId===trxId);
+  if(!trx) return;
+  
+  const isReturn = !!trx.returnDate;
+  let receiptHtml = '';
+  
+  if(isReturn){
+    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+  } else {
+    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+  }
+  
+  openWaCardModal({
+    html:receiptHtml,
+    filenameBase:`receipt-${trx.acc||trxId}`,
+    phone: reminderRecipient(trx)?.phone
+  });
+}
+
+function printTransactionReceipt(trxId){
+  const trx = DB.circulation.find(x=>x.trxId===trxId);
+  if(!trx) return;
+  
+  const isReturn = !!trx.returnDate;
+  let receiptHtml = '';
+  
+  if(isReturn){
+    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+  } else {
+    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+  }
+  
+  // Render and print
+  waRenderCardCanvas(receiptHtml).then(canvas=>{
+    const printWin = window.open('', '', 'height=600,width=500');
+    printWin.document.write('<html><head><title>Receipt</title><style>body{margin:0;padding:20px;display:flex;justify-content:center;} img{max-width:100%;}</style></head><body>');
+    printWin.document.write(canvas.toDataURL('image/png').replace('data:image/png;base64,', '<img src="data:image/png;base64,'));
+    printWin.document.write('</body></html>');
+    printWin.document.close();
+    setTimeout(()=>{ printWin.print(); }, 250);
+  }).catch(e=>{
+    console.error('Print failed', e);
+    toast('Could not render receipt for printing');
+  });
+}
+
+function sendTransactionReceiptWhatsApp(trxId){
+  const trx = DB.circulation.find(x=>x.trxId===trxId);
+  if(!trx) return;
+  
+  const recipient = reminderRecipient(trx);
+  if(!recipient) return toast('No phone number on file for this member');
+  
+  const isReturn = !!trx.returnDate;
+  let receiptHtml = '';
+  
+  if(isReturn){
+    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+  } else {
+    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+  }
+  
+  openWaCardModal({
+    html:receiptHtml,
+    filenameBase:`receipt-${trx.acc||trxId}`,
+    phone:recipient.phone
+  });
 }
 function openTxnHistoryModal(trxId){
   const trx = DB.circulation.find(x=>x.trxId===trxId); if(!trx) return;
@@ -11537,6 +11695,9 @@ function openFinePaymentModal(trxId){
           <tr><td style="font-weight:600">Already paid</td><td>${fmtCurrency(st.paidAmount)}</td></tr>
           <tr><td style="font-weight:600">Outstanding</td><td style="color:${st.outstanding?'var(--terracotta)':'inherit'};font-weight:700">${fmtCurrency(st.outstanding)}</td></tr>
         </table>
+        <div style="margin-bottom:14px">
+          <button class="btn secondary small" onclick="openTransactionReceiptModal('${esc(trxId)}')">📋 View loan receipt</button>
+        </div>
         ${st.waived? `<p class="field-hint">This fine was waived${t.fineWaiveReason? ' — "'+esc(t.fineWaiveReason)+'"':''}.</p>` : st.outstanding<=0 ? `<p class="field-hint">Fully paid — nothing further owed.</p>` : `
         <div class="field"><label>Amount received</label><input type="number" id="finePayAmount" min="0" max="${st.outstanding}" step="1" value="${st.outstanding}"></div>
         <button class="btn secondary" id="finePayBtn" style="margin-bottom:16px">Record payment</button>
@@ -12764,11 +12925,11 @@ function openScanModal(mode){
   const isIsbnMode = mode==='isbn';
   const isEquipmentMode = mode==='equipment';
   const wrap = document.createElement('div');
-  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.className = 'modal-backdrop'; wrap.id = 'scanMb';
   const cameraOk = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   wrap.innerHTML = `
     <div class="modal">
-      <div class="modal-head"><h3>📷 ${isIsbnMode? 'Scan an ISBN barcode' : isEquipmentMode? 'Scan an asset tag / QR code' : 'Scan a barcode'}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-head"><h3>📷 ${isIsbnMode? 'Scan an ISBN barcode' : isEquipmentMode? 'Scan an asset tag / QR code' : 'Scan a barcode'}</h3><button id="scanMClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <div id="scanCamBox" class="scan-cam-box" style="${cameraOk?'':'display:none'}">
           <video id="scanVideo" playsinline muted></video>
@@ -12786,13 +12947,13 @@ function openScanModal(mode){
         </div>
         <div id="scanResult"></div>
       </div>
-      <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
+      <div class="modal-foot"><button class="btn secondary" id="scanMCancel">Close</button></div>
     </div>`;
   document.body.appendChild(wrap);
   const close = ()=>{ stopCameraScan(); animatedCloseModal(wrap, ()=> wrap.remove()); };
   wrap.onclick = e=>{ if(e.target===wrap) close(); };
-  wrap.querySelector('#mClose').onclick = close;
-  wrap.querySelector('#mCancel').onclick = close;
+  wrap.querySelector('#scanMClose').onclick = close;
+  wrap.querySelector('#scanMCancel').onclick = close;
   const input = wrap.querySelector('#scanCodeInput');
   const resEl = wrap.querySelector('#scanResult');
   const suggestEl = wrap.querySelector('#scanSuggest');
