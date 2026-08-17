@@ -11959,7 +11959,7 @@ function fulfillReservationsForReturn(acc, book){
   const user = DB.users.find(u=>u.id===next.userId);
   const recipient = userRecipient(user);
   if(recipient && book){
-    const html = waReservationReadyCardHtml({name:next.name, title:next.title, acc});
+    const html = waReservationReadyCardHtml({name:next.name, title:next.title, acc, accountName:SESSION?.fullName});
     openWaCardModal({html, filenameBase:`reservation-ready-${acc}`, phone:recipient.phone});
   }
 }
@@ -13034,11 +13034,12 @@ function pageReminders(){
   <div id="mod_nearoverdue"></div>
   <div id="mod_reminderhistory"></div>`;
 }
-function formatLibraryWhatsAppMessage({kind, name, title, acc, dateBorrowed, dueDate, daysOverdue}){
+function formatLibraryWhatsAppMessage({kind, name, title, acc, dateBorrowed, dueDate, daysOverdue, accountName}){
   // Shared structure for both overdue reminders and circulation receipts, per the exact template
   // requested: a bold all-caps heading, "Dear NAME,", a labeled details block, a closing line
-  // specific to the situation, then "Best Regards, Librarian".
+  // specific to the situation, then "Best Regards, [Account Name]".
   const lines = [];
+  const signingName = accountName || SESSION?.fullName || 'Librarian';
   if(kind==='reminder'){
     lines.push('*LIBRARY REMINDER*');
     lines.push(`Dear ${String(name||'').toUpperCase()},`);
@@ -13070,7 +13071,7 @@ function formatLibraryWhatsAppMessage({kind, name, title, acc, dateBorrowed, due
     lines.push('Thank you for returning this title to the library.');
   }
   lines.push('Best Regards,');
-  lines.push('Librarian');
+  lines.push(signingName);
   return lines.join('\n');
 }
 /* ================= WhatsApp: styled card receipts/reminders (image/PDF, not plain text) =================
@@ -13144,8 +13145,9 @@ function waCardFooter(T){
 }
 /* Single-item card shell — one transaction, itemized as vertically-stacked label/value rows
    (receipt style) rather than a two-column table, so it reads naturally in a portrait frame. */
-function waCardShell({kind, name, rows, closingLine, daysOverdue}){
+function waCardShell({kind, name, rows, closingLine, daysOverdue, accountName}){
   const T = waResolveTheme();
+  const signingName = accountName || SESSION?.fullName || 'Librarian';
   const rowsHtml = rows.map(r=>`
     <div style="display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px dashed ${T.line};">
       <span style="font-size:11px;color:${T.mutedLabel};font-weight:600;letter-spacing:.03em;white-space:nowrap;">${esc(r.label).toUpperCase()}</span>
@@ -13160,12 +13162,12 @@ function waCardShell({kind, name, rows, closingLine, daysOverdue}){
     </div>
     <div style="padding:16px 24px 6px;">
       <div style="font-size:13px;line-height:1.6;color:${T.ink};">${esc(closingLine)}</div>
-      <div style="margin-top:14px;font-size:13px;">Best Regards,<br><b>Librarian</b></div>
+      <div style="margin-top:14px;font-size:13px;">Best Regards,<br><b>${esc(signingName)}</b></div>
     </div>
     ${waCardFooter(T)}
   </div>`;
 }
-function waReminderCardHtml({name, title, acc, dateBorrowed, dueDate, daysOverdue}){
+function waReminderCardHtml({name, title, acc, dateBorrowed, dueDate, daysOverdue, accountName}){
   const rows = [
     {label:'Title', value:title}, {label:'Accession No', value:acc},
     {label:'Date Borrowed', value:dateBorrowed}, {label:'Due Date', value:dueDate},
@@ -13173,31 +13175,32 @@ function waReminderCardHtml({name, title, acc, dateBorrowed, dueDate, daysOverdu
   const closing = daysOverdue>0
     ? `This title is now overdue by ${daysOverdue} day(s). Kindly return it to the library at your earliest convenience.`
     : `This title is due back soon. Kindly return it to the library by the due date.`;
-  return waCardShell({kind:'reminder', name, rows, closingLine:closing, daysOverdue});
+  return waCardShell({kind:'reminder', name, rows, closingLine:closing, daysOverdue, accountName});
 }
-function waBorrowCardHtml({name, title, acc, dateBorrowed, dueDate}){
+function waBorrowCardHtml({name, title, acc, dateBorrowed, dueDate, accountName}){
   const rows = [
     {label:'Title', value:title}, {label:'Accession No', value:acc},
     {label:'Date Borrowed', value:dateBorrowed}, {label:'Due Date', value:dueDate},
   ];
-  return waCardShell({kind:'borrowed', name, rows, closingLine:'Kindly return this title to the library by the due date.'});
+  return waCardShell({kind:'borrowed', name, rows, closingLine:'Kindly return this title to the library by the due date.', accountName});
 }
-function waReturnCardHtml({name, title, acc, dateBorrowed, dateReturned}){
+function waReturnCardHtml({name, title, acc, dateBorrowed, dateReturned, accountName}){
   const rows = [
     {label:'Title', value:title}, {label:'Accession No', value:acc},
     {label:'Date Borrowed', value:dateBorrowed}, {label:'Date Returned', value:dateReturned},
   ];
-  return waCardShell({kind:'returned', name, rows, closingLine:'Thank you for returning this title to the library.'});
+  return waCardShell({kind:'returned', name, rows, closingLine:'Thank you for returning this title to the library.', accountName});
 }
-function waReservationReadyCardHtml({name, title, acc}){
+function waReservationReadyCardHtml({name, title, acc, accountName}){
   const rows = [{label:'Title', value:title}].concat(acc?[{label:'Accession No', value:acc}]:[]);
-  return waCardShell({kind:'ready', name, rows, closingLine:'Kindly come by the library to pick up your reserved title.'});
+  return waCardShell({kind:'ready', name, rows, closingLine:'Kindly come by the library to pick up your reserved title.', accountName});
 }
 /* Bulk reminder card — every currently-borrowed title for one member on a single receipt, each
    itemized with its own status pill, rather than one card per loan. Used by the "WhatsApp
    reminder — all borrowed" action on a member's profile. */
-function waBulkReminderCardHtml({name, loans}){
+function waBulkReminderCardHtml({name, loans, accountName}){
   const T = waResolveTheme();
+  const signingName = accountName || SESSION?.fullName || 'Librarian';
   const overdueCount = loans.filter(l=>l.overdue).length;
   const itemsHtml = loans.map(l=>{
     const pill = l.overdue
@@ -13225,7 +13228,7 @@ function waBulkReminderCardHtml({name, loans}){
     </div>
     <div style="padding:16px 24px 6px;">
       <div style="font-size:13px;line-height:1.6;color:${T.ink};">${esc(closing)}</div>
-      <div style="margin-top:14px;font-size:13px;">Best Regards,<br><b>Librarian</b></div>
+      <div style="margin-top:14px;font-size:13px;">Best Regards,<br><b>${esc(signingName)}</b></div>
     </div>
     ${waCardFooter(T)}
   </div>`;
@@ -13401,6 +13404,7 @@ function sendReminderViaWhatsApp(trxId, kind){
   const html = waReminderCardHtml({
     name:trx.name, title:trx.title, acc:trx.acc,
     dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), daysOverdue,
+    accountName:SESSION?.fullName,
   });
   openWaCardModal({html, filenameBase:`reminder-${trx.acc||trx.trxId}`, phone:recipient.phone});
   sendReminder(trxId, {channel:'WHATSAPP'});
@@ -13420,7 +13424,7 @@ function sendBulkReminderViaWhatsApp(userId){
     const daysOverdue = Math.max(0, daysBetween(parseAnyDate(t.dueDate), new Date()));
     return {trxId:t.trxId, title:t.title, acc:t.acc, dateBorrowed:fmtDate(t.dateBorrowed), dueDate:fmtDate(t.dueDate), daysOverdue, overdue: txnStatus(t)==='OVERDUE'};
   });
-  const html = waBulkReminderCardHtml({name:u.name, loans});
+  const html = waBulkReminderCardHtml({name:u.name, loans, accountName:SESSION?.fullName});
   openWaCardModal({html, filenameBase:`reminders-${u.id}`, phone:recipient.phone});
   active.forEach(t=> logReminderEntry(t.trxId, {channel:'WHATSAPP'}));
   saveDB(); render(); toast(`Reminder logged for ${active.length} loan(s)`);
@@ -17056,8 +17060,8 @@ function sendTransactionReceiptIfEnabled(trx, kind){
   if(!recipient) return; // no phone on file — nothing to send
   const isReturn = kind==='RETURNED';
   const html = isReturn
-    ? waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(todayISO())})
-    : waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate)});
+    ? waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(todayISO()), accountName:SESSION?.fullName})
+    : waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
   openWaCardModal({html, filenameBase:`${isReturn?'return':'borrow'}-receipt-${trx.acc||''}`, phone:recipient.phone});
 }
 function saveAcademicPeriod(){
