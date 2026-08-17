@@ -9947,6 +9947,25 @@ function deweyToMainClass(dewey){
   const bucket = Math.floor(num/100)*100;
   return (DB.setup.mainClasses||[]).find(m=>m.startsWith(String(bucket))) || '';
 }
+/* Wires the ISBN field so scanning/typing a full ISBN into it (whether via an external
+   keyboard-emulating barcode scanner, paste, or manual typing) triggers the same lookup as the
+   🔍 Look up button automatically — no extra click needed. External scanners almost always send
+   an Enter keystroke after the code, so that's the primary trigger; blur is a fallback for
+   scanners/workflows that don't. Guards against re-firing the same lookup twice in a row (e.g.
+   Enter immediately followed by blur) with a small "last looked up" marker on the field. */
+function bindIsbnAutoLookup(){
+  const isbnEl = document.getElementById('f_isbn');
+  if(!isbnEl) return;
+  const maybeLookup = ()=>{
+    const digits = isbnEl.value.replace(/[^0-9Xx]/g,'');
+    if(digits.length!==10 && digits.length!==13) return;
+    if(isbnEl.dataset.lastLookedUp===digits) return; // already looked this one up
+    isbnEl.dataset.lastLookedUp = digits;
+    lookupBookByIsbn();
+  };
+  isbnEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); maybeLookup(); } });
+  isbnEl.addEventListener('blur', maybeLookup);
+}
 function openBookForm(acc){
   if(!isAdmin()) return requireAdmin('edit the catalogue');
   const existing = acc ? DB.catalogue.find(b=>b.acc===acc) : null;
@@ -9980,6 +9999,7 @@ function openBookForm(acc){
       saveDB(); render();
     },
     postRender: ()=>{
+      bindIsbnAutoLookup();
       if(existing) return; // don't second-guess an already-classified title being edited
       const titleEl = document.getElementById('f_title'), catEl = document.getElementById('f_category');
       if(titleEl) titleEl.addEventListener('blur', ()=>applyMainClassSuggestion());
@@ -10027,7 +10047,8 @@ function duplicateBook(acc){
       DB.catalogue.push(vals);
       logActivity('catalogue', 'add', `Added "${vals.title}" (${vals.acc}) — copied from "${src.title}"`);
       saveDB(); render(); toast('Title added to catalogue');
-    }
+    },
+    postRender: ()=> bindIsbnAutoLookup()
   });
 }
 function purgeOldTrash(){
@@ -12995,7 +13016,7 @@ function openScanModal(mode){
       if(!digits){ resEl.innerHTML = `<p style="margin:8px 0;color:var(--terracotta)">That doesn't look like an ISBN — try again or type it in manually</p>`; input.value=''; input.focus(); return; }
       paused = true;
       const isbnEl = document.getElementById('f_isbn');
-      if(isbnEl) isbnEl.value = digits;
+      if(isbnEl){ isbnEl.value = digits; isbnEl.dataset.lastLookedUp = digits; }
       resEl.innerHTML = `<p style="margin:8px 0"><strong>Captured ISBN:</strong> ${esc(digits)}</p>`;
       close();
       if(isbnEl) lookupBookByIsbn();
