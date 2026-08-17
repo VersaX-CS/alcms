@@ -2455,7 +2455,6 @@ html[data-theme="dark"] .stamp.reserved{ background:#1f2e33; color:#8fc2d3; bord
 html[data-theme="dark"] table.datatable tr:hover td{ background:rgba(255,255,255,.05);}
 html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,html[data-theme="dark"] .field textarea,
 html[data-theme="dark"] .toolbar input,html[data-theme="dark"] .toolbar select{ background:rgba(255,255,255,.06); color:var(--ink);}
-html[data-theme="dark"] .quickpick .suggestions{ background:var(--card);}
 /* Accessibility: two independent, org-wide toggles set in Personalization. Larger UI uses
    `zoom` (broadly supported now, including Firefox) so the whole layout scales together rather
    than just the text reflowing oddly. High contrast strengthens borders/muted text and thickens
@@ -3404,12 +3403,14 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 
 .quickpick{ position:relative;}
 .quickpick input{ width:100%;}
-.quickpick .suggestions{ position:fixed; background:#fff; border:1px solid var(--line); border-radius:8px;
-  max-height:220px; overflow-y:auto; box-shadow:var(--shadow); z-index:1200; display:none;}
+.quickpick .suggestions{ position:fixed; background:var(--card); border:1px solid var(--line); border-radius:10px;
+  max-height:190px; overflow-y:auto; box-shadow:0 14px 34px rgba(0,0,0,.18); z-index:1200; display:none; padding:4px 6px;}
 .quickpick .suggestions.show{ display:block;}
-.quickpick .sugg-item{ padding:8px 12px; font-size:12.5px; border-bottom:1px solid #f1ead4; cursor:pointer;}
-.quickpick .sugg-item:hover, .quickpick .sugg-item.active{ background:var(--parchment-dim);}
+.quickpick .sugg-item{ padding:7px 10px; font-size:12.5px; border-bottom:1px solid var(--line); cursor:pointer; border-radius:0;}
+.quickpick .sugg-item:last-child{ border-bottom:none;}
+.quickpick .sugg-item:hover, .quickpick .sugg-item.active{ background:rgba(31,58,46,.08);}
 .quickpick .sugg-item b{ color:var(--forest);}
+html[data-theme="dark"] .quickpick .sugg-item:hover, html[data-theme="dark"] .quickpick .sugg-item.active{ background:rgba(255,255,255,.08);}
 .picked-card{ margin-top:8px; padding:10px 12px; background:var(--parchment-dim); border-radius:8px; font-size:12px; display:none;}
 .picked-card.show{ display:block;}
 
