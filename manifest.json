@@ -1,6 +1,6 @@
 {
-  "name": "Automated Library Circulation & Management Software",
-  "short_name": "alcms",
+  "name": "alcms",
+  "short_name": "Automated Library Circulation & Management Software",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#F6F1E2",
