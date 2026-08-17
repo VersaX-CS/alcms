@@ -17734,12 +17734,14 @@ function saveNote(){
 }
 
 function clearNoteConfirm(){
-  if(document.getElementById('noteTextarea').value.trim() === '') return;
+  const textarea = document.getElementById('noteTextarea');
+  if(!textarea || textarea.value.trim() === '') return;
   
-  confirmDelete('Clear all notes? This cannot be undone.', ()=>{
-    document.getElementById('noteTextarea').value = '';
-    noteHasChanges = true;
-  });
+  if(confirm('Clear all notes? This cannot be undone.')){
+    textarea.value = '';
+    localStorage.setItem('alcms:quick_note', '');
+    noteHasChanges = false;
+  }
 }
 
 // Track changes in textarea
