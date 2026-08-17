@@ -2669,8 +2669,8 @@ body[data-lockscreen-decor-style="none"] .auth-decor{ display:none;}
    when you shrink a desktop browser window, because both simply match the same CSS width media
    query below instead of relying on JS or box-state tricks. */
 .auth-top-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-start;}
-.auth-notif-bell .icon-btn{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); color:#EFE8D3; position:relative;}
-.auth-notif-bell .icon-btn:hover{ border-color:var(--brass-light);}
+.auth-notif-bell .icon-btn{ background:transparent; border:none; color:#EFE8D3; position:relative;}
+.auth-notif-bell .icon-btn:hover{ background:transparent; border:none;}
 /* Fixed (not absolute) so the dropdown is positioned straight off the viewport instead of the
    .auth-notif-bell wrapper — it can then never be clipped by .auth-info's overflow:hidden
    (desktop) or overflow-y:auto/100dvh box (mobile). Exact top/left/bottom are set inline by
@@ -2938,7 +2938,7 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 /* Home / Notes / Notification bell: kept as plain icons, no pill background or border behind
    them (unlike the other topbar icon buttons such as search), on both desktop and the mobile tap
    state. */
-#topHomeBtn, #noteBtn, #notifBellBtn{ background:transparent; border:none;}
+#topHomeBtn, #noteBtn, #notifBellBtn{ background:transparent; border:none; font-size:22px;}
 #topHomeBtn:hover, #noteBtn:hover, #notifBellBtn:hover{ background:transparent; border:none;}
 .clock-chip{ font-family:Georgia,serif; font-size:13px; color:var(--brass-light); text-align:right; line-height:1.25;}
 .clock-chip .time{ font-size:15px; font-weight:700; letter-spacing:.5px; font-family:var(--clock-font);}
@@ -3765,6 +3765,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
     display:flex; align-items:center; justify-content:center; font-size:17px;
   }
   .topbar .icon-btn:active{ background:rgba(255,255,255,.1);}
+  #topHomeBtn, #noteBtn, #notifBellBtn{ font-size:22px;}
   #topHomeBtn:active, #noteBtn:active, #notifBellBtn:active{ background:none;}
   .account-chip{
     background:none; border:none; padding:0 0 0 4px; gap:0; min-width:0;
@@ -5232,7 +5233,7 @@ async function storeDelete(key){
    wipes the browser's own storage for the app — useful when local storage feels stuck/corrupted,
    before handing off or wiping a shared/public device, or to free up space. */
 function clearBrowserStorage(){
-  if(!confirm('This clears everything alcms has stored in this browser — saved login, database, preferences and settings — and reloads the app fresh. Back up first if you need to keep anything. This cannot be undone from here. Continue?')) return;
+  confirmModal('This clears everything alcms has stored in this browser — saved login, database, preferences and settings — and reloads the app fresh. Back up first if you need to keep anything. This cannot be undone from here. Continue?', ()=>{
   try{
     if(STORAGE_BACKEND==='local'){
       Object.keys(localStorage).filter(k=>k.startsWith(LOCAL_PREFIX)).forEach(k=>localStorage.removeItem(k));
@@ -5242,6 +5243,7 @@ function clearBrowserStorage(){
   try{ sessionStorage.clear(); }catch(e){}
   toast('Browser storage cleared — reloading…');
   setTimeout(()=> window.location.reload(), 600);
+  }, {confirmLabel:'Clear & reload', danger:true});
 }
 function storageStatusInfo(){
   if(STORAGE_BACKEND==='claude') return {label:'In-app account storage', detail:'Saved to your account inside this app. Works here; won\u2019t follow you if you download and open this app elsewhere.', ok:true};
@@ -7448,7 +7450,7 @@ function calendarDayDetailsHtml(key){
 }
 function openScheduleModalFromCalendar(){
   if(!DB || !Array.isArray(DB.scheduleDays) || !DB.scheduleDays.length){
-    alert('No schedule data available');
+    alertModal('No schedule data available');
     return;
   }
   const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
@@ -7823,6 +7825,28 @@ function confirmModal(message, onConfirm, opts={}){
 }
 function confirmDelete(msg, cb){
   confirmModal(msg, cb, {confirmLabel:'Delete', danger:true});
+}
+/* Styled in-app replacement for the browser's native alert() — a single-button, dismiss-only
+   modal for informational messages that don't need a yes/no choice. onClose (optional) runs
+   when the person dismisses it, whether via the OK button, the ✕, or clicking the backdrop. */
+function alertModal(message, opts={}){
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  const lines = String(message||'').split('\n').filter(Boolean);
+  wrap.innerHTML = `
+    <div class="modal confirm-modal">
+      <div class="modal-head"><h3>${esc(opts.title||'Notice')}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">${lines.map(l=>`<p style="margin:0 0 10px;font-size:13.5px;line-height:1.6;color:var(--muted)">${esc(l)}</p>`).join('')}</div>
+      <div class="modal-foot">
+        <button class="btn" id="mConfirm">${esc(opts.okLabel||'OK')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=>{ animatedCloseModal(wrap, ()=> wrap.remove()); if(opts.onClose) opts.onClose(); };
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#mConfirm').onclick = close;
+  setTimeout(()=> wrap.querySelector('#mConfirm').focus(), 30);
 }
 /* Styled in-app replacement for the browser's native prompt() — used for admin-key entry and
    typed confirmation phrases (e.g. "type CLEAR to confirm"). Some embedded/in-app browsers
@@ -10987,7 +11011,7 @@ async function downloadMemberDocument(memberId, docId){
 }
 
 function deleteMemberDocument(memberId, docId){
-  if(!confirm('Delete this document? This cannot be undone.')) return;
+  confirmDelete('Delete this document? This cannot be undone.', ()=>{
   const u = DB.users.find(x=>x.id===memberId);
   if(!u) return;
   const idx = (u.documents||[]).findIndex(d=>d.id===docId);
@@ -11000,6 +11024,7 @@ function deleteMemberDocument(memberId, docId){
   if(MEMBER_DOC_BLOB_CACHE[doc.id]){ URL.revokeObjectURL(MEMBER_DOC_BLOB_CACHE[doc.id]); delete MEMBER_DOC_BLOB_CACHE[doc.id]; }
   u.documents.splice(idx,1);
   cleanupCloud.finally(()=>{ saveDB().then(()=>{ toast(`Deleted: ${docName}`); render(); }); });
+  });
 }
 
 function pageCirculation(){
@@ -17633,10 +17658,10 @@ function openNoteModal(){
 
 function closeNoteModal(){
   if(noteHasChanges){
-    if(confirm('You have unsaved changes. Are you sure you want to close without saving?')){
+    confirmModal('You have unsaved changes. Are you sure you want to close without saving?', ()=>{
       noteHasChanges = false;
       hideNoteModal();
-    }
+    }, {confirmLabel:'Close without saving', danger:true});
   } else {
     hideNoteModal();
   }
@@ -17665,10 +17690,10 @@ function saveNote(){
 function clearNoteConfirm(){
   if(document.getElementById('noteTextarea').value.trim() === '') return;
   
-  if(confirm('Clear all notes? This cannot be undone.')){
+  confirmDelete('Clear all notes? This cannot be undone.', ()=>{
     document.getElementById('noteTextarea').value = '';
     noteHasChanges = true;
-  }
+  });
 }
 
 // Track changes in textarea
