@@ -2430,6 +2430,7 @@ window.QRCodeGen = qrcode;
 #app, #authScreen{ zoom:var(--text-scale); }
 h1,h2,h3,h4{ zoom:var(--heading-scale); color:var(--heading-text-color);}
 html[data-theme="dark"]{
+  color-scheme:dark;
   --ink:#E9E4D2;
   --forest:#4A4E53;
   --forest-dark:#101113;
@@ -2455,11 +2456,17 @@ html[data-theme="dark"] .stamp.reserved{ background:#1f2e33; color:#8fc2d3; bord
 html[data-theme="dark"] table.datatable tr:hover td{ background:rgba(255,255,255,.05);}
 html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,html[data-theme="dark"] .field textarea,
 html[data-theme="dark"] .toolbar input,html[data-theme="dark"] .toolbar select{ background:rgba(255,255,255,.06); color:var(--ink);}
-/* The rules above only theme the closed select box — the browser draws the opened options
-   list itself using its native (light) form-control colours unless told otherwise. color-scheme
-   hints the browser to render that native popup dark too, so it isn't white-with-grey-text
-   against an otherwise dark app. */
-html[data-theme="dark"] select{ color-scheme:dark; }
+/* Covers every select, not just ones inside .field/.toolbar — several selects in the app
+   (repPeriod, cpScope, filter/sort selects, feedback status, etc.) use neither wrapper. */
+html[data-theme="dark"] select{ background:rgba(255,255,255,.06); color:var(--ink);}
+/* The rules above style the closed select box, but Chromium's option-list popup does not
+   inherit that background/color down onto each <option> row automatically — left unstyled,
+   the rows fall back to a white background under our (light, dark-mode) --ink text colour,
+   which is exactly the "white background, grey text" popup bug. Style the options explicitly. */
+html[data-theme="dark"] select option{ background:var(--card); color:var(--ink); }
+/* The rules above only theme the closed select box — the actual dark styling of the opened
+   options popup comes from color-scheme:dark set on the html root above (Chromium bases the
+   popup's light/dark rendering on the document root's color-scheme, not the select's own). */
 /* Accessibility: two independent, org-wide toggles set in Personalization. Larger UI uses
    `zoom` (broadly supported now, including Firefox) so the whole layout scales together rather
    than just the text reflowing oddly. High contrast strengthens borders/muted text and thickens
@@ -3935,7 +3942,7 @@ html, body{ overflow-x:hidden;}
   left:0;
   right:0;
   bottom:0;
-  background:rgba(0,0,0,0.5);
+  background:rgba(8,8,8,0.68);
   z-index:1000;
   opacity:0;
   transition:opacity 0.2s ease;
@@ -3953,7 +3960,7 @@ html, body{ overflow-x:hidden;}
   flex-direction:column;
   background:var(--card);
   border-radius:12px;
-  box-shadow:0 20px 60px rgba(0,0,0,0.3);
+  box-shadow:0 24px 70px rgba(0,0,0,0.55);
   width:90%;
   max-width:600px;
   max-height:80vh;
@@ -3962,6 +3969,10 @@ html, body{ overflow-x:hidden;}
   transition:all 0.2s ease;
   border:1px solid var(--line);
 }
+/* var(--card) alone sits too close in tone to the dimmed page behind it in dark mode, so this
+   modal specifically gets a lighter surface than the rest of the app's cards, plus a visible
+   brass-toned border, so it reads as clearly elevated rather than blending in. */
+html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,182,143,.35); }
 
 .note-modal.show{
   opacity:1;
