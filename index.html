@@ -2487,7 +2487,10 @@ input,select,textarea{font-family:inherit;}
 #splash{
   position:fixed; inset:0; background:#fff;
   display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:1000;
-  color:var(--ink); transition:opacity .5s ease, visibility .5s, background .3s ease;
+  /* Fixed dark ink, not var(--ink): the splash background is always white, even in dark mode,
+     so its text must stay dark too — var(--ink) would flip to a light colour in dark mode and
+     make the app name unreadable against this white background. */
+  color:#132019; transition:opacity .5s ease, visibility .5s, background .3s ease;
 }
 #splash.hide{ opacity:0; visibility:hidden; pointer-events:none;}
 /* Thick white outline for the institution logo, applied everywhere it appears */
