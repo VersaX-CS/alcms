@@ -9654,12 +9654,7 @@ function pageCatalogue(){
         return {added, skipped};
       }
     }),
-    rowActions:r=>`<button class="btn secondary small" onclick="viewBook('${esc(r.acc)}')">Details</button> ${r.available==='ISSUED'?`<button class="btn secondary small" onclick="goReserveBook('${esc(r.acc)}')">Reserve</button>`:''} <button class="btn secondary small" onclick="openBookForm('${r.acc}')">Edit</button> ${
-      r.available==='WITHDRAWN' ? `<button class="btn secondary small" onclick="reinstateBook('${r.acc}')">Reinstate</button>`
-      : r.available==='RESERVED' ? `<button class="btn secondary small" onclick="releaseBook('${r.acc}')">Release</button>`
-      : r.available==='AVAILABLE' ? `<button class="btn secondary small" onclick="reserveBook('${r.acc}')">Reserve</button> <button class="btn secondary small" onclick="withdrawBook('${r.acc}')">Withdraw</button>`
-      : ''
-    } <button class="btn danger small" onclick="deleteBook('${r.acc}')">Delete</button>`,
+    rowActions:r=>`<button class="btn secondary small" onclick="viewBook('${esc(r.acc)}')">Details</button> <button class="btn secondary small" onclick="openBookForm('${r.acc}')">Edit</button>`,
     onRowDblClick:r=>`viewBook('${esc(r.acc)}')`,
   });
   return `<div id="mod_catalogue"></div>`;
@@ -10264,7 +10259,7 @@ function pageUsers(){
         return {added, skipped};
       }
     }),
-    rowActions:r=>`<button class="btn secondary small" onclick="openMemberProfile('${esc(r.id)}')">Profile</button> <button class="btn secondary small" onclick="openUserForm('${r.id}')">Edit</button> <button class="btn danger small" onclick="deleteUser('${r.id}')">Delete</button>`,
+    rowActions:r=>`<button class="btn secondary small" onclick="openMemberProfile('${esc(r.id)}')">Profile</button> <button class="btn secondary small" onclick="openUserForm('${r.id}')">Edit</button>`,
     onRowDblClick:r=>`openMemberProfile('${esc(r.id)}')`,
   });
   return `<div id="mod_users"></div>`;
