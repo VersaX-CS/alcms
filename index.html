@@ -4274,7 +4274,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 <div id="toast" class="toast"></div>
 <div id="installHintBanner" class="install-hint-banner" role="status">
   <span id="installHintText"></span>
-  <button type="button" onclick="dismissInstallHintBanner()" aria-label="Dismiss">✕</button>
+  <button type="button" id="installHintDismissBtn" onclick="dismissInstallHintBanner()" aria-label="Dismiss">✕</button>
 </div>
 <div id="printArea"></div>
 
@@ -4649,6 +4649,7 @@ function saveTypographyForm(){
 async function loadPrefs(){
   try{ const v = await storeGet(PREFS_KEY); if(v) PREFS = Object.assign(PREFS, JSON.parse(v)); }catch(e){}
   applyTheme(); applyPalette(PREFS.palette); applyTypography();
+  applyIconPack(); // so icon-pack-driven elements on the login screen (e.g. Install) are already correct pre-login, not just after enterApp()
   document.body.setAttribute('data-transition', PREFS.transitionStyle||'scale');
   document.body.setAttribute('data-section-style', PREFS.sectionStyle||'solid');
   document.body.setAttribute('data-topbar-style', PREFS.topbarStyle||'solid');
@@ -6523,35 +6524,35 @@ const ICON_PACKS = {
     // Every glyph here is a plain geometric/symbol character (no emoji mixed in), so the pack
     // reads as one consistent style throughout the app.
     home:'⌂',analytics:'◔',dashboard:'▤',catalogue:'▥',users:'⚇',equipment:'▧',circulation:'⇄',reservations:'⚑',reminders:'✉',register:'✎',schedule:'▦',feedback:'✎',setup:'⚙',settings:'◐',security:'⛨',activitylog:'▨',backup:'⟲',guide:'❖',about:'ⓘ',account:'◯',
-    email:'✉',whatsapp:'◉',call:'☏',query:'✎',camera:'▢',theme:'◑',lock:'⚿',save:'⎙',close:'✕',menu:'☰',
+    email:'✉',whatsapp:'◉',call:'☏',query:'✎',camera:'▢',theme:'◑',lock:'⚿',save:'⎙',close:'✕',menu:'☰',install:'⇩',
   }},
   emoji: {label:'Emoji', icons:{
     home:'🏠',analytics:'📈',dashboard:'📊',catalogue:'📚',users:'👥',equipment:'🧰',circulation:'🔄',reservations:'🔖',reminders:'📨',register:'📝',schedule:'🗓️',feedback:'💬',setup:'🛠️',settings:'🎨',security:'🔐',activitylog:'📜',backup:'☁️',guide:'📖',about:'ℹ️',account:'👤',
-    email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',theme:'🌗',lock:'🔐',save:'💾',close:'❌',menu:'📋',
+    email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',theme:'🌗',lock:'🔐',save:'💾',close:'❌',menu:'📋',install:'📥',
   }},
   outline: {label:'Outline', icons:{
     home:'⌖',analytics:'△',dashboard:'▢',catalogue:'▭',users:'⚇',equipment:'▧',circulation:'↺',reservations:'◇',reminders:'✎',register:'▤',schedule:'▦',feedback:'◫',setup:'✦',settings:'✧',security:'◈',activitylog:'▥',backup:'↻',guide:'▣',about:'○',account:'◯',
-    email:'▷',whatsapp:'◉',call:'◐',query:'✎',camera:'▢',theme:'◑',lock:'▲',save:'▽',close:'✕',menu:'☰',
+    email:'▷',whatsapp:'◉',call:'◐',query:'✎',camera:'▢',theme:'◑',lock:'▲',save:'▽',close:'✕',menu:'☰',install:'↓',
   }},
   bold: {label:'Bold', icons:{
     home:'🏡',analytics:'📶',dashboard:'📌',catalogue:'📕',users:'🧑‍🤝‍🧑',equipment:'🧰',circulation:'🔁',reservations:'📌',reminders:'⏰',register:'🖊️',schedule:'📅',feedback:'🗯️',setup:'🔧',settings:'⚡',security:'🛡️',activitylog:'📰',backup:'💽',guide:'📔',about:'❗',account:'🧑',
-    email:'✉️',whatsapp:'📲',call:'📱',query:'🗒️',camera:'🎥',theme:'💡',lock:'🔏',save:'📥',close:'⛔',menu:'🗃️',
+    email:'✉️',whatsapp:'📲',call:'📱',query:'🗒️',camera:'🎥',theme:'💡',lock:'🔏',save:'📥',close:'⛔',menu:'🗃️',install:'📲',
   }},
   classic: {label:'Classic', icons:{
     home:'⛪',analytics:'✚',dashboard:'☰',catalogue:'❦',users:'ⱴ',equipment:'❊',circulation:'∞',reservations:'❀',reminders:'✍',register:'✎',schedule:'☷',feedback:'✒',setup:'⚒',settings:'☸',security:'♜',activitylog:'❁',backup:'☂',guide:'☘',about:'✦',account:'☺',
-    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',
+    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',install:'☟',
   }},
   duotone: {label:'Duotone squares', icons:{
     home:'◧',analytics:'◨',dashboard:'▦',catalogue:'▤',users:'▥',equipment:'⬒',circulation:'◫',reservations:'⬓',reminders:'▧',register:'▨',schedule:'▩',feedback:'◪',setup:'◩',settings:'◭',security:'◮',activitylog:'⬔',backup:'◱',guide:'◳',about:'◲',account:'◰',
-    email:'▧',whatsapp:'◨',call:'◧',query:'▨',camera:'▦',theme:'◫',lock:'◩',save:'◪',close:'✕',menu:'☰',
+    email:'▧',whatsapp:'◨',call:'◧',query:'▨',camera:'▦',theme:'◫',lock:'◩',save:'◪',close:'✕',menu:'☰',install:'▨',
   }},
   nature: {label:'Nature', icons:{
-    home:'🌳',analytics:'🌱',dashboard:'🍃',catalogue:'🌿',users:'🐿️',equipment:'🪵',circulation:'🍂',reservations:'🌰',reminders:'🌾',register:'🪶',schedule:'🌤️',feedback:'🦋',setup:'🌲',security:'🦉',activitylog:'🌼',backup:'🌦️',guide:'🍄',about:'🌻',account:'🐦',
-    email:'🍁',whatsapp:'🐝',call:'🐦',query:'🌾',camera:'📷',theme:'🌙',lock:'🔒',save:'💧',close:'🍂',menu:'🌳',
+    home:'🌳',analytics:'🌱',dashboard:'🍃',catalogue:'🌿',users:'🐿️',equipment:'🪵',circulation:'🍂',reservations:'🌰',reminders:'🌾',register:'🪶',schedule:'🌤️',feedback:'🦋',setup:'🌲',settings:'🪴',security:'🦉',activitylog:'🌼',backup:'🌦️',guide:'🍄',about:'🌻',account:'🐦',
+    email:'🍁',whatsapp:'🐝',call:'🐦',query:'🌾',camera:'📷',theme:'🌙',lock:'🔒',save:'💧',close:'🍂',menu:'🌳',install:'🪺',
   }},
   vintage: {label:'Vintage', icons:{
     home:'⌘',analytics:'❧',dashboard:'✥',catalogue:'❦',users:'ⵁ',equipment:'⚒',circulation:'∞',reservations:'❃',reminders:'✒',register:'✎',schedule:'⌛',feedback:'❝',setup:'⚙',settings:'✺',security:'♜',activitylog:'❡',backup:'☔',guide:'☙',about:'✦',account:'☺',
-    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',
+    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',install:'⤓',
   }},
 };
 function renderCustomQuoteRows(){
@@ -6734,6 +6735,15 @@ function applyIconPack(){
     const icon = navIcon('camera','📷');
     Array.from(b.childNodes).forEach(n=>{ if(n.nodeType===Node.TEXT_NODE) n.textContent = icon; });
   });
+  // Install buttons (topbar + login screen) both keep a trailing label <span>, so only the leading
+  // icon text node gets swapped — same "find the text node, leave the rest alone" approach as the
+  // camera badge above.
+  const installIcon = navIcon('install','⬇️');
+  installAppBtns().forEach(b=>{
+    Array.from(b.childNodes).forEach(n=>{ if(n.nodeType===Node.TEXT_NODE) n.textContent = installIcon; });
+  });
+  const dismissBtn = document.getElementById('installHintDismissBtn');
+  if(dismissBtn) dismissBtn.textContent = navIcon('close','✕');
 }
 function hexToRgbStr(hex){
   if(!hex) return null;
