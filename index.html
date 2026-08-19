@@ -3943,7 +3943,12 @@ html, body{ overflow-x:hidden;}
   right:0;
   bottom:0;
   background:rgba(8,8,8,0.68);
-  z-index:1000;
+  /* Must match .modal-backdrop's z-index (950) — confirmModal()'s "close/clear without saving?"
+     dialog is appended later in the DOM, so equal z-index lets it stack visibly on top via DOM
+     order, the same way confirm dialogs stack over every other modal in the app. Giving this a
+     higher z-index (it was 1000) buried that confirm dialog behind this overlay, making Close and
+     Clear look like they silently did nothing while stacking darker backdrops on every click. */
+  z-index:950;
   opacity:0;
   transition:opacity 0.2s ease;
 }
@@ -3963,6 +3968,10 @@ html, body{ overflow-x:hidden;}
   box-shadow:0 24px 70px rgba(0,0,0,0.55);
   width:90%;
   max-width:600px;
+  /* height (not just max-height) so the flex column has a definite height to distribute — without
+     it, .note-modal-body/.note-textarea's flex:1 has nothing to grow against and just shrinks to
+     fit its content, leaving very little room to actually type. */
+  height:min(640px, 80vh);
   max-height:80vh;
   opacity:0;
   transform:scale(0.95);
@@ -4022,6 +4031,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 
 .note-textarea{
   flex:1;
+  min-height:320px;
   border:1px solid var(--line);
   border-radius:8px;
   padding:12px;
@@ -4056,6 +4066,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 @media(max-width:600px){
   .note-modal{
     width:95%;
+    height:80vh;
     max-height:85vh;
     border-radius:8px;
   }
@@ -4066,6 +4077,10 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
   
   .note-modal-body{
     padding:16px;
+  }
+  
+  .note-textarea{
+    min-height:200px;
   }
   
   .note-modal-footer{
@@ -4553,7 +4568,14 @@ function resetTextColor(which){
   const prefs = {heading:'headingColor', body:'bodyColor', muted:'mutedColor'};
   PREFS[prefs[which]] = 'default';
   const el = document.getElementById(ids[which]);
-  if(el) el.value = which==='muted' ? resolveMutedColorHex('default') : resolveTextColorHex('default');
+  if(el){
+    // The swatch still has to show *some* hex (native colour inputs can't be blank) — data-default
+    // is the real source of truth for "follows the theme", so an un-hit main Save button afterward
+    // can't re-freeze this back to a fixed colour.
+    el.value = which==='muted' ? resolveMutedColorHex('default') : resolveTextColorHex('default');
+    el.dataset.default = 'true';
+  }
+  applyTypography(); savePrefs();
   previewTypography();
 }
 function previewTypography(){
@@ -4569,9 +4591,14 @@ function previewTypography(){
   const bw = g('setBodyWeight');
   document.documentElement.style.setProperty('--body-weight', (!bw||bw==='default') ? '400' : (FONT_WEIGHTS[bw]||FONT_WEIGHTS.normal).value);
   document.documentElement.style.setProperty('--body-style', (FONT_STYLES[g('setBodyStyle')]||FONT_STYLES.normal).value);
-  document.documentElement.style.setProperty('--heading-text-color', g('setHeadingColor') || 'var(--ink)');
-  document.documentElement.style.setProperty('--body-text-color', g('setBodyColor') || 'var(--ink)');
-  if(g('setMutedColor')) document.documentElement.style.setProperty('--muted', g('setMutedColor'));
+  // A native <input type="color"> can never report an empty/"default" value — it always holds a
+  // concrete hex — so "has the user actually customized this" is tracked separately via
+  // data-default rather than inferred from the (always-truthy) input value.
+  const isCustom = id => { const el = document.getElementById(id); return !!el && el.dataset.default!=='true'; };
+  document.documentElement.style.setProperty('--heading-text-color', isCustom('setHeadingColor') ? g('setHeadingColor') : 'var(--ink)');
+  document.documentElement.style.setProperty('--body-text-color', isCustom('setBodyColor') ? g('setBodyColor') : 'var(--ink)');
+  if(isCustom('setMutedColor')) document.documentElement.style.setProperty('--muted', g('setMutedColor'));
+  else document.documentElement.style.removeProperty('--muted');
 }
 function saveTypographyForm(){
   PREFS.appFont = document.getElementById('setAppFont')?.value || 'default';
@@ -4582,9 +4609,12 @@ function saveTypographyForm(){
   PREFS.headingStyle = document.getElementById('setHeadingStyle')?.value || 'normal';
   PREFS.bodyWeight = document.getElementById('setBodyWeight')?.value || 'default';
   PREFS.bodyStyle = document.getElementById('setBodyStyle')?.value || 'normal';
-  PREFS.headingColor = document.getElementById('setHeadingColor')?.value || 'default';
-  PREFS.bodyColor = document.getElementById('setBodyColor')?.value || 'default';
-  PREFS.mutedColor = document.getElementById('setMutedColor')?.value || 'default';
+  // Same reasoning as previewTypography(): a colour <input> is always a concrete hex, so whether
+  // it's still "following the theme" has to come from data-default, not from the value itself.
+  const savedColor = id => { const el = document.getElementById(id); return (el && el.dataset.default!=='true') ? el.value : 'default'; };
+  PREFS.headingColor = savedColor('setHeadingColor');
+  PREFS.bodyColor = savedColor('setBodyColor');
+  PREFS.mutedColor = savedColor('setMutedColor');
   applyTypography(); savePrefs(); appearancePreviewDirty = false;
   toast('Typography updated');
 }
@@ -15079,9 +15109,9 @@ function pageSettings(){
       </div>
     </div>
     <div class="field-row field-row-3" style="margin-top:4px">
-      <div class="field" style="flex:1"><label>Heading text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setHeadingColor" value="${resolveTextColorHex(PREFS.headingColor)}" oninput="previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('heading')">Reset</button></div></div>
-      <div class="field" style="flex:1"><label>Body text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setBodyColor" value="${resolveTextColorHex(PREFS.bodyColor)}" oninput="previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('body')">Reset</button></div></div>
-      <div class="field" style="flex:1"><label>Muted / secondary text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setMutedColor" value="${resolveMutedColorHex(PREFS.mutedColor)}" oninput="previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('muted')">Reset</button></div></div>
+      <div class="field" style="flex:1"><label>Heading text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setHeadingColor" data-default="${PREFS.headingColor && PREFS.headingColor!=='default' ? 'false' : 'true'}" value="${resolveTextColorHex(PREFS.headingColor)}" oninput="this.dataset.default='false'; previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('heading')">Reset</button></div></div>
+      <div class="field" style="flex:1"><label>Body text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setBodyColor" data-default="${PREFS.bodyColor && PREFS.bodyColor!=='default' ? 'false' : 'true'}" value="${resolveTextColorHex(PREFS.bodyColor)}" oninput="this.dataset.default='false'; previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('body')">Reset</button></div></div>
+      <div class="field" style="flex:1"><label>Muted / secondary text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setMutedColor" data-default="${PREFS.mutedColor && PREFS.mutedColor!=='default' ? 'false' : 'true'}" value="${resolveMutedColorHex(PREFS.mutedColor)}" oninput="this.dataset.default='false'; previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('muted')">Reset</button></div></div>
     </div>
     <p class="field-hint" style="margin-top:-4px">Muted covers hints, captions, subtitles and table labels — everything that isn't a heading or main body text.</p>
     <button class="btn secondary" onclick="saveTypographyForm()">Save typography</button>
