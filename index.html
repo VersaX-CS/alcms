@@ -2871,6 +2871,10 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
 .sidebar-pin-toggle:hover{ background:rgba(255,255,255,.2);}
 .sidebar-pin-toggle.active{ background:var(--brass); border-color:var(--brass-light); color:#221704;}
 .sidebar-pin-toggle.active:hover{ background:var(--brass-light);}
+/* Windows-style pin: the same thumbtack icon tilts to ~35deg when pinned and lays back upright
+   when unpinned, instead of swapping to a different icon shape. */
+.sidebar-pin-toggle svg{ transition:transform .22s ease;}
+.sidebar-pin-toggle.active svg{ transform:rotate(35deg);}
 /* Line-icon sizing: SVGs scale with the container's font-size (1em) so they drop into the
    existing glyph-sized layout without any per-icon pixel tuning. currentColor means they pick
    up hover/active text-color changes automatically, the way the emoji never could. */
@@ -4149,6 +4153,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
             <button type="button" class="getting-started-btn" id="installAppBtnAuth" onclick="promptInstallApp()" title="Install app" style="display:none">⬇️<span class="gsb-label"> Install</span></button>
             <button class="getting-started-btn auth-tips-btn" id="authTipsBtn" onclick="openQuickTipsModal()" title="Quick tips">💡<span class="gsb-label"> Tips</span></button>
             <button class="getting-started-btn auth-getting-started-btn" id="authGettingStartedBtn" onclick="openGettingStartedModal()" title="Getting started">🚀<span class="gsb-label"> Getting started</span></button>
+            <button type="button" class="icon-btn" id="authNotifBellBtn" onclick="event.stopPropagation();toggleAuthNotifPreview();" title="Notifications" style="position:relative" aria-label="Notifications">🔔<span id="authNotifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span></button>
 
           </div>
           <div class="auth-notif-preview" id="authNotifPreview"></div>
@@ -6549,7 +6554,7 @@ const SVG_ICONS = {
   equipment: svgIco(`<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2z"/>`),
   circulation: svgIco(`<path d="M4.5 12a7.5 7.5 0 0 1 13-5"/><path d="M20 3.5V8h-4.5"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M4 20.5V16h4.5"/>`),
   reservations: svgIco(`<path d="M6 4h12v16l-6-4-6 4V4z"/>`),
-  reminders: svgIco(`<path d="M6 10a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 14 6 10z"/><path d="M10 19a2 2 0 0 0 4 0"/>`),
+  reminders: svgIco(`<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/>`),
   register: svgIco(`<rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.3" width="6" height="3" rx="1"/><line x1="8" y1="10.5" x2="16" y2="10.5"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="17.5" x2="13" y2="17.5"/>`),
   schedule: svgIco(`<rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="9.5" x2="20" y2="9.5"/><line x1="8" y1="3" x2="8" y2="6.5"/><line x1="16" y1="3" x2="16" y2="6.5"/>`),
   feedback: svgIco(`<path d="M4 5h16v11H9l-4 4V5z"/>`),
@@ -6564,8 +6569,7 @@ const SVG_ICONS = {
   search: svgIco(`<circle cx="10.5" cy="10.5" r="6"/><line x1="15.2" y1="15.2" x2="20" y2="20"/>`),
   sun: svgIco(`<circle cx="12" cy="12" r="4.3"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/>`),
   moon: svgIco(`<path d="M20 14.6a8.5 8.5 0 1 1-9.6-13 7 7 0 0 0 9.6 13z"/>`),
-  pin: svgIco(`<path d="M12 21s7-7.1 7-12a7 7 0 1 0-14 0c0 4.9 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/>`),
-  pinFilled: svgIco(`<path d="M12 21s7-7.1 7-12a7 7 0 1 0-14 0c0 4.9 7 12 7 12z" fill="currentColor" fill-opacity=".22"/><circle cx="12" cy="9" r="2.4" fill="currentColor"/>`),
+  pin: svgIco(`<rect x="8.6" y="3" width="6.8" height="4" rx="1.4"/><path d="M9.2 7h5.6l-1.1 5.8h-3.4z"/><path d="M12 12.8v7.7"/>`),
   logout: svgIco(`<path d="M13 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h7"/><path d="M11 12h9"/><path d="M17 8l4 4-4 4"/>`),
   menu: svgIco(`<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>`),
   close: svgIco(`<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>`),
@@ -6588,10 +6592,11 @@ function getThemeIcon(){
   return theme === 'dark' ? SVG_ICONS.moon : SVG_ICONS.sun;
 }
 
-/* Dynamic pin icon - filled pin for pinned state, outline pin for unpinned state */
+/* Pin icon: same thumbtack shape in both states — the "activated" look comes from a CSS
+   rotation (see .sidebar-pin-toggle.active svg), the same way Windows tilts its pin icon when
+   pinned and lays it flat again when unpinned, instead of swapping to a different glyph. */
 function getPinIcon(){
-  const isPinned = document.getElementById('sidebarPinBtn')?.getAttribute('aria-pressed') === 'true';
-  return isPinned ? SVG_ICONS.pinFilled : SVG_ICONS.pin;
+  return SVG_ICONS.pin;
 }
 
 const ICON_PACKS = {
@@ -6854,6 +6859,7 @@ function applyIconPack(){
   installAppBtns().forEach(b=> swapLeadingIcon(b, installIcon));
   swapLeadingIcon(document.getElementById('noteBtn'), navIcon('notes','📝'));
   swapLeadingIcon(document.getElementById('notifBellBtn'), navIcon('bell','🔔'));
+  swapLeadingIcon(document.getElementById('authNotifBellBtn'), navIcon('bell','🔔'));
   swapLeadingIcon(document.getElementById('authTipsBtn'), navIcon('tips','💡'));
   swapLeadingIcon(document.getElementById('authGettingStartedBtn'), navIcon('rocket','🚀'));
 }
