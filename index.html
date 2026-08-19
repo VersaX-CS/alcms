@@ -11126,11 +11126,9 @@ function pageCirculationTable(){
       {label:'Returned', get:r=>r.returnDate?fmtDate(r.returnDate):'—'}, {label:'Status', get:r=>r.status},
     ],
     rowActions:r=>`<button class="btn secondary small" onclick="viewTransaction('${esc(r.trxId)}')">View</button>
-      <button class="btn secondary small" onclick="openTransactionReceiptModal('${esc(r.trxId)}')">📋 Receipt</button>
       ${!r.returnDate? `<button class="btn secondary small" onclick="renewLoan('${esc(r.trxId)}')">Renew</button>`:''}
       ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}
-      <button class="btn secondary small" onclick="openTxnHistoryModal('${esc(r.trxId)}')">History</button>
-      <button class="btn danger small" onclick="deleteTransaction('${esc(r.trxId)}')">Delete</button>`,
+      <button class="btn secondary small" onclick="openTxnHistoryModal('${esc(r.trxId)}')">History</button>`,
     onRowDblClick:r=>`viewTransaction('${esc(r.trxId)}')`,
     hidePrint:true,
     extraActions:[
