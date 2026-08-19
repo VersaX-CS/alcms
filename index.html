@@ -3319,6 +3319,11 @@ body[data-transition="bounce"] .modal-backdrop.closing .modal{ animation:modalSc
 .scan-cam-box video{ width:100%; height:100%; object-fit:cover; display:block;}
 .scan-cam-frame{ position:absolute; inset:14%; border:2px solid rgba(255,255,255,.75); border-radius:10px; box-shadow:0 0 0 999px rgba(0,0,0,.25); pointer-events:none;}
 .modal-foot{ padding:14px 22px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px;}
+/* Sign-out/lock confirmation has 3 buttons with long labels — keep them on a single row at any
+   modal width by letting each button shrink equally and wrap its own text onto 2 lines rather
+   than letting the whole group wrap onto separate rows. */
+.signout-actions{ flex-wrap:nowrap; gap:6px;}
+.signout-actions .btn{ flex:1 1 0; min-width:0; padding:8px 6px; font-size:12.5px; text-align:center; white-space:normal; line-height:1.25;}
 .field{ margin-bottom:12px; display:flex; flex-direction:column; gap:5px;}
 .field label{ font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted-label);}
 .field input,.field select,.field textarea{
@@ -5624,7 +5629,7 @@ function promptSignOut(opts={}){
       <div class="modal-body">
         <p style="margin:0 0 10px;font-size:13.5px;line-height:1.6;color:var(--muted)">Everything you've entered is already saved to this browser. Want a backup copy (JSON file) before you go?</p>
       </div>
-      <div class="modal-foot" style="flex-wrap:wrap">
+      <div class="modal-foot signout-actions">
         <button class="btn secondary" id="mCancel">Cancel</button>
         <button class="btn" id="mSkip">${opts.lockOnly? 'Lock without saving' : 'Sign out without saving'}</button>
         <button class="btn" id="mSave" style="background:var(--brass-light)">⬇ Download backup &amp; ${opts.lockOnly? 'lock' : 'sign out'}</button>
@@ -6569,7 +6574,7 @@ const SVG_ICONS = {
   search: svgIco(`<circle cx="10.5" cy="10.5" r="6"/><line x1="15.2" y1="15.2" x2="20" y2="20"/>`),
   sun: svgIco(`<circle cx="12" cy="12" r="4.3"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/>`),
   moon: svgIco(`<path d="M20 14.6a8.5 8.5 0 1 1-9.6-13 7 7 0 0 0 9.6 13z"/>`),
-  pin: svgIco(`<rect x="8.6" y="3" width="6.8" height="4" rx="1.4"/><path d="M9.2 7h5.6l-1.1 5.8h-3.4z"/><path d="M12 12.8v7.7"/>`),
+  pin: svgIco(`<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>`),
   logout: svgIco(`<path d="M13 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h7"/><path d="M11 12h9"/><path d="M17 8l4 4-4 4"/>`),
   menu: svgIco(`<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>`),
   close: svgIco(`<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>`),
@@ -6853,7 +6858,7 @@ function applyIconPack(){
 
   // Buttons that keep a trailing label/badge <span> alongside the icon — only the leading icon
   // text node gets swapped, so the label/badge markup is left untouched.
-  const swapLeadingIcon = (el, icon)=>{ if(!el) return; Array.from(el.childNodes).forEach(n=>{ if(n.nodeType===Node.TEXT_NODE) n.textContent = icon; }); };
+  const swapLeadingIcon = (el, icon)=>{ if(!el) return; const n = Array.from(el.childNodes).find(n=> n.nodeType===Node.TEXT_NODE); if(n) n.textContent = icon; };
   document.querySelectorAll('.avatar-camera-badge').forEach(b=> swapLeadingIcon(b, navIcon('camera','📷')));
   const installIcon = navIcon('install','⬇️');
   installAppBtns().forEach(b=> swapLeadingIcon(b, installIcon));
