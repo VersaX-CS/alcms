@@ -11127,8 +11127,7 @@ function pageCirculationTable(){
     ],
     rowActions:r=>`<button class="btn secondary small" onclick="viewTransaction('${esc(r.trxId)}')">View</button>
       ${!r.returnDate? `<button class="btn secondary small" onclick="renewLoan('${esc(r.trxId)}')">Renew</button>`:''}
-      ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}
-      <button class="btn secondary small" onclick="openTxnHistoryModal('${esc(r.trxId)}')">History</button>`,
+      ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}`,
     onRowDblClick:r=>`viewTransaction('${esc(r.trxId)}')`,
     hidePrint:true,
     extraActions:[
@@ -11296,6 +11295,7 @@ function viewTransaction(trxId){
     <button class="btn small" onclick="openTransactionReceiptModal('${esc(trxId)}')">👁 View Receipt</button>
     <button class="btn secondary small" onclick="printTransactionReceipt('${esc(trxId)}')">🖨 Print</button>
     ${canSendWhatsApp ? `<button class="btn secondary small" onclick="sendTransactionReceiptWhatsApp('${esc(trxId)}')">📱 WhatsApp</button>` : ''}
+    <button class="btn secondary small" onclick="openTxnHistoryModal('${esc(trxId)}')">History</button>
   `;
   
   const wrap = document.createElement('div');
