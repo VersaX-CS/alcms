@@ -11,7 +11,7 @@
    saved. app.js still calls applyTheme() again once fully loaded — this is just the early guess. */
 (function(){
   try{
-    var raw = localStorage.getItem('alcms:alcms_prefs_v1');
+    var raw = localStorage.getItem('alcms:prefs_v1'); /* keep in sync with PREFS_KEY + LOCAL_PREFIX below */
     var theme = raw ? (JSON.parse(raw).theme || 'system') : 'system';
     if(theme==='system' || !theme){
       var h = new Date().getHours();
@@ -3664,7 +3664,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 .cal-modal .modal{ max-width:480px; }
 .cal-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
 .cal-nav strong{ font-size:14px; }
-.cal-nav-btn{ background:none; border:none; cursor:pointer; font-size:16px; padding:4px 8px; color:var(--text); font-weight:600; transition:color .12s ease; }
+.cal-nav-btn{ background:none; border:none; cursor:pointer; font-size:16px; padding:4px 8px; color:var(--ink); font-weight:600; transition:color .12s ease; }
 .cal-nav-btn:hover{ color:var(--brass); }
 .cal-nav-btn:active{ transform:scale(.95); }
 .cal-legend{ display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-bottom:10px; }
@@ -4238,322 +4238,19 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 
 <script src="js/seed-data.js"></script>
 <script>
-/**
- * ALCMS - Quick Performance Wins
- * Implementation guide for immediate 5-10x improvement
- * 
- * Time to implement: 30 minutes
- * Performance gain: 5-10x faster
- */
-
-// ============================================
-// 1. ADD DEBOUNCE FUNCTION (30 seconds)
-// ============================================
-// Add this near the top of your <script> tag (around line 3993)
-
-function debounce(fn, delay) {
+/* Small debounce helper for the topbar search box, so results re-render only after the user
+   pauses typing rather than on every keystroke. */
+function debounce(fn, delay){
   let timeoutId;
-  return function(...args) {
+  return function(...args){
     clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
+    timeoutId = setTimeout(()=>fn(...args), delay);
   };
 }
-
-function throttle(fn, delay) {
-  let lastCall = 0;
-  return function(...args) {
-    const now = Date.now();
-    if (now - lastCall >= delay) {
-      lastCall = now;
-      fn(...args);
-    }
-  };
-}
-
-// ============================================
-// 2. DEBOUNCED SEARCH (2 minutes)
-// ============================================
-// Add this after debounce definition
-
-const debouncedTopbarSearch = debounce(function(value) {
+const debouncedTopbarSearch = debounce(function(value){
   searchQuery = value;
   renderTopbarSearchResults(value);
 }, 300);
-
-// In HTML, CHANGE:
-// oninput="renderTopbarSearchResults(this.value)"
-// TO:
-// oninput="debouncedTopbarSearch(this.value)"
-
-// ============================================
-// 3. DEBOUNCED SAVE TO DATABASE (5 minutes)
-// ============================================
-// Add this after debounce definition
-
-let savePending = false;
-let hasUnsavedChanges = false;
-
-function markUnsavedChanges() {
-  hasUnsavedChanges = true;
-  scheduleAutoSave();
-}
-
-function scheduleAutoSave() {
-  if (savePending) return;
-  
-  savePending = true;
-  setTimeout(() => {
-    if (hasUnsavedChanges) {
-      saveDB();
-      hasUnsavedChanges = false;
-    }
-    savePending = false;
-  }, 1000); // Save 1 second after last change
-}
-
-// REPLACE these patterns:
-// OLD: onclick="updateField(x); render(); saveDB()"
-// NEW: onclick="updateField(x); markUnsavedChanges(); render()"
-
-// This batches multiple saves into one
-
-// ============================================
-// 4. DEBOUNCED RENDER (10 minutes)
-// ============================================
-// For rapid state changes that trigger render
-
-let renderScheduled = false;
-
-function scheduleRender() {
-  if (renderScheduled) return;
-  
-  renderScheduled = true;
-  
-  requestAnimationFrame(() => {
-    // Use requestAnimationFrame for smoother rendering
-    render();
-    renderScheduled = false;
-  });
-}
-
-// REPLACE:
-// OLD: onclick="route='home'; render()"
-// NEW: onclick="route='home'; scheduleRender()"
-
-// ============================================
-// 5. DEBOUNCED SCROLL EVENTS (5 minutes)
-// ============================================
-
-const debouncedScroll = debounce(function() {
-  // Handle scroll events
-  updateScrollPosition();
-}, 100);
-
-// Usage:
-// document.addEventListener('scroll', debouncedScroll);
-
-// ============================================
-// 6. PERFORMANCE MONITORING (10 minutes)
-// ============================================
-// Add this to monitor performance improvements
-
-class PerformanceMonitor {
-  constructor() {
-    this.metrics = {
-      renderCount: 0,
-      saveCount: 0,
-      searchCount: 0,
-      avgRenderTime: 0,
-      avgSaveTime: 0
-    };
-  }
-
-  trackRender(fn) {
-    return function(...args) {
-      const start = performance.now();
-      fn(...args);
-      const duration = performance.now() - start;
-      
-      this.metrics.renderCount++;
-      this.metrics.avgRenderTime = 
-        (this.metrics.avgRenderTime * (this.metrics.renderCount - 1) + duration) / 
-        this.metrics.renderCount;
-      
-      console.log(`Render #${this.metrics.renderCount}: ${duration.toFixed(2)}ms (avg: ${this.metrics.avgRenderTime.toFixed(2)}ms)`);
-    };
-  }
-
-  trackSave(fn) {
-    return function(...args) {
-      const start = performance.now();
-      fn(...args);
-      const duration = performance.now() - start;
-      
-      this.metrics.saveCount++;
-      this.metrics.avgSaveTime = 
-        (this.metrics.avgSaveTime * (this.metrics.saveCount - 1) + duration) / 
-        this.metrics.saveCount;
-      
-      console.log(`Save #${this.metrics.saveCount}: ${duration.toFixed(2)}ms (avg: ${this.metrics.avgSaveTime.toFixed(2)}ms)`);
-    };
-  }
-
-  report() {
-    console.table(this.metrics);
-  }
-}
-
-const perfMonitor = new PerformanceMonitor();
-
-// Wrap your functions:
-// const origRender = render;
-// render = perfMonitor.trackRender(origRender);
-
-// ============================================
-// 7. IMPLEMENTATION CHECKLIST
-// ============================================
-
-/*
-IMPLEMENTATION STEPS:
-
-1. ✓ Add debounce() and throttle() functions
-   Location: ~line 3995 (after <script> tag)
-   Time: 30 seconds
-
-2. ✓ Add debouncedTopbarSearch
-   Replace oninput handlers
-   Time: 2 minutes
-   Impact: 10x faster search
-
-3. ✓ Add markUnsavedChanges() & scheduleAutoSave()
-   Replace all saveDB() patterns
-   Time: 5 minutes
-   Impact: 50-100x fewer saves
-
-4. ✓ Add scheduleRender()
-   Replace render() patterns where possible
-   Time: 10 minutes
-   Impact: Smoother, batched updates
-
-5. ✓ Add debouncedScroll
-   For scroll event handlers
-   Time: 5 minutes
-   Impact: Smoother scrolling
-
-6. ✓ Add PerformanceMonitor
-   Monitor improvements
-   Time: 10 minutes
-   Impact: Visibility into gains
-
-TOTAL TIME: ~30 minutes
-EXPECTED IMPROVEMENT: 5-10x faster
-
-Before optimization:
-- Search: 100-500ms lag per keystroke
-- Save: 130 saves, blocking
-- Total: Noticeable lag on every action
-
-After optimization:
-- Search: 10-20ms per keystroke
-- Save: 1-2 saves, non-blocking
-- Total: Instant responsiveness
-*/
-
-// ============================================
-// 8. BEFORE & AFTER HTML EXAMPLES
-// ============================================
-
-/* BEFORE (Slow):
-<input 
-  type="text" 
-  oninput="renderTopbarSearchResults(this.value)"
-/>
-<button onclick="updateField(x); saveDB(); render()">Save</button>
-<div 
-  onscroll="updateScrollIndicator(); updateLazyLoad(); 
-  recalculateLayout(); checkNotifications()"
-/>
-
-AFTER (Fast):
-<input 
-  type="text" 
-  oninput="debouncedTopbarSearch(this.value)"
-/>
-<button onclick="updateField(x); markUnsavedChanges(); scheduleRender()">Save</button>
-<div 
-  onscroll="debouncedScroll()"
-/>
-*/
-
-// ============================================
-// 9. EXPECTED PERFORMANCE METRICS
-// ============================================
-
-/*
-CURRENT PERFORMANCE (Without optimization):
-┌─────────────────────┬──────────┬────────────────┐
-│ Operation           │ Time     │ Frequency      │
-├─────────────────────┼──────────┼────────────────┤
-│ Parse JS on load    │ 500-2000ms │ Once         │
-│ Search keystroke    │ 100-500ms  │ Per key (10/s)│
-│ Save to DB          │ 50-150ms   │ 130 total     │
-│ Full page render    │ 100-500ms  │ 170 total     │
-│ Single DOM query    │ 0.5-2ms    │ 515 total     │
-│ Total impact        │ 17-85s     │ In worst case │
-└─────────────────────┴──────────┴────────────────┘
-
-AFTER QUICK WINS (With debouncing):
-┌─────────────────────┬──────────┬────────────────┐
-│ Operation           │ Time     │ Frequency      │
-├─────────────────────┼──────────┼────────────────┤
-│ Parse JS on load    │ 500-2000ms │ Once         │
-│ Search keystroke    │ 10-20ms    │ Per key (1/s)│
-│ Save to DB          │ 50-150ms   │ 2-3 total   │
-│ Full page render    │ 50-200ms   │ 10-20 total │
-│ Single DOM query    │ 0.5-2ms    │ 50-100 total│
-│ Total impact        │ ~3-4s      │ Interactive  │
-└─────────────────────┴──────────┴────────────────┘
-
-IMPROVEMENT:
-- Search: 10-50x faster
-- Saves: 50-100x fewer
-- Renders: 10-15x fewer
-- Overall responsiveness: 5-10x improvement
-*/
-
-// ============================================
-// 10. GRADUAL ROLLOUT STRATEGY
-// ============================================
-
-/*
-Phase 1 (Week 1) - Search Debouncing
-- Add debounce function
-- Debounce topbar search
-- Test in development
-- Monitor console logs
-- Expected: 10x faster search
-
-Phase 2 (Week 2) - Save Optimization  
-- Add scheduleAutoSave
-- Replace saveDB() patterns
-- Test data persistence
-- Monitor save frequency
-- Expected: 50x fewer saves
-
-Phase 3 (Week 3) - Render Optimization
-- Add scheduleRender
-- Replace render() patterns
-- Test page transitions
-- Monitor render count
-- Expected: 10x fewer renders
-
-Phase 4 (Week 4+) - Long-term
-- Extract CSS to external file
-- Split JavaScript by route
-- Implement virtual scrolling
-- Add service worker
-- Expected: 50-80% overall improvement
-*/
 
 /* alcms application logic */
 const $ = (sel,root=document)=>root.querySelector(sel);
@@ -4671,7 +4368,6 @@ function fmtTime(v){
 }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 function toast(msg){
   const t=$('#toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(window.__toastT); window.__toastT=setTimeout(()=>t.classList.remove('show'),2600);
@@ -4730,7 +4426,7 @@ async function pickContactForField(fieldId){
 }
 
 /* ================= preferences (clock/date format — available even before login) ================= */
-const PREFS_KEY = 'alcms_prefs_v1';
+const PREFS_KEY = 'prefs_v1';
 let PREFS = {clockFormat:'24h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'minimal', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
@@ -7204,11 +6900,14 @@ const CAL_DAY_NAME_TO_INDEX = {SUNDAY:0, MONDAY:1, TUESDAY:2, WEDNESDAY:3, THURS
 const CAL_INDEX_TO_DAY_NAME = {1:'MONDAY', 2:'TUESDAY', 3:'WEDNESDAY', 4:'THURSDAY', 5:'FRIDAY'};
 let calModalState = null;
 function calDateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function saveCalModalState(state){
-  try{ localStorage.setItem('alcms:calModalState', JSON.stringify(state)); }catch(e){}
+// Goes through the same storeGet/storeSet abstraction as the rest of the app's persisted state
+// (DB, prefs, accounts) instead of talking to localStorage directly, so the last-viewed month is
+// remembered consistently regardless of which storage backend this install is running on.
+async function saveCalModalState(state){
+  try{ await storeSet('calModalState', JSON.stringify(state)); }catch(e){}
 }
-function loadCalModalState(){
-  try{ const s = localStorage.getItem('alcms:calModalState'); return s ? JSON.parse(s) : null; }catch(e){ return null; }
+async function loadCalModalState(){
+  try{ const s = await storeGet('calModalState'); return s ? JSON.parse(s) : null; }catch(e){ return null; }
 }
 
 /* How many expected classes today still haven't logged a library visit (mirrors the "classes yet
@@ -7279,9 +6978,9 @@ function updateCalendarFabAttention(){
     : level==='attention' ? `Calendar — ${badgeCount} item${badgeCount!==1?'s':''} need your attention`
     : 'Calendar';
 }
-function openCalendarModal(){
+async function openCalendarModal(){
   // Try to restore the last-viewed month; if none saved, default to today
-  const saved = loadCalModalState();
+  const saved = await loadCalModalState();
   if(saved && typeof saved.viewYear==='number' && typeof saved.viewMonth==='number'){
     calModalState = saved;
   } else {
@@ -7467,7 +7166,7 @@ function calendarDayDetailsHtml(key){
     const hidden = loanRows.length - CAL_DUE_LIST_CAP;
     eventsHtml = displayed.map(t=>`<div class="cal-event-row"><span class="badge ${badgeInfo.cls}">${esc(badgeInfo.label)}</span> <strong>${esc(t.title||t.acc||'')}</strong> <span style="color:var(--muted);font-size:12px">${esc(t.name||'')}</span></div>`).join('');
     if(hidden > 0){
-      eventsHtml += `<div style="margin-top:8px;padding:8px;background:var(--dim);border-radius:4px;font-size:12px;color:var(--muted);text-align:center"><strong>+${hidden} more</strong> — <a href="#" onclick="closeCalendarModal();route='reminders';render();return false;" style="color:inherit;text-decoration:underline">view in Reminders</a></div>`;
+      eventsHtml += `<div style="margin-top:8px;padding:8px;background:var(--parchment-dim);border-radius:4px;font-size:12px;color:var(--muted);text-align:center"><strong>+${hidden} more</strong> — <a href="#" onclick="closeCalendarModal();route='reminders';render();return false;" style="color:inherit;text-decoration:underline">view in Reminders</a></div>`;
     }
   } else {
     eventsHtml = `<div class="cal-empty-note">No loans due this date</div>`;
@@ -10894,7 +10593,7 @@ async function previewMemberDocument(memberId, docId){
   } else if(mime.startsWith('text/')){
     let text = '';
     try{ text = await (await fetch(url)).text(); }catch(e){ text = '(Could not read text content)'; }
-    body = `<pre style="white-space:pre-wrap;word-break:break-word;max-height:65vh;overflow:auto;background:var(--panel-2);padding:12px;border-radius:8px;font-size:12.5px;line-height:1.5">${esc(text)}</pre>`;
+    body = `<pre style="white-space:pre-wrap;word-break:break-word;max-height:65vh;overflow:auto;background:var(--card);padding:12px;border-radius:8px;font-size:12.5px;line-height:1.5">${esc(text)}</pre>`;
   } else {
     body = `<div class="empty" style="padding:24px">
       <div class="big">${info.icon}</div>
@@ -10960,7 +10659,7 @@ function openMemberDocumentUploadModal(memberId){
           <input id="docTagsInput" type="text" placeholder="e.g., warning, follow-up, 2024">
         </div>
         <div class="field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:normal;font-size:12.5px;color:var(--text)">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:normal;font-size:12.5px;color:var(--ink)">
             <input type="checkbox" id="docStoreGithub" style="width:auto">
             <span>☁️ Store this file on GitHub instead of the local database (keeps local storage &amp; backups smaller — needs GitHub sync configured in Backup &amp; Restore)</span>
           </label>
@@ -11424,7 +11123,7 @@ function viewTransaction(trxId){
         <table class="datatable">
           ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:40%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}
         </table>
-        <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--line);">
           <div style="margin-bottom:12px;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Receipt & Actions</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${receiptActionBtns}
@@ -14304,7 +14003,7 @@ function equipmentConditionFieldsHtml(counts){
       <div class="field" style="margin:0"><label style="font-weight:400;font-size:11.5px">🔴 Damaged</label><input id="f_condDamaged" type="number" min="0" step="1" inputmode="numeric" value="${+counts.DAMAGED||0}"></div>
       <div class="field" style="margin:0"><label style="font-weight:400;font-size:11.5px">⚪ Out of service</label><input id="f_condOOS" type="number" min="0" step="1" inputmode="numeric" value="${+counts['OUT OF SERVICE']||0}"></div>
     </div>
-    <div id="condBar" style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:10px;background:var(--border)">${equipmentConditionBarSegmentsHtml(counts)}</div>
+    <div id="condBar" style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:10px;background:var(--line)">${equipmentConditionBarSegmentsHtml(counts)}</div>
     <p class="field-hint" id="condTotalRow" style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <span>Total quantity: <b id="condTotalDisplay">${total}</b></span>
       <span style="display:flex;gap:6px">
@@ -17686,13 +17385,14 @@ window.addEventListener('error', e=> console.error('Runtime error:', e.error||e.
 /* ================= Note Modal Functions ================= */
 let noteHasChanges = false;
 
-function openNoteModal(){
+async function openNoteModal(){
   const overlay = document.getElementById('noteModalOverlay');
   const modal = document.getElementById('noteModal');
   const textarea = document.getElementById('noteTextarea');
   
-  // Load saved note from localStorage
-  const savedNote = localStorage.getItem('alcms:quick_note');
+  // Load the saved note through the same storeGet/storeSet abstraction used everywhere else
+  // (DB, prefs, accounts) rather than talking to localStorage directly.
+  const savedNote = await storeGet('quickNote');
   textarea.value = savedNote || '';
   noteHasChanges = false;
   
@@ -17720,10 +17420,10 @@ function hideNoteModal(){
   modal.classList.remove('show');
 }
 
-function saveNote(){
+async function saveNote(){
   const textarea = document.getElementById('noteTextarea');
   const text = textarea.value;
-  localStorage.setItem('alcms:quick_note', text);
+  await storeSet('quickNote', text);
   noteHasChanges = false;
   
   // Visual feedback
