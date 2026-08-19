@@ -15106,6 +15106,32 @@ function pageSettings(){
     <button class="btn danger" onclick="resetPersonalization()">↺ Reset personalization to default</button>
   </div>
   <div class="card panel">
+    <div class="panel-head"><h3>Theme sets</h3><div class="hint">One-click bundles of colour palette, typography, icon pack, transitions, and section/modal/title-bar style — pick a preset, tweak it, or build your own from scratch</div></div>
+    ${editingThemeSetKey ? `<div class="field-hint" style="background:rgba(184,134,62,.12);border:1px solid var(--brass);border-radius:8px;padding:8px 10px;margin-bottom:10px">
+      Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page (using each section's own Save button as normal), then come back here.
+      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn secondary small" onclick="updateThemeSet()">💾 Update this theme</button>
+        <button class="btn secondary small" onclick="stopEditingThemeSet()">Done editing</button>
+      </div>
+    </div>` : ''}
+    <div class="palette-swatch-row" id="themeSetSwatches">${Object.entries(allThemeSets()).map(([k,t])=>{
+        const pal = allPalettes()[t.palette] || COLOR_PALETTES.forest;
+        return `<div class="palette-chip ${PREFS.activeThemeSet===k?'selected':''}" onclick="applyThemeSet('${k}')" title="Apply &quot;${esc(t.label)}&quot;">
+          <span class="palette-chip-dots">
+            <span style="background:${pal.forest}"></span><span style="background:${pal.brass}"></span><span style="background:${pal.terracotta}"></span><span style="background:${pal.highlight||pal.forest}"></span>
+          </span>
+          <span class="palette-chip-label">${esc(t.label)}${t.theme==='dark'?' 🌙':t.theme==='light'?' ☀️':''}</span>
+          <a href="#" onclick="event.stopPropagation();editThemeSet('${k}');return false;" title="Edit">✎</a>
+          <a href="#" onclick="event.stopPropagation();deleteThemeSet('${k}');return false;" title="Delete" style="color:#A8452F">✕</a>
+        </div>`;
+      }).join('')}</div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
+      <div class="field" style="flex:1;min-width:200px;margin:0"><label>Save the current look as a new theme</label><input type="text" id="newThemeSetName" placeholder="e.g. Reading Room"></div>
+      <button class="btn secondary" onclick="saveCurrentAsThemeSet()">💾 Save as new theme</button>
+    </div>
+    <p class="field-hint" style="margin-top:8px">Applying a theme instantly sets its colour palette, fonts, icon pack, modal transition, section/modal/title-bar style &amp; colours, and lockscreen clock/decoration — then saves right away, no extra "Save" click needed. Uploaded background images themselves aren't swapped by a theme (they're separate files) — only the style and opacity around them.</p>
+  </div>
+  <div class="card panel">
     <div class="panel-head"><h3>Appearance — theme &amp; colours</h3></div>
     <div class="field-row">
       <div class="field"><label>Theme</label><select id="setTheme" onchange="previewTheme(this.value)"><option value="system" ${PREFS.theme==='system'?'selected':''}>Match system</option><option value="light" ${PREFS.theme==='light'?'selected':''}>Light</option><option value="dark" ${PREFS.theme==='dark'?'selected':''}>Dark</option></select></div>
@@ -15360,6 +15386,119 @@ async function deletePalettePreset(key){
     if(PREFS.palette===key){ const fallback = Object.keys(allPalettes())[0]||'forest'; PREFS.palette=fallback; applyPalette(fallback); }
     await savePrefs();
     toast('Palette deleted');
+    render();
+  }, {confirmLabel:'Delete', danger:true});
+}
+/* ================= theme sets =================
+   A "theme set" is a named bundle of everything else on this page — colour palette, typography,
+   icon pack, modal transition, section/modal/title-bar style & colours, and lockscreen clock/decor
+   — so picking one preset changes the whole look in one click instead of tuning a dozen fields by
+   hand. Built on the exact same override pattern as custom palettes above: built-ins live in the
+   THEME_SETS constant, user themes (and edits to a built-in) live in PREFS.customThemeSets under
+   the same key, and allThemeSets() merges the two with deletions tracked separately so a built-in
+   can be "deleted" without mutating the constant. */
+const THEME_SET_FIELDS = ['theme','palette','appFont','headingFont','headingScale','bodyScale','headingWeight','headingStyle','bodyWeight','bodyStyle','headingColor','bodyColor','mutedColor','clockFont','dateFont','authClockStyle','lockscreenDecorStyle','iconPack','transitionStyle','sectionStyle','sectionOpacity','topbarStyle','sectionBgColor','modalBgColor','topbarBgColor','authBoxColor','authBoxOpacity','weatherAmbienceStyle','weatherAmbienceSet'];
+const THEME_SETS = {
+  classic: {label:'Classic Library (default)', theme:'light', palette:'forest', appFont:'default', headingFont:'default', headingWeight:'default', bodyWeight:'default', clockFont:'digital', dateFont:'default', iconPack:'minimal', transitionStyle:'scale', sectionStyle:'solid', topbarStyle:'solid'},
+  midnight: {label:'Midnight Study', theme:'dark', palette:'slate', appFont:'system', headingFont:'system', headingWeight:'bold', clockFont:'digital', dateFont:'default', iconPack:'outline', transitionStyle:'fade', sectionStyle:'glassy', sectionOpacity:60, topbarStyle:'glassy'},
+  vintageReadingRoom: {label:'Vintage Reading Room', theme:'light', palette:'crimson', appFont:'garamond', headingFont:'playfair', headingWeight:'default', clockFont:'elegant', dateFont:'elegant', iconPack:'vintage', transitionStyle:'flip', sectionStyle:'solid', topbarStyle:'solid'},
+  modernMinimal: {label:'Modern Minimal', theme:'light', palette:'ocean', appFont:'montserrat', headingFont:'montserrat', headingWeight:'bold', clockFont:'modern', dateFont:'default', iconPack:'minimal', transitionStyle:'slide', sectionStyle:'blank', topbarStyle:'blank'},
+  natureRetreat: {label:'Nature Retreat', theme:'light', palette:'forest', appFont:'nunito', headingFont:'nunito', headingWeight:'default', clockFont:'rounded', dateFont:'default', iconPack:'nature', transitionStyle:'bounce', sectionStyle:'solid', topbarStyle:'solid', weatherAmbienceStyle:'vivid', weatherAmbienceSet:'hills'},
+  royalBold: {label:'Royal & Bold', theme:'dark', palette:'royal', appFont:'poppins', headingFont:'poppins', headingWeight:'black', clockFont:'modern', dateFont:'default', iconPack:'bold', transitionStyle:'bounce', sectionStyle:'glassy', sectionOpacity:70, topbarStyle:'glassy'},
+};
+function allThemeSets(){
+  const merged = Object.assign({}, THEME_SETS, PREFS.customThemeSets||{});
+  (PREFS.deletedThemeSets||[]).forEach(k=> delete merged[k]);
+  return merged;
+}
+/* Writes every field a theme set defines onto PREFS, then re-runs every "apply" routine that
+   field feeds — the same calls loadPrefs() makes at boot, just scoped to what a theme actually
+   touches (background *images* are left alone; they're uploaded assets, not theme data). */
+function applyThemeSetValues(set){
+  if(!set) return;
+  THEME_SET_FIELDS.forEach(f=>{ if(set[f]!==undefined) PREFS[f]=set[f]; });
+  PREFS.paletteAuto = false; // the theme has deliberately chosen a palette — don't let light/dark switching override it
+  applyTheme();
+  applyPalette(PREFS.palette);
+  applyTypography();
+  applyIconPack();
+  document.body.setAttribute('data-transition', PREFS.transitionStyle||'scale');
+  document.body.setAttribute('data-section-style', PREFS.sectionStyle||'solid');
+  document.body.setAttribute('data-topbar-style', PREFS.topbarStyle||'solid');
+  document.documentElement.style.setProperty('--section-opacity', (PREFS.sectionOpacity??70)/100);
+  document.documentElement.style.setProperty('--auth-box-opacity', (PREFS.authBoxOpacity??90)/100);
+  document.documentElement.style.setProperty('--clock-font', (CLOCK_FONTS[PREFS.clockFont]||CLOCK_FONTS.digital).stack);
+  document.documentElement.style.setProperty('--date-font', (DATE_FONTS[PREFS.dateFont]||DATE_FONTS.default).stack);
+  const secRgb = hexToRgbStr(PREFS.sectionBgColor); if(secRgb){ document.documentElement.style.setProperty('--section-bg-rgb', secRgb); document.documentElement.style.setProperty('--section-bg-rgb-dark', secRgb); }
+  const modRgb = hexToRgbStr(PREFS.modalBgColor); if(modRgb){ document.documentElement.style.setProperty('--modal-bg-rgb', modRgb); document.documentElement.style.setProperty('--modal-bg-rgb-dark', modRgb); }
+  const authRgb = hexToRgbStr(PREFS.authBoxColor); if(authRgb){ document.documentElement.style.setProperty('--auth-box-bg-rgb', authRgb); document.documentElement.style.setProperty('--auth-box-bg-rgb-dark', authRgb); }
+  const topRgb = hexToRgbStr(PREFS.topbarBgColor); if(topRgb) document.documentElement.style.setProperty('--topbar-bg-rgb', topRgb);
+  applyLockscreenDecorStyle(PREFS.lockscreenDecorStyle);
+}
+function themeSetSnapshotFromPrefs(){
+  const snap = {};
+  THEME_SET_FIELDS.forEach(f=>{ if(PREFS[f]!==undefined) snap[f]=PREFS[f]; });
+  return snap;
+}
+async function applyThemeSet(key){
+  const set = allThemeSets()[key];
+  if(!set) return;
+  applyThemeSetValues(set);
+  PREFS.activeThemeSet = key;
+  await savePrefs();
+  toast('Theme "'+(set.label||key)+'" applied');
+  render();
+}
+/* Transient (not persisted) — tracks which theme, if any, is currently being edited so the banner
+   and Update button know where to save back to. */
+let editingThemeSetKey = null;
+function editThemeSet(key){
+  const set = allThemeSets()[key];
+  if(!set) return;
+  applyThemeSetValues(set); // load its settings live into every control on the page
+  PREFS.activeThemeSet = key;
+  editingThemeSetKey = key;
+  render();
+  toast('Editing "'+(set.label||key)+'" — adjust settings below, then "Update this theme"');
+  setTimeout(()=>{ const el=document.getElementById('themeSetSwatches'); if(el) el.scrollIntoView({behavior:'smooth', block:'center'}); }, 60);
+}
+function stopEditingThemeSet(){ editingThemeSetKey = null; render(); }
+async function updateThemeSet(){
+  if(!editingThemeSetKey) return;
+  const existing = allThemeSets()[editingThemeSetKey];
+  PREFS.customThemeSets = PREFS.customThemeSets || {};
+  PREFS.customThemeSets[editingThemeSetKey] = Object.assign(themeSetSnapshotFromPrefs(), {label: (existing&&existing.label) || editingThemeSetKey});
+  await savePrefs();
+  toast('Theme "'+((existing&&existing.label)||editingThemeSetKey)+'" updated');
+  editingThemeSetKey = null;
+  render();
+}
+async function saveCurrentAsThemeSet(){
+  const nameEl = document.getElementById('newThemeSetName');
+  const name = (nameEl && nameEl.value || '').trim();
+  if(!name){ toast('Give this theme a name first'); return; }
+  const key = 'custom_theme_'+slugify(name);
+  PREFS.customThemeSets = PREFS.customThemeSets || {};
+  PREFS.customThemeSets[key] = Object.assign(themeSetSnapshotFromPrefs(), {label:name});
+  PREFS.activeThemeSet = key;
+  await savePrefs();
+  toast('Theme "'+name+'" saved');
+  render();
+}
+async function deleteThemeSet(key){
+  const set = allThemeSets()[key];
+  if(!set) return;
+  if(Object.keys(allThemeSets()).length<=1){ toast('At least one theme must remain'); return; }
+  confirmModal('Delete the "'+set.label+'" theme? This cannot be undone. (It only removes the preset — your currently applied colours, fonts etc. stay as they are.)', async ()=>{
+    if(PREFS.customThemeSets && PREFS.customThemeSets[key]) delete PREFS.customThemeSets[key];
+    if(THEME_SETS[key]){
+      PREFS.deletedThemeSets = PREFS.deletedThemeSets || [];
+      if(!PREFS.deletedThemeSets.includes(key)) PREFS.deletedThemeSets.push(key);
+    }
+    if(editingThemeSetKey===key) editingThemeSetKey = null;
+    if(PREFS.activeThemeSet===key) PREFS.activeThemeSet = null;
+    await savePrefs();
+    toast('Theme deleted');
     render();
   }, {confirmLabel:'Delete', danger:true});
 }
