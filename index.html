@@ -3364,6 +3364,28 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 .cloud-indicator.show{ opacity:1; transform:translateY(0);}
 .cloud-indicator.error{ background:var(--terracotta);}
 
+/* One-time manual install hint for browsers that don't support the beforeinstallprompt flow
+   (Safari on iOS, Firefox, etc.) — sits fixed at the very top so it works the same whether it's
+   shown over the login screen or the main app, without needing to dodge either screen's own
+   bottom-fixed elements (FABs, bottom-nav). Dismissing it persists via storeSet so it only ever
+   shows once per install. */
+.install-hint-banner{
+  display:none; position:fixed; top:0; left:0; right:0; z-index:500;
+  align-items:center; justify-content:center; gap:14px;
+  background:var(--forest-dark); color:#fff; font-size:12.5px; line-height:1.4;
+  padding:10px 44px 10px 16px; box-shadow:0 4px 16px rgba(0,0,0,.25);
+  padding-top:calc(10px + env(safe-area-inset-top,0));
+}
+.install-hint-banner.show{ display:flex;}
+.install-hint-banner button{
+  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  background:transparent; border:none; color:rgba(255,255,255,.75); font-size:14px; cursor:pointer; padding:6px;
+}
+.install-hint-banner button:hover{ color:#fff;}
+@media (max-width:480px){
+  .install-hint-banner{ font-size:11.5px; padding:10px 40px 10px 12px; padding-top:calc(10px + env(safe-area-inset-top,0)); text-align:left;}
+}
+
 .notif-center{ position:fixed; top:64px; right:18px; width:340px; max-width:90vw; max-height:70vh; overflow:auto;
   background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 16px 40px rgba(0,0,0,.22); z-index:400;}
 .notif-center-head{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card);}
@@ -3806,14 +3828,14 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
      Reasserting 20px here (later in the cascade, so it wins the tie) makes every mobile topbar
      icon the same size and centered within its tap target, instead of some overflowing/deforming
      the row. */
-  #topHomeBtn, #noteBtn, #notifBellBtn{ font-size:20px;}
-  #topHomeBtn:active, #noteBtn:active, #notifBellBtn:active{ background:none;}
+  #topHomeBtn, #noteBtn, #notifBellBtn, #installAppBtn{ font-size:20px;}
+  #topHomeBtn:active, #noteBtn:active, #notifBellBtn:active, #installAppBtn:active{ background:none;}
   .account-chip{
     background:none; border:none; padding:0 0 0 4px; gap:0; min-width:0;
   }
   .account-chip .av{ width:32px; height:32px; flex:0 0 32px; box-shadow:0 0 0 2px rgba(255,255,255,.18);}
   .account-chip > div:last-child{ display:none;} /* name/role text — Account tab already covers this on mobile */
-  #noteBtn .note-btn-label{ display:none;} /* label is desktop-only; mobile stays a plain round icon button, matching the rest */
+  #noteBtn .note-btn-label, #installAppBtn .note-btn-label{ display:none;} /* label is desktop-only; mobile stays a plain round icon button, matching the rest */
   .content{ padding:14px 12px 96px;}
   .content.page-transition{ animation:contentFadeIn .2s ease;}
   @keyframes contentFadeIn{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
@@ -4117,6 +4139,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <div class="auth-dots" id="authDots"></div>
         <div class="auth-notif-bell" id="authNotifBell">
           <div class="auth-top-actions">
+            <button type="button" class="getting-started-btn" id="installAppBtnAuth" onclick="promptInstallApp()" title="Install app" style="display:none">⬇️<span class="gsb-label"> Install</span></button>
             <button class="getting-started-btn auth-tips-btn" onclick="openQuickTipsModal()" title="Quick tips">💡<span class="gsb-label"> Tips</span></button>
             <button class="getting-started-btn auth-getting-started-btn" onclick="openGettingStartedModal()" title="Getting started">🚀<span class="gsb-label"> Getting started</span></button>
             <button type="button" class="icon-btn" onclick="event.stopPropagation();toggleAuthNotifPreview();" title="Notification previews — sign in to open them" aria-label="Notification previews">
@@ -4202,6 +4225,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
             onkeydown="if(event.key==='Escape'){this.value=''; this.blur(); closeTopbarSearch();}">
           <div class="topbar-search-results" id="topbarSearchResults"></div>
         </div>
+        <button class="icon-btn" id="installAppBtn" onclick="promptInstallApp()" title="Install app" aria-label="Install app" style="display:none">⬇️<span class="note-btn-label">Install</span></button>
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
@@ -4248,6 +4272,10 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 </div>
 <div id="modalRoot"></div>
 <div id="toast" class="toast"></div>
+<div id="installHintBanner" class="install-hint-banner" role="status">
+  <span id="installHintText"></span>
+  <button type="button" onclick="dismissInstallHintBanner()" aria-label="Dismiss">✕</button>
+</div>
 <div id="printArea"></div>
 
 
@@ -17411,6 +17439,89 @@ if(document.readyState === 'loading'){
 }
 
 window.addEventListener('error', e=> console.error('Runtime error:', e.error||e.message));
+
+/* ================= PWA install button =================
+   Chrome/Edge/Android fire 'beforeinstallprompt' when the manifest + install heuristics are
+   satisfied and the app isn't already installed; we stash that event, reveal the Install
+   button(s) — there's one in the main app topbar and one on the login/auth screen, since a
+   visitor may well install straight from the login page before ever signing in — and re-fire the
+   captured event from the button's click handler (browsers only honour .prompt() from a real user
+   gesture, so it can't be triggered proactively). Safari/iOS and Firefox never fire this event —
+   there's no equivalent "install prompt" API there, so both buttons just stay hidden and those
+   platforms fall back to their own manual "Add to Home Screen" menu entry. */
+let deferredInstallPrompt = null;
+function isRunningInstalled(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    || window.navigator.standalone === true; // iOS's own standalone flag
+}
+function installAppBtns(){
+  return [document.getElementById('installAppBtn'), document.getElementById('installAppBtnAuth')].filter(Boolean);
+}
+function setInstallBtnsVisible(visible){
+  installAppBtns().forEach(btn=> btn.style.display = visible ? '' : 'none');
+}
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault();
+  if(isRunningInstalled()) return; // already installed and launched standalone — nothing to offer
+  deferredInstallPrompt = e;
+  setInstallBtnsVisible(true);
+});
+async function promptInstallApp(){
+  if(!deferredInstallPrompt){ setInstallBtnsVisible(false); return; }
+  const promptEvent = deferredInstallPrompt;
+  deferredInstallPrompt = null; // a captured prompt event can only be used once
+  setInstallBtnsVisible(false);
+  try{
+    promptEvent.prompt();
+    const {outcome} = await promptEvent.userChoice;
+    if(outcome !== 'accepted') setInstallBtnsVisible(true); // declined — let them try again later
+  }catch(e){ setInstallBtnsVisible(true); }
+}
+window.addEventListener('appinstalled', ()=>{
+  deferredInstallPrompt = null;
+  setInstallBtnsVisible(false);
+  toast('alcms installed');
+});
+if(isRunningInstalled()) setInstallBtnsVisible(false);
+
+/* ================= Manual install hint (unsupported browsers) =================
+   Safari on iOS never fires beforeinstallprompt at all — there's no JS "install" API there, only
+   the manual Share-sheet route — and the same is true of Firefox and some other browsers. For
+   those, showing an Install button would just be a dead button, so instead this shows a
+   dismiss-once banner with the manual steps. Persisted via the app's own storeGet/storeSet (same
+   place prefs/notes live) so it survives reloads and only ever appears once per install. */
+function isIOSDevice(){
+  // iPadOS 13+ reports itself as "Macintosh" in the UA string, so it's told apart from a real Mac
+  // by touch support, which a Mac (trackpad/mouse only) doesn't have.
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+}
+function browserSupportsInstallPrompt(){
+  return 'onbeforeinstallprompt' in window;
+}
+function dismissInstallHintBanner(){
+  const banner = document.getElementById('installHintBanner');
+  if(banner) banner.classList.remove('show');
+  storeSet('installHintDismissed', 'true');
+}
+async function maybeShowInstallHint(){
+  if(isRunningInstalled()) return;
+  if(browserSupportsInstallPrompt() || deferredInstallPrompt) return; // the real Install button covers this browser
+  let dismissed = null;
+  try{ dismissed = await storeGet('installHintDismissed'); }catch(e){}
+  if(dismissed) return;
+  const banner = document.getElementById('installHintBanner');
+  const textEl = document.getElementById('installHintText');
+  if(!banner || !textEl) return;
+  textEl.textContent = isIOSDevice()
+    ? 'Install alcms on your device: tap the Share icon, then "Add to Home Screen".'
+    : 'Install alcms on your device: open your browser\'s menu and look for "Add to Home Screen" or "Install App".';
+  banner.classList.add('show');
+}
+// A brief delay before deciding to show the manual banner — gives beforeinstallprompt a chance to
+// fire first on browsers that do support it (it isn't always synchronous on page load), so this
+// never flashes the manual banner before falling back to the real Install button.
+setTimeout(maybeShowInstallHint, 2500);
 
 /* ================= Note Modal Functions ================= */
 let noteHasChanges = false;
