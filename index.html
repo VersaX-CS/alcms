@@ -2863,11 +2863,18 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
 }
 .sidebar.desktop-collapsed{ width:0;}
 .sidebar-icon-row{ display:flex; justify-content:space-between; gap:6px; padding:12px 18px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
-.sidebar-icon-row .icon-btn{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:#EFE8D3; width:38px; height:38px; padding:0; flex:none; display:flex; align-items:center; justify-content:center; font-size:15px;}
+/* Pill/capsule-shaped icon buttons — rounded-full like a light/dark mode toggle, with a
+   line-icon (SVG, sized to font-size via the "svg{width:1em}" rule below) rather than an emoji. */
+.sidebar-icon-row .icon-btn{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:#EFE8D3; width:38px; height:38px; padding:0; flex:none; display:flex; align-items:center; justify-content:center; font-size:16px; border-radius:999px; transition:background .15s ease, border-color .15s ease, transform .1s ease;}
 .sidebar-icon-row .icon-btn:hover{ background:rgba(255,255,255,.18); border-color:var(--brass-light);}
+.sidebar-icon-row .icon-btn:active{ transform:scale(.92);}
 .sidebar-pin-toggle:hover{ background:rgba(255,255,255,.2);}
 .sidebar-pin-toggle.active{ background:var(--brass); border-color:var(--brass-light); color:#221704;}
 .sidebar-pin-toggle.active:hover{ background:var(--brass-light);}
+/* Line-icon sizing: SVGs scale with the container's font-size (1em) so they drop into the
+   existing glyph-sized layout without any per-icon pixel tuning. currentColor means they pick
+   up hover/active text-color changes automatically, the way the emoji never could. */
+.ico svg, .icon-btn svg, .hamburger svg, .qlink .ico svg, .bottom-nav button .ico svg, .topbar-nav-menu a .ico svg, .ribbon-item .ic svg{ width:1em; height:1em; display:block;}
 .brand{ padding:22px 20px 14px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 .brand .mark{ display:flex; align-items:center; gap:10px;}
 .brand .mark .stamp-badge{
@@ -2888,9 +2895,9 @@ nav.navlist button{
   background:transparent; border:none; color:rgba(255,255,255,.88); border-radius:8px; font-size:13.5px; margin-bottom:2px;
   transition:background .15s;
 }
-nav.navlist button .ico{ width:18px;text-align:center;font-size:14px; flex:none;}
-nav.navlist button:hover{ background:rgba(255,255,255,.08);}
-nav.navlist button.active{ background:var(--brass); color:#221704; font-weight:600;}
+nav.navlist button .ico{ width:18px;text-align:center;font-size:14px; flex:none; display:flex; align-items:center; justify-content:center;}
+nav.navlist button:hover{ background:rgba(255,255,255,.08); box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);}
+nav.navlist button.active{ background:var(--brass); color:#221704; font-weight:600; box-shadow:none;}
 .nav-badge{ margin-left:auto; background:var(--terracotta); color:#fff; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:20px; line-height:1.5;}
 nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .sidebar-foot{ padding:12px 18px 18px; font-size:10.5px; color:rgba(255,255,255,.45); border-top:1px solid rgba(255,255,255,.1); flex:none;}
@@ -4142,9 +4149,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
             <button type="button" class="getting-started-btn" id="installAppBtnAuth" onclick="promptInstallApp()" title="Install app" style="display:none">⬇️<span class="gsb-label"> Install</span></button>
             <button class="getting-started-btn auth-tips-btn" id="authTipsBtn" onclick="openQuickTipsModal()" title="Quick tips">💡<span class="gsb-label"> Tips</span></button>
             <button class="getting-started-btn auth-getting-started-btn" id="authGettingStartedBtn" onclick="openGettingStartedModal()" title="Getting started">🚀<span class="gsb-label"> Getting started</span></button>
-            <button type="button" class="icon-btn" id="authNotifBellBtn" onclick="event.stopPropagation();toggleAuthNotifPreview();" title="Notification previews — sign in to open them" aria-label="Notification previews">
-              🔔<span id="authNotifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
-            </button>
+
           </div>
           <div class="auth-notif-preview" id="authNotifPreview"></div>
         </div>
@@ -4470,7 +4475,7 @@ async function pickContactForField(fieldId){
 
 /* ================= preferences (clock/date format — available even before login) ================= */
 const PREFS_KEY = 'prefs_v1';
-let PREFS = {clockFormat:'24h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'minimal', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
+let PREFS = {clockFormat:'24h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -4685,6 +4690,7 @@ function resetPersonalization(){
     PREFS = JSON.parse(JSON.stringify(DEFAULT_PREFS));
   delete PREFS.sectionBgColor; delete PREFS.modalBgColor; delete PREFS.topbarBgColor; delete PREFS.authBoxColor;
   applyTheme(); applyPalette(PREFS.palette); applyTypography(); applyClockFont(PREFS.clockFont); applyDateFont(PREFS.dateFont);
+  applyIconPack();
   applyLockscreenElements(PREFS.lockscreenElements); applyLockscreenDecorStyle(PREFS.lockscreenDecorStyle);
   applyAccessibility();
   document.body.setAttribute('data-section-style', PREFS.sectionStyle);
@@ -4780,15 +4786,15 @@ function applyTheme(){
 function cycleTheme(){
   const order = ['system','light','dark'];
   const next = order[(order.indexOf(PREFS.theme)+1) % order.length];
-  PREFS.theme = next; applyTheme(); applyPalette(PREFS.palette); savePrefs();
+  PREFS.theme = next; applyTheme(); applyPalette(PREFS.palette); applyIconPack(); savePrefs();
   render(); // charts are drawn to <canvas> and don't repaint on their own when CSS vars change
   toast('Theme: '+next.charAt(0).toUpperCase()+next.slice(1));
 }
 // Re-check every few minutes so a "Match system" theme actually flips to dark the moment night
 // falls, rather than only updating on the next page load or OS-level preference change.
-setInterval(()=>{ if(PREFS.theme==='system' || !PREFS.theme){ applyTheme(); applyPalette(PREFS.palette); render(); } }, 5*60*1000);
+setInterval(()=>{ if(PREFS.theme==='system' || !PREFS.theme){ applyTheme(); applyPalette(PREFS.palette); applyIconPack(); render(); } }, 5*60*1000);
 if(window.matchMedia){
-  try{ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ if(PREFS.theme==='system'){ applyTheme(); applyPalette(PREFS.palette); render(); } }); }catch(e){}
+  try{ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{ if(PREFS.theme==='system'){ applyTheme(); applyPalette(PREFS.palette); applyIconPack(); render(); } }); }catch(e){}
 }
 function formatClockTime(d){
   if(PREFS.clockFormat==='12h') return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
@@ -4930,6 +4936,7 @@ function setSidebarPersist(persist){
     btn.setAttribute('aria-pressed', sidebarPersistMode ? 'true' : 'false');
     btn.title = sidebarPersistMode ? 'Menu pinned open — click to unpin' : 'Menu is closed — click to pin open';
     btn.setAttribute('aria-label', sidebarPersistMode ? 'Unpin menu' : 'Keep menu open');
+    applyIconPack(); // Update pin icon to show ☰✕ when pinned, ☰ when unpinned
   }
   if(sb){
     if(sidebarPersistMode) sb.classList.remove('desktop-collapsed'); // pin it open now
@@ -6519,48 +6526,127 @@ function tapFeedback(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(
   }, {passive:true});
 })();
 
+/* Standard UI control icons that remain consistent across all icon packs.
+   These are for system controls that users interact with for app navigation/function.
+   They maintain visual consistency and clarity regardless of which icon pack is selected.
+   
+   Some icons are static; theme and pin are DYNAMIC and determined by getThemeIcon() 
+   and getPinIcon() functions based on app state. */
+/* ================= Line icon set (SVG) =================
+   A cohesive outline/line icon system — 24x24 grid, single 1.8px stroke, rounded caps/joins —
+   used for the sidebar icon-row (save/logout/theme/pin) and as the "Line Icons" content pack.
+   Rendered via innerHTML (not textContent) wherever it's applied, since these are markup, not
+   plain glyphs — see setIcon() below and the .ico/.icon-btn svg sizing rules in the stylesheet. */
+function svgIco(inner, vb){
+  return `<svg viewBox="${vb||'0 0 24 24'}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+const SVG_ICONS = {
+  home: svgIco(`<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/>`),
+  dashboard: svgIco(`<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>`),
+  analytics: svgIco(`<line x1="4" y1="20" x2="20" y2="20"/><rect x="5" y="13" width="3" height="7"/><rect x="10.5" y="9" width="3" height="11"/><rect x="16" y="5" width="3" height="15"/>`),
+  catalogue: svgIco(`<path d="M12 6.5c-2-1.5-5-2-8-1v12.5c3-1 6-.5 8 1c2-1.5 5-2 8-1V5.5c-3-1-6-.5-8 1z"/><path d="M12 6.5v12.5"/>`),
+  users: svgIco(`<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.3 14.2c2.7.4 4.2 2.4 4.2 5.8"/>`),
+  equipment: svgIco(`<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2z"/>`),
+  circulation: svgIco(`<path d="M4.5 12a7.5 7.5 0 0 1 13-5"/><path d="M20 3.5V8h-4.5"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M4 20.5V16h4.5"/>`),
+  reservations: svgIco(`<path d="M6 4h12v16l-6-4-6 4V4z"/>`),
+  reminders: svgIco(`<path d="M6 10a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 14 6 10z"/><path d="M10 19a2 2 0 0 0 4 0"/>`),
+  register: svgIco(`<rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.3" width="6" height="3" rx="1"/><line x1="8" y1="10.5" x2="16" y2="10.5"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="17.5" x2="13" y2="17.5"/>`),
+  schedule: svgIco(`<rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="9.5" x2="20" y2="9.5"/><line x1="8" y1="3" x2="8" y2="6.5"/><line x1="16" y1="3" x2="16" y2="6.5"/>`),
+  feedback: svgIco(`<path d="M4 5h16v11H9l-4 4V5z"/>`),
+  setup: svgIco(`<line x1="5" y1="6" x2="5" y2="18"/><circle cx="5" cy="10" r="2"/><line x1="12" y1="6" x2="12" y2="18"/><circle cx="12" cy="15" r="2"/><line x1="19" y1="6" x2="19" y2="18"/><circle cx="19" cy="8" r="2"/>`),
+  settings: svgIco(`<circle cx="12" cy="12" r="3"/><path d="M12 3v2.6M12 18.4V21M4.9 7l2.2 1.3M16.9 15.7l2.2 1.3M3 12h2.6M18.4 12H21M4.9 17l2.2-1.3M16.9 8.3l2.2-1.3M7.9 4.9 9.2 7M14.8 17l1.3 2.1M7.9 19.1 9.2 17M14.8 7l1.3-2.1"/>`),
+  security: svgIco(`<path d="M12 3l7 3v6c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>`),
+  activitylog: svgIco(`<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>`),
+  backup: svgIco(`<path d="M7 18a4 4 0 0 1-1-7.9 5 5 0 0 1 9.6-2A4.5 4.5 0 0 1 17 18H7z"/><path d="M12 14V9M9.5 11.5 12 9l2.5 2.5"/>`),
+  guide: svgIco(`<circle cx="12" cy="12" r="9"/><path d="M15.2 8.8l-2 6-6 2 2-6 6-2z"/>`),
+  about: svgIco(`<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.2"/><circle cx="12" cy="7.7" r="1"/>`),
+  account: svgIco(`<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.3 18.5a6 6 0 0 1 11.4 0"/>`),
+  search: svgIco(`<circle cx="10.5" cy="10.5" r="6"/><line x1="15.2" y1="15.2" x2="20" y2="20"/>`),
+  sun: svgIco(`<circle cx="12" cy="12" r="4.3"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/>`),
+  moon: svgIco(`<path d="M20 14.6a8.5 8.5 0 1 1-9.6-13 7 7 0 0 0 9.6 13z"/>`),
+  pin: svgIco(`<path d="M12 21s7-7.1 7-12a7 7 0 1 0-14 0c0 4.9 7 12 7 12z"/><circle cx="12" cy="9" r="2.4"/>`),
+  pinFilled: svgIco(`<path d="M12 21s7-7.1 7-12a7 7 0 1 0-14 0c0 4.9 7 12 7 12z" fill="currentColor" fill-opacity=".22"/><circle cx="12" cy="9" r="2.4" fill="currentColor"/>`),
+  logout: svgIco(`<path d="M13 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h7"/><path d="M11 12h9"/><path d="M17 8l4 4-4 4"/>`),
+  menu: svgIco(`<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>`),
+  close: svgIco(`<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>`),
+  save: svgIco(`<path d="M12 3v11.5"/><path d="M7 10.5l5 5 5-5"/><path d="M4 19h16"/>`),
+};
+
+const STANDARD_ICONS = {
+  bell:'🔔',              // Notifications - always clear bell emoji
+  notes:'📝',             // Notes - always clear memo emoji
+  save: SVG_ICONS.save,   // Save - line icon (down-arrow into tray)
+  menu: SVG_ICONS.menu,   // Hamburger menu - three-line line icon
+  home: SVG_ICONS.home,   // Home - line-icon house
+  lock: SVG_ICONS.logout, // Lock/Signout - door + exit arrow line icon
+  close: SVG_ICONS.close, // Close - line-icon X
+};
+
+/* Dynamic theme icon - returns sun in light mode, moon in dark mode */
+function getThemeIcon(){
+  const theme = document.documentElement.getAttribute('data-theme') || 'system';
+  return theme === 'dark' ? SVG_ICONS.moon : SVG_ICONS.sun;
+}
+
+/* Dynamic pin icon - filled pin for pinned state, outline pin for unpinned state */
+function getPinIcon(){
+  const isPinned = document.getElementById('sidebarPinBtn')?.getAttribute('aria-pressed') === 'true';
+  return isPinned ? SVG_ICONS.pinFilled : SVG_ICONS.pin;
+}
+
 const ICON_PACKS = {
+  line: {label:'Line Icons (New)', icons:{
+    // Cohesive outline/line-icon system (see SVG_ICONS above) - clean single-stroke aesthetic
+    analytics:SVG_ICONS.analytics, dashboard:SVG_ICONS.dashboard, catalogue:SVG_ICONS.catalogue, users:SVG_ICONS.users, equipment:SVG_ICONS.equipment, circulation:SVG_ICONS.circulation, reservations:SVG_ICONS.reservations, reminders:SVG_ICONS.reminders, register:SVG_ICONS.register, schedule:SVG_ICONS.schedule, feedback:SVG_ICONS.feedback, setup:SVG_ICONS.setup, settings:SVG_ICONS.settings, security:SVG_ICONS.security, activitylog:SVG_ICONS.activitylog, backup:SVG_ICONS.backup, guide:SVG_ICONS.guide, about:SVG_ICONS.about, account:SVG_ICONS.account,
+    search:SVG_ICONS.search,
+  }},
   minimal: {label:'Minimal (default)', icons:{
-    // Every glyph here is a plain geometric/symbol character (no emoji mixed in), so the pack
-    // reads as one consistent style throughout the app.
-    home:'⌂',analytics:'◔',dashboard:'▤',catalogue:'▥',users:'⚇',equipment:'▧',circulation:'⇄',reservations:'⚑',reminders:'✉',register:'✎',schedule:'▦',feedback:'✎',setup:'⚙',settings:'◐',security:'⛨',activitylog:'▨',backup:'⟲',guide:'❖',about:'ⓘ',account:'◯',
-    email:'✉',whatsapp:'◉',call:'☏',query:'✎',camera:'▢',theme:'◑',lock:'⚿',save:'⎙',close:'✕',menu:'☰',install:'⇩',
-    search:'⌕',pin:'⚲',notes:'✐',bell:'◍',tips:'✦',rocket:'▲',
+    // Pure geometric/symbol characters - consistent outline/minimal style throughout
+    analytics:'◔',dashboard:'▤',catalogue:'▥',users:'⚇',equipment:'▧',circulation:'⇄',reservations:'⚑',reminders:'✉',register:'✎',schedule:'▦',feedback:'✎',setup:'⚙',settings:'◐',security:'⛨',activitylog:'▨',backup:'⟲',guide:'❖',about:'ⓘ',account:'◯',
+    email:'✉',whatsapp:'◉',call:'☏',query:'✎',camera:'▢',
+    search:'⌕',tips:'✦',rocket:'▲',
   }},
   emoji: {label:'Emoji', icons:{
-    home:'🏠',analytics:'📈',dashboard:'📊',catalogue:'📚',users:'👥',equipment:'🧰',circulation:'🔄',reservations:'🔖',reminders:'📨',register:'📝',schedule:'🗓️',feedback:'💬',setup:'🛠️',settings:'🎨',security:'🔐',activitylog:'📜',backup:'☁️',guide:'📖',about:'ℹ️',account:'👤',
-    email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',theme:'🌗',lock:'🔐',save:'💾',close:'❌',menu:'📋',install:'📥',
-    search:'🔍',pin:'📌',notes:'🗒️',bell:'🔔',tips:'💡',rocket:'🚀',
+    // Bright, colorful emoji throughout - consistent modern style
+    analytics:'📈',dashboard:'📊',catalogue:'📚',users:'👥',equipment:'🧰',circulation:'🔄',reservations:'🔖',reminders:'📨',register:'📝',schedule:'🗓️',feedback:'💬',setup:'🛠️',settings:'⚙️',security:'🔐',activitylog:'📜',backup:'☁️',guide:'📖',about:'ℹ️',account:'👤',
+    email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',
+    search:'🔍',tips:'💡',rocket:'🚀',
   }},
   outline: {label:'Outline', icons:{
-    home:'⌖',analytics:'△',dashboard:'▢',catalogue:'▭',users:'⚇',equipment:'▧',circulation:'↺',reservations:'◇',reminders:'✎',register:'▤',schedule:'▦',feedback:'◫',setup:'✦',settings:'✧',security:'◈',activitylog:'▥',backup:'↻',guide:'▣',about:'○',account:'◯',
-    email:'▷',whatsapp:'◉',call:'◐',query:'✎',camera:'▢',theme:'◑',lock:'▲',save:'▽',close:'✕',menu:'☰',install:'↓',
-    search:'◎',pin:'▼',notes:'⬒',bell:'◔',tips:'☼',rocket:'▲',
+    // Clean outline/stroke style - consistent thin-line aesthetic throughout
+    analytics:'△',dashboard:'▢',catalogue:'▭',users:'⚇',equipment:'▧',circulation:'↺',reservations:'◇',reminders:'✎',register:'▤',schedule:'▦',feedback:'◫',setup:'✦',settings:'✧',security:'◈',activitylog:'▥',backup:'↻',guide:'▣',about:'○',account:'◯',
+    email:'▷',whatsapp:'◉',call:'◐',query:'✎',camera:'▢',
+    search:'◎',tips:'☼',rocket:'▲',
   }},
-  bold: {label:'Bold', icons:{
-    home:'🏡',analytics:'📶',dashboard:'📌',catalogue:'📕',users:'🧑‍🤝‍🧑',equipment:'🧰',circulation:'🔁',reservations:'📌',reminders:'⏰',register:'🖊️',schedule:'📅',feedback:'🗯️',setup:'🔧',settings:'⚡',security:'🛡️',activitylog:'📰',backup:'💽',guide:'📔',about:'❗',account:'🧑',
-    email:'✉️',whatsapp:'📲',call:'📱',query:'🗒️',camera:'🎥',theme:'💡',lock:'🔏',save:'📥',close:'⛔',menu:'🗃️',install:'📲',
-    search:'🔎',pin:'📍',notes:'📓',bell:'🔔',tips:'💡',rocket:'🚀',
+  bold: {label:'Bold Symbols', icons:{
+    // Bold, solid filled symbols - consistent thick/bold aesthetic throughout
+    analytics:'✦',dashboard:'⬢',catalogue:'⬛',users:'⬟',equipment:'⬫',circulation:'⬈',reservations:'⬇',reminders:'⬗',register:'⬖',schedule:'⬔',feedback:'⬕',setup:'⬌',settings:'⬍',security:'⬎',activitylog:'⬏',backup:'⬐',guide:'⬒',about:'⬓',account:'⬑',
+    email:'⬚',whatsapp:'⬞',call:'⬝',query:'⬜',camera:'◼',
+    search:'◆',tips:'◾',rocket:'◻',
   }},
-  classic: {label:'Classic', icons:{
-    home:'⛪',analytics:'✚',dashboard:'☰',catalogue:'❦',users:'ⱴ',equipment:'❊',circulation:'∞',reservations:'❀',reminders:'✍',register:'✎',schedule:'☷',feedback:'✒',setup:'⚒',settings:'☸',security:'♜',activitylog:'❁',backup:'☂',guide:'☘',about:'✦',account:'☺',
-    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',install:'☟',
-    search:'⚲',pin:'❡',notes:'✑',bell:'⚝',tips:'☀',rocket:'➤',
+  classic: {label:'Classic Serif', icons:{
+    // Classic serif/decorative style - consistent ornate aesthetic throughout
+    analytics:'✚',dashboard:'☰',catalogue:'❦',users:'ⱴ',equipment:'❊',circulation:'∞',reservations:'❀',reminders:'✍',register:'✎',schedule:'☷',feedback:'✒',setup:'⚒',settings:'☸',security:'♜',activitylog:'❁',backup:'☂',guide:'☘',about:'✦',account:'☺',
+    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',
+    search:'⚲',tips:'☀',rocket:'➤',
   }},
-  duotone: {label:'Duotone squares', icons:{
-    home:'◧',analytics:'◨',dashboard:'▦',catalogue:'▤',users:'▥',equipment:'⬒',circulation:'◫',reservations:'⬓',reminders:'▧',register:'▨',schedule:'▩',feedback:'◪',setup:'◩',settings:'◭',security:'◮',activitylog:'⬔',backup:'◱',guide:'◳',about:'◲',account:'◰',
-    email:'▧',whatsapp:'◨',call:'◧',query:'▨',camera:'▦',theme:'◫',lock:'◩',save:'◪',close:'✕',menu:'☰',install:'▨',
-    search:'⬕',pin:'⬖',notes:'⬗',bell:'⬘',tips:'⬙',rocket:'⬚',
+  duotone: {label:'Duotone Squares', icons:{
+    // Geometric squares with fill patterns - consistent blocky aesthetic throughout
+    analytics:'◨',dashboard:'▦',catalogue:'▤',users:'▥',equipment:'⬒',circulation:'◫',reservations:'⬓',reminders:'▧',register:'▨',schedule:'▩',feedback:'◪',setup:'◩',settings:'◭',security:'◮',activitylog:'⬔',backup:'◱',guide:'◳',about:'◲',account:'◰',
+    email:'▧',whatsapp:'◨',call:'◧',query:'▨',camera:'▦',
+    search:'⬕',tips:'⬙',rocket:'⬚',
   }},
   nature: {label:'Nature', icons:{
-    home:'🌳',analytics:'🌱',dashboard:'🍃',catalogue:'🌿',users:'🐿️',equipment:'🪵',circulation:'🍂',reservations:'🌰',reminders:'🌾',register:'🪶',schedule:'🌤️',feedback:'🦋',setup:'🌲',settings:'🪴',security:'🦉',activitylog:'🌼',backup:'🌦️',guide:'🍄',about:'🌻',account:'🐦',
-    email:'🍁',whatsapp:'🐝',call:'🐦',query:'🌾',camera:'📷',theme:'🌙',lock:'🔒',save:'💧',close:'🍂',menu:'🌳',install:'🪺',
-    search:'🔍',pin:'📍',notes:'🪹',bell:'🔔',tips:'💡',rocket:'🚀',
+    // Nature/flora theme - consistent organic/natural aesthetic throughout
+    analytics:'🌱',dashboard:'🍃',catalogue:'🌿',users:'🐿️',equipment:'🪵',circulation:'🍂',reservations:'🌰',reminders:'🌾',register:'🪶',schedule:'🌤️',feedback:'🦋',setup:'🌲',settings:'🪴',security:'🦉',activitylog:'🌼',backup:'🌦️',guide:'🍄',about:'🌻',account:'🐦',
+    email:'🍁',whatsapp:'🐝',call:'🐦',query:'🌾',camera:'🌷',
+    search:'🌻',tips:'🌞',rocket:'🌙',
   }},
-  vintage: {label:'Vintage', icons:{
-    home:'⌘',analytics:'❧',dashboard:'✥',catalogue:'❦',users:'ⵁ',equipment:'⚒',circulation:'∞',reservations:'❃',reminders:'✒',register:'✎',schedule:'⌛',feedback:'❝',setup:'⚙',settings:'✺',security:'♜',activitylog:'❡',backup:'☔',guide:'☙',about:'✦',account:'☺',
-    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',install:'⤓',
-    search:'⚲',pin:'❆',notes:'✑',bell:'☏',tips:'☀',rocket:'⤒',
+  vintage: {label:'Vintage Decorative', icons:{
+    // Vintage/antique decorative style - consistent classical aesthetic throughout
+    analytics:'❧',dashboard:'✥',catalogue:'❦',users:'ⵁ',equipment:'⚒',circulation:'∞',reservations:'❃',reminders:'✒',register:'✎',schedule:'⌛',feedback:'❝',setup:'⚙',settings:'✺',security:'♜',activitylog:'❡',backup:'☔',guide:'☙',about:'✦',account:'☺',
+    email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',
+    search:'⚲',tips:'☀',rocket:'⤒',
   }},
 };
 function renderCustomQuoteRows(){
@@ -6732,14 +6818,22 @@ function applyAuthBackground(){
   }
 }
 function navIcon(id, fallback){
+  // Dynamic icons that change based on app state
+  if(id === 'theme') return getThemeIcon();  // Returns ☼ or 🌙 based on current theme
+  if(id === 'pin') return getPinIcon();      // Returns ☰ or ☰✕ based on pin state
+  
+  // Static standard UI control icons
+  if(STANDARD_ICONS[id]) return STANDARD_ICONS[id];
+  
+  // Content/feature icons that vary by pack selection
   const pack = ICON_PACKS[PREFS.iconPack||'minimal'] || ICON_PACKS.minimal;
   return (pack.icons && pack.icons[id]) || fallback;
 }
 const TRANSITION_STYLES = {scale:'Scale + fade (default)', slide:'Slide up', fade:'Plain fade', drop:'Drop down', flip:'Flip in', blur:'Blur in', bounce:'Bounce'};
 function applyIconPack(){
-  // Plain icon-only buttons/elements — their whole text content IS the icon, so a direct
-  // textContent swap is safe.
-  const setIcon = (id, key, fallback)=>{ const el = document.getElementById(id); if(el) el.textContent = navIcon(key, fallback); };
+  // Plain icon-only buttons/elements — their whole content IS the icon (emoji text or an inline
+  // SVG line-icon), so a direct innerHTML swap is safe.
+  const setIcon = (id, key, fallback)=>{ const el = document.getElementById(id); if(el) el.innerHTML = navIcon(key, fallback); };
   setIcon('navLockBtn', 'lock', '🔒');
   setIcon('sidebarSaveBtn', 'save', '💾');
   setIcon('themeToggle', 'theme', '🌓');
@@ -6760,7 +6854,6 @@ function applyIconPack(){
   installAppBtns().forEach(b=> swapLeadingIcon(b, installIcon));
   swapLeadingIcon(document.getElementById('noteBtn'), navIcon('notes','📝'));
   swapLeadingIcon(document.getElementById('notifBellBtn'), navIcon('bell','🔔'));
-  swapLeadingIcon(document.getElementById('authNotifBellBtn'), navIcon('bell','🔔'));
   swapLeadingIcon(document.getElementById('authTipsBtn'), navIcon('tips','💡'));
   swapLeadingIcon(document.getElementById('authGettingStartedBtn'), navIcon('rocket','🚀'));
 }
@@ -15320,6 +15413,7 @@ function previewTheme(theme){
   PREFS.theme = theme;
   applyTheme();
   applyPalette(PREFS.palette); // dark/light affects derived colours, so re-derive for the live preview
+  applyIconPack(); // Update theme icon in preview
   PREFS.theme = prevTheme; // don't persist until "Save appearance" is actually clicked
 }
 let customPaletteDraft = {forest:'#1F3A2E', brass:'#B8863E', terracotta:'#A8452F', highlight:'#4C7C5E', label:''};
@@ -16581,7 +16675,7 @@ function saveClockPrefs(){
   if($('#setDateFontDisplay')) PREFS.dateFont = $('#setDateFontDisplay').value;
   if($('#setTheme')) PREFS.theme = $('#setTheme').value;
   if($('#setPalette')){ PREFS.palette = $('#setPalette').value; PREFS.paletteAuto = false; }
-  applyTheme(); applyPalette(PREFS.palette);
+  applyTheme(); applyPalette(PREFS.palette); applyIconPack();
   document.documentElement.style.setProperty('--clock-font', (CLOCK_FONTS[PREFS.clockFont]||CLOCK_FONTS.digital).stack);
   document.documentElement.style.setProperty('--date-font', (DATE_FONTS[PREFS.dateFont]||DATE_FONTS.default).stack);
   appearancePreviewDirty = false;
@@ -16680,7 +16774,7 @@ async function applyDataPayload(payload){
 async function applyAccountPayload(payload){
   if(!payload || !Array.isArray(payload.accounts) || !payload.accounts.length) throw new Error("This doesn't look like an alcms account backup");
   ACCOUNTS = payload.accounts; await saveAccounts(ACCOUNTS);
-  if(payload.prefs){ PREFS = Object.assign(PREFS, payload.prefs); await savePrefs(); applyTheme(); applyPalette(PREFS.palette); }
+  if(payload.prefs){ PREFS = Object.assign(PREFS, payload.prefs); await savePrefs(); applyTheme(); applyPalette(PREFS.palette); applyIconPack(); }
   if(payload.adminKey) await saveAdminKey(payload.adminKey);
 }
 async function applyFullPayload(payload){
@@ -17411,7 +17505,7 @@ function restoreScrollPositions(root, map){
 }
 function render(){
   if(appearancePreviewDirty && route!=='settings'){
-    applyTheme(); applyPalette(PREFS.palette); applyTypography(); appearancePreviewDirty = false;
+    applyTheme(); applyPalette(PREFS.palette); applyTypography(); applyIconPack(); appearancePreviewDirty = false;
   }
   if(lockscreenElementsDraft && route!=='settings'){
     applyLockscreenElements(PREFS.lockscreenElements); lockscreenElementsDraft = null;
