@@ -2677,7 +2677,7 @@ body[data-lockscreen-decor-style="none"] .auth-decor{ display:none;}
 .lock-loan-search input::placeholder{ color:rgba(255,255,255,.55);}
 .lock-loan-search .icon-btn{ background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#F3EEDD; width:26px; height:26px; padding:0; flex:none;}
 .lock-loan-search .icon-btn:hover{ border-color:var(--brass-light);}
-.lock-loan-search .scan-suggest{ width:320px; max-width:88vw; max-height:340px; color:#111;}
+.lock-loan-search .scan-suggest{ width:320px; max-width:88vw; max-height:340px; color:var(--ink);}
 @media (max-width:640px){ .lock-loan-search{ max-width:100%;} }
 /* Tips / Getting started / bell sit directly under the dots now (not a floating absolute
    overlay), so this is plain flow layout — it renders the same way on a real phone as it does
@@ -4140,9 +4140,9 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <div class="auth-notif-bell" id="authNotifBell">
           <div class="auth-top-actions">
             <button type="button" class="getting-started-btn" id="installAppBtnAuth" onclick="promptInstallApp()" title="Install app" style="display:none">⬇️<span class="gsb-label"> Install</span></button>
-            <button class="getting-started-btn auth-tips-btn" onclick="openQuickTipsModal()" title="Quick tips">💡<span class="gsb-label"> Tips</span></button>
-            <button class="getting-started-btn auth-getting-started-btn" onclick="openGettingStartedModal()" title="Getting started">🚀<span class="gsb-label"> Getting started</span></button>
-            <button type="button" class="icon-btn" onclick="event.stopPropagation();toggleAuthNotifPreview();" title="Notification previews — sign in to open them" aria-label="Notification previews">
+            <button class="getting-started-btn auth-tips-btn" id="authTipsBtn" onclick="openQuickTipsModal()" title="Quick tips">💡<span class="gsb-label"> Tips</span></button>
+            <button class="getting-started-btn auth-getting-started-btn" id="authGettingStartedBtn" onclick="openGettingStartedModal()" title="Getting started">🚀<span class="gsb-label"> Getting started</span></button>
+            <button type="button" class="icon-btn" id="authNotifBellBtn" onclick="event.stopPropagation();toggleAuthNotifPreview();" title="Notification previews — sign in to open them" aria-label="Notification previews">
               🔔<span id="authNotifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
             </button>
           </div>
@@ -4158,9 +4158,9 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       <div class="auth-form-col">
         <button type="button" class="auth-mobile-back" onclick="mobileAuthBack()">← Back</button>
         <div class="lock-loan-search">
-          <span class="lls-ic">🔎</span>
+          <span class="lls-ic" id="lockLoanSearchIcon">🔎</span>
           <input type="text" id="lockLoanSearchInput" placeholder="Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
-          <button type="button" class="icon-btn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔍</button>
+          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔍</button>
           <div id="lockLoanSuggest" class="scan-suggest lock-search-suggest"></div>
         </div>
         <div class="auth-box">
@@ -4206,7 +4206,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
-        <button class="hamburger" onclick="handleHamburgerClick()" aria-label="Open menu">☰</button>
+        <button class="hamburger" id="hamburgerBtn" onclick="handleHamburgerClick()" aria-label="Open menu">☰</button>
         <button class="icon-btn" id="topHomeBtn" onclick="route='home';render();" title="Home" style="display:none" aria-label="Home">⌂</button>
         <button type="button" class="titles topbar-title-btn" data-dropdown-toggle="topbarNavMenu" data-dropdown-align="left" onclick="prepareTopbarNavMenu()" aria-label="Go to…" aria-haspopup="true" aria-expanded="false">
           <span style="min-width:0;overflow:hidden">
@@ -6525,34 +6525,42 @@ const ICON_PACKS = {
     // reads as one consistent style throughout the app.
     home:'⌂',analytics:'◔',dashboard:'▤',catalogue:'▥',users:'⚇',equipment:'▧',circulation:'⇄',reservations:'⚑',reminders:'✉',register:'✎',schedule:'▦',feedback:'✎',setup:'⚙',settings:'◐',security:'⛨',activitylog:'▨',backup:'⟲',guide:'❖',about:'ⓘ',account:'◯',
     email:'✉',whatsapp:'◉',call:'☏',query:'✎',camera:'▢',theme:'◑',lock:'⚿',save:'⎙',close:'✕',menu:'☰',install:'⇩',
+    search:'⌕',pin:'⚲',notes:'✐',bell:'◍',tips:'✦',rocket:'▲',
   }},
   emoji: {label:'Emoji', icons:{
     home:'🏠',analytics:'📈',dashboard:'📊',catalogue:'📚',users:'👥',equipment:'🧰',circulation:'🔄',reservations:'🔖',reminders:'📨',register:'📝',schedule:'🗓️',feedback:'💬',setup:'🛠️',settings:'🎨',security:'🔐',activitylog:'📜',backup:'☁️',guide:'📖',about:'ℹ️',account:'👤',
     email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',theme:'🌗',lock:'🔐',save:'💾',close:'❌',menu:'📋',install:'📥',
+    search:'🔍',pin:'📌',notes:'🗒️',bell:'🔔',tips:'💡',rocket:'🚀',
   }},
   outline: {label:'Outline', icons:{
     home:'⌖',analytics:'△',dashboard:'▢',catalogue:'▭',users:'⚇',equipment:'▧',circulation:'↺',reservations:'◇',reminders:'✎',register:'▤',schedule:'▦',feedback:'◫',setup:'✦',settings:'✧',security:'◈',activitylog:'▥',backup:'↻',guide:'▣',about:'○',account:'◯',
     email:'▷',whatsapp:'◉',call:'◐',query:'✎',camera:'▢',theme:'◑',lock:'▲',save:'▽',close:'✕',menu:'☰',install:'↓',
+    search:'◎',pin:'▼',notes:'⬒',bell:'◔',tips:'☼',rocket:'▲',
   }},
   bold: {label:'Bold', icons:{
     home:'🏡',analytics:'📶',dashboard:'📌',catalogue:'📕',users:'🧑‍🤝‍🧑',equipment:'🧰',circulation:'🔁',reservations:'📌',reminders:'⏰',register:'🖊️',schedule:'📅',feedback:'🗯️',setup:'🔧',settings:'⚡',security:'🛡️',activitylog:'📰',backup:'💽',guide:'📔',about:'❗',account:'🧑',
     email:'✉️',whatsapp:'📲',call:'📱',query:'🗒️',camera:'🎥',theme:'💡',lock:'🔏',save:'📥',close:'⛔',menu:'🗃️',install:'📲',
+    search:'🔎',pin:'📍',notes:'📓',bell:'🔔',tips:'💡',rocket:'🚀',
   }},
   classic: {label:'Classic', icons:{
     home:'⛪',analytics:'✚',dashboard:'☰',catalogue:'❦',users:'ⱴ',equipment:'❊',circulation:'∞',reservations:'❀',reminders:'✍',register:'✎',schedule:'☷',feedback:'✒',setup:'⚒',settings:'☸',security:'♜',activitylog:'❁',backup:'☂',guide:'☘',about:'✦',account:'☺',
     email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',install:'☟',
+    search:'⚲',pin:'❡',notes:'✑',bell:'⚝',tips:'☀',rocket:'➤',
   }},
   duotone: {label:'Duotone squares', icons:{
     home:'◧',analytics:'◨',dashboard:'▦',catalogue:'▤',users:'▥',equipment:'⬒',circulation:'◫',reservations:'⬓',reminders:'▧',register:'▨',schedule:'▩',feedback:'◪',setup:'◩',settings:'◭',security:'◮',activitylog:'⬔',backup:'◱',guide:'◳',about:'◲',account:'◰',
     email:'▧',whatsapp:'◨',call:'◧',query:'▨',camera:'▦',theme:'◫',lock:'◩',save:'◪',close:'✕',menu:'☰',install:'▨',
+    search:'⬕',pin:'⬖',notes:'⬗',bell:'⬘',tips:'⬙',rocket:'⬚',
   }},
   nature: {label:'Nature', icons:{
     home:'🌳',analytics:'🌱',dashboard:'🍃',catalogue:'🌿',users:'🐿️',equipment:'🪵',circulation:'🍂',reservations:'🌰',reminders:'🌾',register:'🪶',schedule:'🌤️',feedback:'🦋',setup:'🌲',settings:'🪴',security:'🦉',activitylog:'🌼',backup:'🌦️',guide:'🍄',about:'🌻',account:'🐦',
     email:'🍁',whatsapp:'🐝',call:'🐦',query:'🌾',camera:'📷',theme:'🌙',lock:'🔒',save:'💧',close:'🍂',menu:'🌳',install:'🪺',
+    search:'🔍',pin:'📍',notes:'🪹',bell:'🔔',tips:'💡',rocket:'🚀',
   }},
   vintage: {label:'Vintage', icons:{
     home:'⌘',analytics:'❧',dashboard:'✥',catalogue:'❦',users:'ⵁ',equipment:'⚒',circulation:'∞',reservations:'❃',reminders:'✒',register:'✎',schedule:'⌛',feedback:'❝',setup:'⚙',settings:'✺',security:'♜',activitylog:'❡',backup:'☔',guide:'☙',about:'✦',account:'☺',
     email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',theme:'☼',lock:'⚷',save:'✔',close:'✗',menu:'≡',install:'⤓',
+    search:'⚲',pin:'❆',notes:'✑',bell:'☏',tips:'☀',rocket:'⤒',
   }},
 };
 function renderCustomQuoteRows(){
@@ -6729,21 +6737,32 @@ function navIcon(id, fallback){
 }
 const TRANSITION_STYLES = {scale:'Scale + fade (default)', slide:'Slide up', fade:'Plain fade', drop:'Drop down', flip:'Flip in', blur:'Blur in', bounce:'Bounce'};
 function applyIconPack(){
-  const lockBtn = document.getElementById('navLockBtn'); if(lockBtn) lockBtn.textContent = navIcon('lock','🔒');
-  document.querySelectorAll('.avatar-camera-badge').forEach(b=>{
-    // keep the file input, just swap the visible emoji text node in front of it
-    const icon = navIcon('camera','📷');
-    Array.from(b.childNodes).forEach(n=>{ if(n.nodeType===Node.TEXT_NODE) n.textContent = icon; });
-  });
-  // Install buttons (topbar + login screen) both keep a trailing label <span>, so only the leading
-  // icon text node gets swapped — same "find the text node, leave the rest alone" approach as the
-  // camera badge above.
+  // Plain icon-only buttons/elements — their whole text content IS the icon, so a direct
+  // textContent swap is safe.
+  const setIcon = (id, key, fallback)=>{ const el = document.getElementById(id); if(el) el.textContent = navIcon(key, fallback); };
+  setIcon('navLockBtn', 'lock', '🔒');
+  setIcon('sidebarSaveBtn', 'save', '💾');
+  setIcon('themeToggle', 'theme', '🌓');
+  setIcon('themeToggleMobile', 'theme', '🌓');
+  setIcon('sidebarPinBtn', 'pin', '📌');
+  setIcon('hamburgerBtn', 'menu', '☰');
+  setIcon('topHomeBtn', 'home', '⌂');
+  setIcon('globalSearchBtn', 'search', '🔎');
+  setIcon('lockLoanSearchBtn', 'search', '🔍');
+  setIcon('lockLoanSearchIcon', 'search', '🔎');
+  setIcon('installHintDismissBtn', 'close', '✕');
+
+  // Buttons that keep a trailing label/badge <span> alongside the icon — only the leading icon
+  // text node gets swapped, so the label/badge markup is left untouched.
+  const swapLeadingIcon = (el, icon)=>{ if(!el) return; Array.from(el.childNodes).forEach(n=>{ if(n.nodeType===Node.TEXT_NODE) n.textContent = icon; }); };
+  document.querySelectorAll('.avatar-camera-badge').forEach(b=> swapLeadingIcon(b, navIcon('camera','📷')));
   const installIcon = navIcon('install','⬇️');
-  installAppBtns().forEach(b=>{
-    Array.from(b.childNodes).forEach(n=>{ if(n.nodeType===Node.TEXT_NODE) n.textContent = installIcon; });
-  });
-  const dismissBtn = document.getElementById('installHintDismissBtn');
-  if(dismissBtn) dismissBtn.textContent = navIcon('close','✕');
+  installAppBtns().forEach(b=> swapLeadingIcon(b, installIcon));
+  swapLeadingIcon(document.getElementById('noteBtn'), navIcon('notes','📝'));
+  swapLeadingIcon(document.getElementById('notifBellBtn'), navIcon('bell','🔔'));
+  swapLeadingIcon(document.getElementById('authNotifBellBtn'), navIcon('bell','🔔'));
+  swapLeadingIcon(document.getElementById('authTipsBtn'), navIcon('tips','💡'));
+  swapLeadingIcon(document.getElementById('authGettingStartedBtn'), navIcon('rocket','🚀'));
 }
 function hexToRgbStr(hex){
   if(!hex) return null;
