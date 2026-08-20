@@ -3047,10 +3047,14 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
   margin:0 -26px; padding-left:26px; padding-right:26px; padding-bottom:60px; /* re-open .content's own padding, which this flex child would otherwise clip */
 }
 .home-frozen-top{
+  /* Deliberately no background of its own. Now that this is a plain non-overlapping flex child
+     (not a sticky element needing to cover anything), it doesn't need to paint over anything —
+     leaving it transparent lets .content's own single background layer (body's --parchment colour
+     plus the app background image set in applyAppBackground()) show through its gaps exactly as
+     it already does through .home-scroll-body's gaps. One shared background painted once, instead
+     of two separately-sized/cropped copies that could drift out of alignment with each other.
+     position:relative is only so ::after below can anchor to this box. */
   position:relative; flex:none;
-  background-color:var(--parchment);
-  background-image:var(--app-bg-composite,none);
-  background-size:cover; background-position:center;
 }
 .home-frozen-top::after{
   content:''; position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none;
