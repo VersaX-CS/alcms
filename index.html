@@ -2858,7 +2858,7 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
 #app{ display:none; min-height:100vh; }
 #app.show{ display:flex; }
 .sidebar{
-  width:230px; flex:none; background:var(--sidebar-bg); color:#EFE8D3;
+  width:260px; flex:none; background:var(--sidebar-bg); color:#EFE8D3;
   display:flex; flex-direction:column; height:100vh; overflow-x:hidden;
   /* Overlay by default: fixed + out of the #app flex flow, so it floats on top of the page
      without shoving .main sideways. Pinning (see .sidebar.pinned below) is what switches it
@@ -2874,7 +2874,7 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
      real space in the #app flex row and .main is pushed over rather than covered. */
   position:sticky; transform:none; box-shadow:none;
 }
-.sidebar-icon-row{ display:flex; justify-content:space-between; gap:6px; padding:12px 18px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
+.sidebar-icon-row{ display:flex; justify-content:space-between; gap:8px; padding:14px 20px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 /* Pill/capsule-shaped icon buttons — rounded-full like a light/dark mode toggle, with a
    line-icon (SVG, sized to font-size via the "svg{width:1em}" rule below) rather than an emoji. */
 .sidebar-icon-row .icon-btn{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:#EFE8D3; width:38px; height:38px; padding:0; flex:none; display:flex; align-items:center; justify-content:center; font-size:16px; border-radius:999px; transition:background .15s ease, border-color .15s ease, transform .1s ease;}
@@ -2891,7 +2891,7 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
    existing glyph-sized layout without any per-icon pixel tuning. currentColor means they pick
    up hover/active text-color changes automatically, the way the emoji never could. */
 .ico svg, .icon-btn svg, .hamburger svg, .qlink .ico svg, .bottom-nav button .ico svg, .topbar-nav-menu a .ico svg, .ribbon-item .ic svg{ width:1em; height:1em; display:block;}
-.brand{ padding:22px 20px 14px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
+.brand{ padding:24px 22px 16px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 .brand .mark{ display:flex; align-items:center; gap:10px;}
 .brand .mark .stamp-badge{
   width:38px;height:38px;border-radius:50%;border:2px solid var(--brass-light);
@@ -2904,19 +2904,19 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
 /* Only the nav list itself scrolls — the logo, the save/lock/theme icon row above it, and the
    footer below it stay put. min-height:0 lets a flex child shrink below its content size, which
    is what makes overflow-y:auto actually kick in here instead of the column just growing. */
-nav.navlist{ padding:10px 10px; flex:1; overflow-y:auto; min-height:0;}
-nav.navlist .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:rgba(255,255,255,.5); padding:14px 10px 6px;}
+nav.navlist{ padding:12px 12px; flex:1; overflow-y:auto; min-height:0;}
+nav.navlist .navgroup-label{ font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:rgba(255,255,255,.5); padding:16px 12px 8px;}
 nav.navlist button{
-  display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:9px 10px;
+  display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:10px 12px;
   background:transparent; border:none; color:rgba(255,255,255,.88); border-radius:8px; font-size:13.5px; margin-bottom:2px;
   transition:background .15s;
 }
-nav.navlist button .ico{ width:18px;text-align:center;font-size:14px; flex:none; display:flex; align-items:center; justify-content:center;}
+nav.navlist button .ico{ width:20px;text-align:center;font-size:15px; flex:none; display:flex; align-items:center; justify-content:center;}
 nav.navlist button:hover{ background:rgba(255,255,255,.08); box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);}
 nav.navlist button.active{ background:var(--brass); color:#221704; font-weight:600; box-shadow:none;}
 .nav-badge{ margin-left:auto; background:var(--terracotta); color:#fff; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:20px; line-height:1.5;}
 nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
-.sidebar-foot{ padding:12px 18px 18px; font-size:10.5px; color:rgba(255,255,255,.45); border-top:1px solid rgba(255,255,255,.1); flex:none;}
+.sidebar-foot{ padding:14px 20px 20px; font-size:10.5px; color:rgba(255,255,255,.45); border-top:1px solid rgba(255,255,255,.1); flex:none;}
 
 .main{ flex:1; min-width:0; display:flex; flex-direction:column; height:100vh; overflow:hidden;}
 .topbar{
