@@ -3043,6 +3043,16 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
   background-image:var(--app-bg-composite,none);
   background-size:cover; background-position:center; background-attachment:fixed;
 }
+/* Mobile browsers (notably iOS/Android Safari & Chrome) repaint a fixed background unreliably
+   during momentum scrolling, so on a long scroll the sticky strip's own background can fail to
+   redraw — letting the quicklink cards scrolling underneath show through the "frozen" hero/KPI
+   area. Since this element is itself sticky (already pinned in the viewport), it doesn't actually
+   need a viewport-fixed background to stay put — switching to the default (scroll) attachment
+   below this breakpoint keeps it fully opaque throughout the scroll, at the minor cost of it no
+   longer tracking pixel-for-pixel with .content's own background as that scrolls beneath it. */
+@media (max-width:900px){
+  .home-frozen-top{ background-attachment:scroll; }
+}
 .home-frozen-top::after{
   content:''; position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none;
   background:linear-gradient(to bottom, rgba(0,0,0,.05), transparent); transform:translateY(100%);
