@@ -3042,6 +3042,13 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
   background-color:var(--parchment);
   background-image:var(--app-bg-composite,none);
   background-size:cover; background-position:center; background-attachment:fixed;
+  /* Promotes this sticky element to its own GPU-composited layer. Mobile Safari/Chrome can lag
+     recalculating a position:sticky element's offset during fast/momentum scrolling, so for a
+     frame it renders slightly out of its pinned position and the quicklink tiles scrolling
+     underneath briefly show through above it. will-change:transform alone (unlike pairing it
+     with backface-visibility:hidden, which is a known WebKit bug that can disable position:sticky
+     entirely in Safari) fixes that lag without touching sticky behaviour. */
+  will-change:transform;
 }
 .home-frozen-top::after{
   content:''; position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none;
