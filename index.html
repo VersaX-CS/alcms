@@ -3042,6 +3042,12 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
   background-color:var(--parchment);
   background-image:var(--app-bg-composite,none);
   background-size:cover; background-position:center; background-attachment:fixed;
+  /* Forces its own GPU compositing layer. Mobile Safari/Chrome sometimes fail to keep a
+     position:sticky element correctly composited above normal-flow content during fast/momentum
+     scrolling, letting whatever's scrolling underneath (here, the quicklink tiles) flash through
+     on top of it for a frame instead of staying hidden behind it. Promoting it to its own layer
+     is the standard fix for that flicker. */
+  transform:translateZ(0); -webkit-transform:translateZ(0); backface-visibility:hidden; -webkit-backface-visibility:hidden;
 }
 /* Mobile browsers (notably iOS/Android Safari & Chrome) repaint a fixed background unreliably
    during momentum scrolling, so on a long scroll the sticky strip's own background can fail to
