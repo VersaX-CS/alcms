@@ -2859,10 +2859,21 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
 #app.show{ display:flex; }
 .sidebar{
   width:230px; flex:none; background:var(--sidebar-bg); color:#EFE8D3;
-  display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
-  transition:width .22s ease; overflow-x:hidden;
+  display:flex; flex-direction:column; height:100vh; overflow-x:hidden;
+  /* Overlay by default: fixed + out of the #app flex flow, so it floats on top of the page
+     without shoving .main sideways. Pinning (see .sidebar.pinned below) is what switches it
+     back into the normal in-page flow so it actually pushes/sits alongside the content. */
+  position:fixed; top:0; left:0; z-index:130;
+  transform:translateX(0);
+  box-shadow:8px 0 30px rgba(0,0,0,.28);
+  transition:transform .22s ease, box-shadow .22s ease;
 }
-.sidebar.desktop-collapsed{ width:0;}
+.sidebar.desktop-collapsed{ transform:translateX(-100%); box-shadow:none;}
+.sidebar.pinned{
+  /* Pinned: rejoin the normal document flow (sticky, like before) so the sidebar takes up
+     real space in the #app flex row and .main is pushed over rather than covered. */
+  position:sticky; transform:none; box-shadow:none;
+}
 .sidebar-icon-row{ display:flex; justify-content:space-between; gap:6px; padding:12px 18px; border-bottom:1px solid rgba(255,255,255,.12); flex:none;}
 /* Pill/capsule-shaped icon buttons — rounded-full like a light/dark mode toggle, with a
    line-icon (SVG, sized to font-size via the "svg{width:1em}" rule below) rather than an emoji. */
@@ -2965,7 +2976,7 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
      here instead means the title truncates first and .topbar-search (flex:1 1 auto) automatically
      claims whatever it frees up, so the search bar keeps the most room exactly when the sidebar is
      open and the row is tightest. */
-  .sidebar:not(.desktop-collapsed) ~ .main .topbar .titles{ max-width:190px;}
+  .sidebar.pinned ~ .main .topbar .titles{ max-width:190px;}
 }
 body[data-topbar-style="blank"] .topbar-search-input{ color:var(--ink); border-color:var(--line);}
 body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--muted);}
@@ -4219,7 +4230,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 </div>
 
 <div id="app">
-  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar(false)"></div>
+  <div class="sidebar-overlay show" id="sidebarOverlay" onclick="toggleSidebar(false)"></div>
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="mark">
@@ -4947,8 +4958,11 @@ function toggleSidebar(force){
   if(!sb) return;
   const isDesktop = window.innerWidth > 900;
   if(isDesktop){
+    if(sidebarPersistMode) return; // pinned: sidebar is already open and sitting in the page — nothing to toggle
     const open = force !== undefined ? force : sb.classList.contains('desktop-collapsed');
     sb.classList.toggle('desktop-collapsed', !open);
+    // Unpinned = overlay mode, so dim the page behind it while it's open, same as the mobile drawer
+    if(ov) ov.classList.toggle('show', open);
     return;
   }
   const open = force !== undefined ? force : !sb.classList.contains('open');
@@ -4971,9 +4985,16 @@ function setSidebarPersist(persist){
     btn.setAttribute('aria-label', sidebarPersistMode ? 'Unpin menu' : 'Keep menu open');
     applyIconPack(); // Update pin icon to show ☰✕ when pinned, ☰ when unpinned
   }
+  const ov = document.getElementById('sidebarOverlay');
   if(sb){
-    if(sidebarPersistMode) sb.classList.remove('desktop-collapsed'); // pin it open now
-    else sb.classList.add('desktop-collapsed'); // close it now
+    sb.classList.toggle('pinned', sidebarPersistMode); // pinned = back in the page flow, pushing .main
+    if(sidebarPersistMode){
+      sb.classList.remove('desktop-collapsed'); // pin it open now
+      if(ov) ov.classList.remove('show'); // it's sitting in the page now, no backdrop needed
+    } else {
+      sb.classList.add('desktop-collapsed'); // unpinning closes it back to hidden (overlay mode)
+      if(ov) ov.classList.remove('show');
+    }
   }
 }
 function toggleSidebarPersist(){
@@ -5005,6 +5026,8 @@ function closeSidebarAfterNav(){
     if(!sidebarPersistMode){
       const sb = document.getElementById('sidebar');
       if(sb) sb.classList.add('desktop-collapsed'); // collapse it
+      const ov = document.getElementById('sidebarOverlay');
+      if(ov) ov.classList.remove('show'); // drop the overlay backdrop along with it
     }
   } else {
     // Mobile: always close sidebar
