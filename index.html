@@ -8222,7 +8222,29 @@ function makeChart(canvasId, config){
     return;
   }
   if(chartInstances[canvasId]) chartInstances[canvasId].destroy();
+  // Chart.js's own defaults (dark grey text, light grey gridlines) are baked in at chart-creation
+  // time and never adapt to the app's theme, which is why legend/axis labels went unreadable
+  // against the dark-mode background. Pull the same CSS variables the rest of the UI already
+  // uses for text/border colour and apply them as defaults so every chart's legend, tick labels
+  // and axis titles stay legible in both themes — while still letting any per-chart config that
+  // explicitly sets its own colours (e.g. dataset colours) win, since this only fills in defaults.
+  const rootStyles = getComputedStyle(document.documentElement);
+  const chartTextColor = (rootStyles.getPropertyValue('--ink') || '#132019').trim();
+  const chartGridColor = (rootStyles.getPropertyValue('--line') || '#DDD3B4').trim();
   config.options = Object.assign({responsive:true, maintainAspectRatio:false}, config.options||{});
+  const opts = config.options;
+  opts.plugins = opts.plugins || {};
+  opts.plugins.legend = Object.assign({}, opts.plugins.legend);
+  opts.plugins.legend.labels = Object.assign({color:chartTextColor}, opts.plugins.legend.labels||{});
+  opts.plugins.title = Object.assign({color:chartTextColor}, opts.plugins.title||{});
+  if(opts.scales){
+    Object.keys(opts.scales).forEach(axisKey=>{
+      const axis = opts.scales[axisKey] = Object.assign({}, opts.scales[axisKey]);
+      axis.ticks = Object.assign({color:chartTextColor}, axis.ticks||{});
+      axis.grid = Object.assign({color:chartGridColor}, axis.grid||{});
+      if(axis.title) axis.title = Object.assign({color:chartTextColor}, axis.title);
+    });
+  }
   try{
     chartInstances[canvasId] = new Chart(ctx, config);
   }catch(e){
