@@ -3026,36 +3026,31 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .account-chip .av{ width:30px;height:30px;border-radius:50%; flex:0 0 30px; background:var(--brass-light); color:var(--forest-dark); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; font-family:Georgia,serif;}
 .account-chip .nm{ font-size:12.5px; font-weight:600; line-height:1.2; color:#fff;}
 .account-chip .rl{ font-size:10px; color:rgba(239,232,211,.6); text-transform:uppercase; letter-spacing:.4px;}
-/* -webkit-overflow-scrolling:touch + overscroll-behavior-y:contain fix a well-documented iOS
-   Safari bug: position:sticky children (.home-frozen-top) of a NESTED overflow-y:auto container
-   (this element, as opposed to the page/body itself scrolling) can have their pinned offset
-   miscalculated mid-momentum-scroll, causing the sticky hero to visibly detach/slide down for a
-   moment and exposing whatever quicklink tile is passing behind it at that instant — repeatedly,
-   for each tile, throughout a long scroll. Forcing native momentum scrolling and containing the
-   rubber-band bounce keeps the sticky offset recalculated reliably instead. */
-.content{ padding:22px 26px 60px; flex:1; overflow-y:auto; min-height:0; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;}
+.content{ padding:22px 26px 60px; flex:1; overflow-y:auto; min-height:0;}
 
-/* Home page only: the weather hero + KPI strip stay pinned to the top of the scrolling .content
-   area, so as the page is scrolled only the quicklinks (nav-icon) grid and any due-list alert
-   move underneath them — the hero/KPIs never scroll out of view. An opaque background is required
-   since sticky content still paints below it in the same stacking context; without it, the
-   quicklink cards would visibly show through the gap under the rotated corner accents. It's painted
-   with the same composite (tint + app background image) as .content itself — see --app-bg-composite,
-   set in applyAppBackground() — using the same background-attachment:fixed, so the strip lines up
-   pixel-for-pixel with .content's own background as the page scrolls, instead of showing as a
-   separate solid slab; --parchment is the base colour for when no app background image is set. */
+/* Home page only: the weather hero + KPI strip must never let the quicklinks scrolling below
+   them show through — not even for a frame. position:sticky (tried previously) can't guarantee
+   that: on iOS Safari a sticky child of a NESTED overflow-y:auto container (.content, as opposed
+   to the page/body itself scrolling) can have its pinned offset miscalculated mid-momentum-scroll,
+   letting it visibly detach and expose whatever's scrolling underneath — no CSS patch on the
+   sticky element itself fixes that reliably.
+   So instead .home-frozen-top isn't sticky at all: pageHome() renders it as a plain (non-scrolling)
+   flex child of .content, with everything below it (due-list alert + quicklinks) wrapped in its
+   own .home-scroll-body that scrolls independently. Structurally, the scroll body can never render
+   above the frozen top — there's no shared scroll/paint context left for a bug to exploit. The
+   :has() selector scopes this flex split to the home route only (identified by .home-frozen-top
+   being .content's first child) without touching every other page's normal block layout/scrolling. */
+.content:has(> .home-frozen-top){ display:flex; flex-direction:column; overflow:hidden;}
+.home-scroll-body{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;
+  padding-top:18px; /* the little breathing room below the KPIs, before the scrolling area starts */
+  margin:0 -26px; padding-left:26px; padding-right:26px; padding-bottom:60px; /* re-open .content's own padding, which this flex child would otherwise clip */
+}
 .home-frozen-top{
-  position:sticky; top:0; z-index:3;
+  position:relative; flex:none;
   background-color:var(--parchment);
   background-image:var(--app-bg-composite,none);
-  background-size:cover; background-position:center; background-attachment:fixed;
-  /* Promotes this sticky element to its own GPU-composited layer. Mobile Safari/Chrome can lag
-     recalculating a position:sticky element's offset during fast/momentum scrolling, so for a
-     frame it renders slightly out of its pinned position and the quicklink tiles scrolling
-     underneath briefly show through above it. will-change:transform alone (unlike pairing it
-     with backface-visibility:hidden, which is a known WebKit bug that can disable position:sticky
-     entirely in Safari) fixes that lag without touching sticky behaviour. */
-  will-change:transform;
+  background-size:cover; background-position:center;
 }
 .home-frozen-top::after{
   content:''; position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none;
@@ -3875,6 +3870,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   .account-chip > div:last-child{ display:none;} /* name/role text — Account tab already covers this on mobile */
   #noteBtn .note-btn-label, #installAppBtn .note-btn-label{ display:none;} /* label is desktop-only; mobile stays a plain round icon button, matching the rest */
   .content{ padding:14px 12px 96px;}
+  .home-scroll-body{ margin:0 -12px; padding-left:12px; padding-right:12px; padding-bottom:96px;}
   .content.page-transition{ animation:contentFadeIn .2s ease;}
   @keyframes contentFadeIn{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
   .grid.kpis{ grid-template-columns:repeat(2,1fr); gap:10px;}
@@ -3986,6 +3982,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 }
 @media (max-width:480px){
   .content{ padding:12px 10px 92px;}
+  .home-scroll-body{ margin:0 -10px; padding-left:10px; padding-right:10px; padding-bottom:92px;}
   .kpi{ padding:10px;}
   .grid.kpis{ grid-template-columns:repeat(2,1fr); gap:8px;}
   .quicklinks{ grid-template-columns:1fr 1fr;}
@@ -6759,10 +6756,9 @@ function applyAppBackground(){
     el.style.backgroundSize = 'cover'; el.style.backgroundPosition = 'center'; el.style.backgroundAttachment = 'fixed';
     document.documentElement.style.setProperty('--section-bg-image', `url('${image}')`);
     // Same composite (tint + image) as .content's own inline background, exposed as a CSS var so
-    // the sticky home-frozen-top hero/KPI strip (see its rule) can paint the identical fixed
-    // background instead of a flat parchment slab — with matching background-attachment:fixed,
-    // it lines up pixel-for-pixel with .content's background as the page scrolls, so the frozen
-    // strip visually flows with the rest of the page instead of reading as a separate solid block.
+    // the home-frozen-top hero/KPI strip (see its rule) can paint the identical background instead
+    // of a flat parchment slab — visually flowing with the rest of the page instead of reading as
+    // a separate solid block.
     document.documentElement.style.setProperty('--app-bg-composite', bgImg);
   } else {
     el.style.backgroundImage = '';
@@ -9314,6 +9310,7 @@ function pageHome(){
       ${kpi('Overdue right now', overdue, overdue? 'needs a reminder':'all clear')}
     </div>
   </div>
+  <div class="home-scroll-body">
   ${(dueList.length && homeAlertsDismissed.dueList!==today)? `
   <div class="card panel" style="margin-bottom:16px">
     <div class="panel-head"><div><h3>Due today &amp; overdue</h3><div class="hint">${dueList.length} loan(s) need attention · click one to return it</div></div>
@@ -9343,6 +9340,7 @@ function pageHome(){
     ${qlink(navIcon('backup','⟲'),'Backup & Restore', 'Sync & checkpoints','backup')}
     ${qlink(navIcon('guide','❖'),'User guide', 'How the desk works','guide')}
     ${qlink(navIcon('about','ⓘ'),'About', 'alcms version info','about')}
+  </div>
   </div>
   `;
 }
