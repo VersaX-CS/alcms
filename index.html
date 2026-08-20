@@ -3121,6 +3121,18 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
 
 .panel{ padding:18px 20px; margin-bottom:18px;}
 .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;}
+/* Personalization page: one sticky toolbar holding the global Save + Reset buttons, floating
+   at the top of the scroll area (inside .content, which is what actually scrolls) so it stays
+   reachable no matter how far down the long list of appearance/typography/lockscreen/etc cards
+   the admin has scrolled — instead of the old pattern of a separate "Save" button living at the
+   bottom of every single card. */
+.settings-toolbar{
+  position:sticky; top:0; z-index:80;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:12px 16px; margin-bottom:14px; box-shadow:var(--shadow);
+}
+.settings-toolbar .hint{ flex:1 1 auto; min-width:160px;}
 /* Only the primary action (+ Add) and the "⋯ More" trigger stay visible in the header row;
    everything else (Print, Export, Import, extra admin actions) lives inside the "⋯ More"
    dropdown. That keeps the row short and fixed-height on every screen size — it never needs
@@ -4677,7 +4689,7 @@ function previewTypography(){
   if(isCustom('setMutedColor')) document.documentElement.style.setProperty('--muted', g('setMutedColor'));
   else document.documentElement.style.removeProperty('--muted');
 }
-function saveTypographyForm(){
+function saveTypographyForm(silent){
   PREFS.appFont = document.getElementById('setAppFont')?.value || 'default';
   PREFS.headingFont = document.getElementById('setHeadingFont')?.value || 'default';
   PREFS.bodyScale = (+document.getElementById('setBodyScale')?.value || 100)/100;
@@ -4693,7 +4705,7 @@ function saveTypographyForm(){
   PREFS.bodyColor = savedColor('setBodyColor');
   PREFS.mutedColor = savedColor('setMutedColor');
   applyTypography(); savePrefs(); appearancePreviewDirty = false;
-  toast('Typography updated');
+  if(!silent) toast('Typography updated');
 }
 async function loadPrefs(){
   try{ const v = await storeGet(PREFS_KEY); if(v) PREFS = Object.assign(PREFS, JSON.parse(v)); }catch(e){}
@@ -4748,6 +4760,23 @@ function resetPersonalization(){
   render();
   toast('Personalization reset to default');
   }, {confirmLabel:'Reset', danger:true});
+}
+/* Global "Save changes" button for Personalization — every section on the page previews live
+   (theme, typography, backgrounds, icons/motion, lockscreen, weather ambience) but used to need
+   its own separate Save click to actually persist. This runs every section's save logic silently
+   (no per-section toast, no in-between re-render — several of them re-render the whole page
+   themselves, which would wipe out any not-yet-read fields from the *other* sections if we let
+   that happen mid-way through), then re-renders once and shows a single confirmation toast. */
+function saveAllPersonalization(){
+  saveTypographyForm(true);
+  saveClockPrefs(true);
+  saveAppBackground(true);
+  saveSectionStyle(true);
+  savePersonalizationExtras(true);
+  saveLockscreenAppearance(true);
+  saveWeatherAmbiencePrefs(true);
+  render();
+  toast('Personalization saved');
 }
 /* Which lockscreen elements are shown — toggled from the Office-ribbon-style picker in
    Personalization → Lockscreen. Applying just sets data attributes the CSS reacts to, so this works
@@ -6738,17 +6767,18 @@ function removeCustomQuote(i){
   DB.setup.customQuotes.splice(i,1);
   saveDB(); render(); toast('Quote removed');
 }
-function saveAppBackground(){
+function saveAppBackground(silent){
   const opacity = +document.getElementById('appBgOpacity').value || 0;
   DB.setup.appBackgroundOpacity = opacity;
   const file = document.getElementById('appBgInput').files[0];
   if(file){
     if(file.size > 1.5*1024*1024){ toast('Please choose an image under 1.5MB'); return; }
     const reader = new FileReader();
-    reader.onload = ()=>{ DB.setup.appBackgroundImage = reader.result; appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB(); applyAppBackground(); render(); toast('Background saved'); };
+    reader.onload = ()=>{ DB.setup.appBackgroundImage = reader.result; appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB(); applyAppBackground(); if(!silent){ render(); toast('Background saved'); } };
     reader.readAsDataURL(file);
   } else {
-    appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB(); applyAppBackground(); toast('Background saved');
+    appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB(); applyAppBackground();
+    if(!silent) toast('Background saved');
   }
 }
 function clearAppBackground(){
@@ -6793,14 +6823,14 @@ function applyAppBackground(){
     document.documentElement.style.setProperty('--app-bg-composite', 'none');
   }
 }
-function saveAuthBackground(){
+function saveAuthBackground(silent){
   const opEl = document.getElementById('authBgOpacity');
   if(opEl) DB.setup.authBackgroundOpacity = +opEl.value;
   const file = document.getElementById('authBgInput').files[0];
-  if(!file){ authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB(); applyAuthBackground(); toast('Sign-in background saved'); return; }
+  if(!file){ authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB(); applyAuthBackground(); if(!silent) toast('Sign-in background saved'); return; }
   if(file.size > 1.5*1024*1024){ toast('Please choose an image under 1.5MB'); return; }
   const reader = new FileReader();
-  reader.onload = ()=>{ DB.setup.authBackgroundImage = reader.result; authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB(); applyAuthBackground(); render(); toast('Sign-in background saved'); };
+  reader.onload = ()=>{ DB.setup.authBackgroundImage = reader.result; authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB(); applyAuthBackground(); if(!silent){ render(); toast('Sign-in background saved'); } };
   reader.readAsDataURL(file);
 }
 // Live preview: paints straight onto the real (currently hidden, since we're logged in) sign-in
@@ -6849,7 +6879,7 @@ function toggleLockscreenElement(key){
   if(ribbon) ribbon.innerHTML = renderLockscreenRibbon();
 }
 function previewLockscreenDecorStyle(style){ applyLockscreenDecorStyle(style); }
-function saveLockscreenAppearance(){
+function saveLockscreenAppearance(silent){
   // One save button for the whole lockscreen row: background image + its opacity + login box opacity + elements shown + decoration style.
   PREFS.authBoxOpacity = +document.getElementById('setAuthBoxOpacity')?.value || 90;
   document.documentElement.style.setProperty('--auth-box-opacity', PREFS.authBoxOpacity/100);
@@ -6858,7 +6888,7 @@ function saveLockscreenAppearance(){
   PREFS.lockscreenDecorStyle = document.getElementById('setLockscreenDecorStyle')?.value || PREFS.lockscreenDecorStyle || 'circle';
   applyLockscreenDecorStyle(PREFS.lockscreenDecorStyle);
   savePrefs();
-  saveAuthBackground();
+  saveAuthBackground(silent);
 }
 function clearAuthBackground(){
   DB.setup.authBackgroundImage = null; saveDB(); applyAuthBackground(); render(); toast('Sign-in background removed');
@@ -6960,7 +6990,7 @@ function previewAuthBoxColor(){
   const rgb = hexToRgbStr(document.getElementById('setAuthBoxColor')?.value);
   if(rgb){ document.documentElement.style.setProperty('--auth-box-bg-rgb', rgb); document.documentElement.style.setProperty('--auth-box-bg-rgb-dark', rgb); }
 }
-function saveSectionStyle(){
+function saveSectionStyle(silent){
   PREFS.sectionStyle = document.getElementById('setSectionStyle')?.value || 'solid';
   PREFS.sectionOpacity = +document.getElementById('setSectionOpacity')?.value || 70;
   PREFS.topbarStyle = document.getElementById('setTopbarStyle')?.value || 'solid';
@@ -6981,7 +7011,7 @@ function saveSectionStyle(){
   PREFS.authBoxColor = document.getElementById('setAuthBoxColor')?.value || '';
   const authBoxRgb = hexToRgbStr(PREFS.authBoxColor);
   if(authBoxRgb){ document.documentElement.style.setProperty('--auth-box-bg-rgb', authBoxRgb); document.documentElement.style.setProperty('--auth-box-bg-rgb-dark', authBoxRgb); }
-  savePrefs(); toast('Background style saved');
+  savePrefs(); if(!silent) toast('Background style saved');
 }
 function previewPersonalizationExtras(){
   // Live preview only — applies the icon pack and modal transition visually without persisting.
@@ -6994,12 +7024,12 @@ function previewPersonalizationExtras(){
   renderNav(); // sidebar icons switch immediately as the pack is chosen, not just after Save
   PREFS.iconPack = prevIconPack; // …then restore, since this hasn't been saved yet.
 }
-function savePersonalizationExtras(){
+function savePersonalizationExtras(silent){
   PREFS.iconPack = document.getElementById('setIconPack')?.value || 'minimal';
   PREFS.transitionStyle = document.getElementById('setTransitionStyle')?.value || 'scale';
   document.body.setAttribute('data-transition', PREFS.transitionStyle);
-  savePrefs(); applyIconPack(); render();
-  toast('Preferences saved');
+  savePrefs(); applyIconPack();
+  if(!silent){ render(); toast('Preferences saved'); }
 }
 // Live preview for Clock format / Date format / Sign-in clock style. These three are read by
 // tickClocks() every second, so — unlike a one-shot preview — we can't apply-then-immediately-revert
@@ -8237,6 +8267,16 @@ function makeChart(canvasId, config){
   opts.plugins.legend = Object.assign({}, opts.plugins.legend);
   opts.plugins.legend.labels = Object.assign({color:chartTextColor}, opts.plugins.legend.labels||{});
   opts.plugins.title = Object.assign({color:chartTextColor}, opts.plugins.title||{});
+  // Bar/line/scatter/bubble charts get x/y axes (tick labels + gridlines) drawn even when the
+  // per-chart config above never mentions "scales" at all — Chart.js still auto-generates default
+  // x/y scales for these types behind the scenes, using its own hardcoded colours that were
+  // invisible against a dark background. Force those axes to exist so they pick up the
+  // theme-aware colours below, instead of only patching scales a chart happened to define itself.
+  if(['bar','line','scatter','bubble'].includes(config.type)){
+    opts.scales = opts.scales || {};
+    opts.scales.x = opts.scales.x || {};
+    opts.scales.y = opts.scales.y || {};
+  }
   if(opts.scales){
     Object.keys(opts.scales).forEach(axisKey=>{
       const axis = opts.scales[axisKey] = Object.assign({}, opts.scales[axisKey]);
@@ -15276,13 +15316,15 @@ function pageSettings(){
     return `<div class="card panel"><div class="empty"><div class="big">🔒</div>Personalization is only available to admin accounts.</div></div>`;
   }
   return `
-  <div class="panel-head" style="margin-bottom:14px">
+  <div class="settings-toolbar">
+    <button class="btn" onclick="saveAllPersonalization()">💾 Save changes</button>
     <button class="btn danger" onclick="resetPersonalization()">↺ Reset personalization to default</button>
+    <div class="hint">Every section below previews live as you edit it — nothing is kept until you click Save.</div>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Theme sets</h3><div class="hint">One-click bundles of colour palette, typography, icon pack, transitions, and section/modal/title-bar style — pick a preset, tweak it, or build your own from scratch</div></div>
     ${editingThemeSetKey ? `<div class="field-hint" style="background:rgba(184,134,62,.12);border:1px solid var(--brass);border-radius:8px;padding:8px 10px;margin-bottom:10px">
-      Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page (using each section's own Save button as normal), then come back here.
+      Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page, click the Save button at the top to apply them, then come back here.
       <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary small" onclick="updateThemeSet()">💾 Update this theme</button>
         <button class="btn secondary small" onclick="stopEditingThemeSet()">Done editing</button>
@@ -15311,7 +15353,7 @@ function pageSettings(){
       <div class="field"><label>Theme</label><select id="setTheme" onchange="previewTheme(this.value)"><option value="system" ${PREFS.theme==='system'?'selected':''}>Match system</option><option value="light" ${PREFS.theme==='light'?'selected':''}>Light</option><option value="dark" ${PREFS.theme==='dark'?'selected':''}>Dark</option></select></div>
       <div class="field"><label>Colour palette</label><select id="setPalette" onchange="previewPalette(this.value)">${Object.entries(allPalettes()).map(([k,p])=>`<option value="${k}" ${PREFS.palette===k?'selected':''}>${esc(p.label)}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — click "Save appearance" below to keep it, or leave this page without saving to discard.</p>
+    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
     <div class="palette-swatch-row" id="paletteSwatches">${Object.entries(allPalettes()).map(([k,p])=>`
       <div class="palette-chip ${PREFS.palette===k?'selected':''}" onclick="document.getElementById('setPalette').value='${k}'; previewPalette('${k}')" title="${esc(p.label)}">
         <span class="palette-chip-dots">
@@ -15321,7 +15363,6 @@ function pageSettings(){
         <a href="#" onclick="event.stopPropagation();editPalettePreset('${k}');return false;" title="Edit">✎</a>
         <a href="#" onclick="event.stopPropagation();deletePalettePreset('${k}');return false;" title="Delete" style="color:#A8452F">✕</a>
       </div>`).join('')}</div>
-    <button class="btn secondary" style="margin-top:10px" onclick="saveClockPrefs()">Save appearance</button>
 
     <div class="panel-head" style="margin-top:20px"><h3 style="font-size:14px">Accessibility</h3><div class="hint">Applies for everyone using this library's alcms</div></div>
     <div class="field-row">
@@ -15346,7 +15387,7 @@ function pageSettings(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Typography</h3><div class="hint">Fonts, weight and size — applies across the whole app</div></div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — click "Save typography" below to keep it, or leave this page without saving to discard.</p>
+    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
     <div class="field-row">
       <div class="field">
         <label style="font-weight:700;display:block;margin-bottom:6px">Heading</label>
@@ -15371,7 +15412,6 @@ function pageSettings(){
       <div class="field" style="flex:1"><label>Muted / secondary text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setMutedColor" data-default="${PREFS.mutedColor && PREFS.mutedColor!=='default' ? 'false' : 'true'}" value="${resolveMutedColorHex(PREFS.mutedColor)}" oninput="this.dataset.default='false'; previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('muted')">Reset</button></div></div>
     </div>
     <p class="field-hint" style="margin-top:-4px">Muted covers hints, captions, subtitles and table labels — everything that isn't a heading or main body text.</p>
-    <button class="btn secondary" onclick="saveTypographyForm()">Save typography</button>
     <p class="field-hint" style="margin-top:8px">Text size uses your browser's zoom support — it may not apply in every browser.</p>
   </div>
   <div class="card panel">
@@ -15381,9 +15421,8 @@ function pageSettings(){
       <div class="field"><label>Background image</label><input type="file" accept="image/*" id="appBgInput" onchange="previewAppBackground()"></div>
       <div class="field"><label>Opacity (${DB.setup.appBackgroundOpacity??15}%)</label><input type="range" id="appBgOpacity" min="0" max="60" value="${DB.setup.appBackgroundOpacity??15}" oninput="previewAppBackground()"></div>
     </div>
-    <p class="field-hint" style="margin:-6px 0 8px">Previewing live — click "Save background" below to keep it, or leave this page without saving to discard.</p>
+    <p class="field-hint" style="margin:-6px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <button class="btn secondary" onclick="saveAppBackground()">Save background</button>
       ${DB.setup.appBackgroundImage? `<button class="btn danger" onclick="clearAppBackground()">Remove background</button>`:''}
     </div>
     <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Section, modal &amp; title bar backgrounds</h4><div class="hint">Applies to cards, panels, modals and the top header</div></div>
@@ -15409,16 +15448,14 @@ function pageSettings(){
       <div class="field"><label>Login container (sign-in box) colour</label><input type="color" id="setAuthBoxColor" value="${esc(PREFS.authBoxColor||'#FFFFFF')}" oninput="previewAuthBoxColor()"></div>
     </div>
     <p class="field-hint" style="margin-top:-4px">The login container's opacity is set separately, in Lockscreen below. Colours above are only visible when the style is Transparent glassy or Picture.</p>
-    <button class="btn secondary" onclick="saveSectionStyle()">Save backgrounds</button>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Icons &amp; motion</h3><div class="hint">Nav icon style and how modals animate</div></div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — click "Save" below to keep it, or leave this page without saving to discard.</p>
+    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
     <div class="field-row">
       <div class="field"><label>Icon pack</label><select id="setIconPack" onchange="previewPersonalizationExtras()">${Object.entries(ICON_PACKS).map(([k,v])=>`<option value="${k}" ${(PREFS.iconPack||'minimal')===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Modal transition</label><select id="setTransitionStyle" onchange="previewPersonalizationExtras()">${Object.entries(TRANSITION_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.transitionStyle||'scale')===k?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
     </div>
-    <button class="btn secondary" style="margin-top:10px" onclick="savePersonalizationExtras()">Save</button>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Clock &amp; date</h3><div class="hint">How the clock and date display across the app</div></div>
@@ -15432,8 +15469,7 @@ function pageSettings(){
       <div class="field"><label>Clock font</label><select id="setClockFont" onchange="applyClockFont(this.value)">${Object.entries(CLOCK_FONTS).map(([k,v])=>`<option value="${k}" ${(PREFS.clockFont||'digital')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="field"><label>Date font</label><select id="setDateFontDisplay" onchange="applyDateFont(this.value)">${Object.entries(DATE_FONTS).map(([k,v])=>`<option value="${k}" ${(PREFS.dateFont||'default')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:4px 0 8px">Previewing live — click "Save" below to keep it, or leave this page without saving to discard.</p>
-    <button class="btn secondary" onclick="saveClockPrefs()">Save</button>
+    <p class="field-hint" style="margin:4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Lockscreen (sign-in screen)</h3><div class="hint">Background image, its opacity, the login box appearance, the clock style, decoration and quotes shown in the carousel</div></div>
@@ -15442,7 +15478,7 @@ function pageSettings(){
       <div class="field"><label>Background opacity (${DB.setup.authBackgroundOpacity??45}%)</label><input type="range" id="authBgOpacity" min="10" max="90" value="${DB.setup.authBackgroundOpacity??45}" oninput="this.previousElementSibling.textContent=this.previousElementSibling.textContent.replace(/\\d+/,this.value); previewAuthBackground();"></div>
       <div class="field"><label>Login box opacity (<span id="authBoxOpacityVal">${PREFS.authBoxOpacity??90}</span>%)</label><input type="range" id="setAuthBoxOpacity" min="30" max="100" value="${PREFS.authBoxOpacity??90}" oninput="document.getElementById('authBoxOpacityVal').textContent=this.value; document.documentElement.style.setProperty('--auth-box-opacity', this.value/100);"></div>
     </div>
-    <p class="field-hint">Login box opacity controls how see-through the frosted glass sign-in form container is over the background. Its colour is set above, in Backgrounds → Login container colour. The background image and opacity above preview live on the (currently hidden) sign-in screen — click "Save lockscreen appearance" below to keep it, or leave this page without saving to discard.</p>
+    <p class="field-hint">Login box opacity controls how see-through the frosted glass sign-in form container is over the background. Its colour is set above, in Backgrounds → Login container colour. The background image and opacity above preview live on the (currently hidden) sign-in screen — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
     <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Sign-in screen clock &amp; decoration style</h4><div class="hint">Clock style, and the corner flourish behind the sign-in form</div></div>
     <div class="field-row">
       <div class="field"><label>Clock style</label><select id="setAuthClockStyle" onchange="previewClockDatePrefs()">${Object.entries(AUTH_CLOCK_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.authClockStyle||'digital')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
@@ -15452,7 +15488,6 @@ function pageSettings(){
     <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Elements shown on the lockscreen</h4><div class="hint">Pick which pieces appear</div></div>
     <div class="ribbon-picker" id="lockscreenRibbon">${renderLockscreenRibbon()}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <button class="btn secondary" onclick="saveLockscreenAppearance()">Save lockscreen appearance</button>
       ${DB.setup.authBackgroundImage? `<button class="btn danger" onclick="clearAuthBackground()">Remove background</button>`:''}
     </div>
     <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Carousel quotes</h4></div>
@@ -15482,8 +15517,7 @@ function pageSettings(){
     <p class="field-hint">Pick the scene that's drawn behind the greeting — the colours still change automatically with the time of day.</p>
     <p class="field-hint" style="margin:6px 0 4px">Live preview — how this will look on the Home greeting:</p>
     <div class="quote-live-preview" id="weatherAmbiencePreviewBox">${PREFS.weatherAmbience ? renderWeatherAmbience() : '<p class="field-hint">Ambience is off — nothing will show on the Home greeting.</p>'}</div>
-    <p class="field-hint" style="margin:8px 0">Previewing live — click "Save" below to keep it, or leave this page without saving to discard.</p>
-    <button class="btn secondary" onclick="saveWeatherAmbiencePrefs()">Save</button>
+    <p class="field-hint" style="margin:8px 0">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
   </div>`;
 }
 let appearancePreviewDirty = false;
@@ -16747,7 +16781,7 @@ function saveClassSubjects(){
   DB.setup.classSubjects = Object.assign(DB.setup.classSubjects, map);
   saveDB(); render(); toast('Class subject distribution saved');
 }
-function saveClockPrefs(){
+function saveClockPrefs(silent){
   if($('#setClockFormat')) DB.setup.clockFormat = $('#setClockFormat').value;
   if($('#setDateFormat')) DB.setup.dateFormat = $('#setDateFormat').value;
   PREFS.clockFormat = DB.setup.clockFormat; PREFS.dateFormat = DB.setup.dateFormat;
@@ -16761,7 +16795,8 @@ function saveClockPrefs(){
   document.documentElement.style.setProperty('--date-font', (DATE_FONTS[PREFS.dateFont]||DATE_FONTS.default).stack);
   appearancePreviewDirty = false;
   clockPrefsPreviewOriginal = null;
-  savePrefs(); saveDB(); render(); toast('Preferences saved');
+  savePrefs(); saveDB();
+  if(!silent){ render(); toast('Preferences saved'); }
 }
 function saveInstitution(){
   DB.setup.institutionName = $('#setInstitution').value.trim();
@@ -17403,12 +17438,13 @@ function previewTermScheme(){
   const currentIdx = sel.value;
   sel.innerHTML = TERM_LABEL_SCHEMES[scheme].terms.map((t,i)=>`<option value="${i}" ${String(i)===currentIdx?'selected':''}>${esc(t)}</option>`).join('');
 }
-function saveWeatherAmbiencePrefs(){
+function saveWeatherAmbiencePrefs(silent){
   if($('#setWeatherAmbience')) PREFS.weatherAmbience = $('#setWeatherAmbience').checked;
   if($('#setWeatherStyle')) PREFS.weatherAmbienceStyle = $('#setWeatherStyle').value;
   if($('#setWeatherSet')) PREFS.weatherAmbienceSet = $('#setWeatherSet').value;
   weatherPrefsPreviewOriginal = null;
-  savePrefs(); render(); toast('Preferences saved');
+  savePrefs();
+  if(!silent){ render(); toast('Preferences saved'); }
 }
 function toggleWhatsAppReceipts(on){
   DB.setup.whatsappReceipts = on; saveDB();
