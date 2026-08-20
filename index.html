@@ -17761,8 +17761,14 @@ async function enterApp(){
   tickClocks();
   await loadPrefs();
   tickClocks();
-  // absolute failsafe: no matter what happens above, force the splash away after 9s
-  const failsafe = setTimeout(()=>{ $('#splash').classList.add('hide'); if(!$('#authScreen').classList.contains('show') && !$('#app').classList.contains('show')) showAuthScreen(); }, 9000);
+  // absolute failsafe: no matter what happens above, force the splash away after 5s
+  const failsafe = setTimeout(()=>{ 
+    const splash = $('#splash');
+    if(splash) splash.classList.add('hide'); 
+    if(!$('#authScreen')?.classList.contains('show') && !$('#app')?.classList.contains('show')) {
+      try { showAuthScreen(); } catch(e) { console.error('Failsafe showAuthScreen failed', e); }
+    }
+  }, 5000);
   try{
     ACCOUNTS = await loadAccounts();
     await loadAdminKey();
@@ -17776,19 +17782,21 @@ async function enterApp(){
     await persistSession(null);
     setTimeout(async ()=>{
       clearTimeout(failsafe);
-      $('#splash').classList.add('hide');
+      const splash = $('#splash');
+      if(splash) splash.classList.add('hide');
       try{
         showAuthScreen();
       }catch(e){
         console.error('Post-splash init failed', e);
-        showAuthScreen();
+        try { showAuthScreen(); } catch(e2) { console.error('Retry showAuthScreen failed', e2); }
       }
-    }, 7000);
+    }, 6000);
   }catch(e){
     console.error('Boot failed before splash could hand off', e);
     clearTimeout(failsafe);
-    $('#splash').classList.add('hide');
-    showAuthScreen();
+    const splash = $('#splash');
+    if(splash) splash.classList.add('hide');
+    try { showAuthScreen(); } catch(e2) { console.error('Emergency showAuthScreen failed', e2); }
   }
 })();
 
