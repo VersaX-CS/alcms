@@ -4175,7 +4175,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <div class="lock-loan-search">
           <span class="lls-ic" id="lockLoanSearchIcon">🔎</span>
           <input type="text" id="lockLoanSearchInput" placeholder="Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
-          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔍</button>
+          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔎</button>
           <div id="lockLoanSuggest" class="scan-suggest lock-search-suggest"></div>
         </div>
         <div class="auth-box">
@@ -6620,7 +6620,7 @@ const ICON_PACKS = {
     // Bright, colorful emoji throughout - consistent modern style
     analytics:'📈',dashboard:'📊',catalogue:'📚',users:'👥',equipment:'🧰',circulation:'🔄',reservations:'🔖',reminders:'📨',register:'📝',schedule:'🗓️',feedback:'💬',setup:'🛠️',settings:'⚙️',security:'🔐',activitylog:'📜',backup:'☁️',guide:'📖',about:'ℹ️',account:'👤',
     email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',
-    search:'🔍',tips:'💡',rocket:'🚀',
+    search:'🔎',tips:'💡',rocket:'🚀',
   }},
   outline: {label:'Outline', icons:{
     // Clean outline/stroke style - consistent thin-line aesthetic throughout
@@ -6852,7 +6852,7 @@ function applyIconPack(){
   setIcon('hamburgerBtn', 'menu', '☰');
   setIcon('topHomeBtn', 'home', '⌂');
   setIcon('globalSearchBtn', 'search', '🔎');
-  setIcon('lockLoanSearchBtn', 'search', '🔍');
+  setIcon('lockLoanSearchBtn', 'search', '🔎');
   setIcon('lockLoanSearchIcon', 'search', '🔎');
   setIcon('installHintDismissBtn', 'close', '✕');
 
@@ -7541,7 +7541,7 @@ function openTipsCarouselModal(title, tips){
   prevBtn.style.visibility = 'hidden';
 }
 const QUICK_TIPS = [
-  {ico:'🔍', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
+  {ico:'🔎', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
   {ico:'⇄', heading:'Issue & return', body:'Circulation lets you issue a title to a member in a few keystrokes, and batch several titles together with "+ Add to batch".'},
   {ico:'💾', heading:'Save often', body:'Use the save icon in the sidebar, or a checkpoint in Backup & Restore, so nothing is lost if the browser closes.'},
   {ico:'🔔', heading:'Stay on top of overdue loans', body:'The Reminder Log flags overdue titles, and can message the borrower (or their class teacher) on WhatsApp directly.'},
@@ -7978,7 +7978,7 @@ function GenericModule(cfg){
         </div>
         <div class="toolbar">
           <div class="search-input-wrap">
-            <input type="text" placeholder="🔍 Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
+            <input type="text" placeholder="🔎 Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
             <button type="button" class="search-clear-btn" id="qclear_${cfg.key}" style="${state.q?'':'display:none'}" title="Clear search" aria-label="Clear search">✕</button>
           </div>
           ${(cfg.filters||[]).map(f=>`
@@ -9717,7 +9717,7 @@ function bookFields(b={}, isNew){
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
     {row:[
-      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN">🔍 Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
+      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN">🔎 Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
       {key:'acc',label:'Accession No.',required:true, default:b.acc || nextSequentialId('ACC', DB.catalogue.map(x=>x.acc))},
     ]},
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
@@ -9916,7 +9916,7 @@ function deweyToMainClass(dewey){
 }
 /* Wires the ISBN field so scanning/typing a full ISBN into it (whether via an external
    keyboard-emulating barcode scanner, paste, or manual typing) triggers the same lookup as the
-   🔍 Look up button automatically — no extra click needed. External scanners almost always send
+   🔎 Look up button automatically — no extra click needed. External scanners almost always send
    an Enter keystroke after the code, so that's the primary trigger; blur is a fallback for
    scanners/workflows that don't. Guards against re-firing the same lookup twice in a row (e.g.
    Enter immediately followed by blur) with a small "last looked up" marker on the field. */
