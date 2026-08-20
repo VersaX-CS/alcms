@@ -3127,7 +3127,7 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
    the admin has scrolled — instead of the old pattern of a separate "Save" button living at the
    bottom of every single card. */
 .settings-toolbar{
-  position:sticky; top:0; z-index:80;
+  position:sticky; bottom:0; z-index:80;
   display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
   padding:12px 16px; margin-bottom:14px; box-shadow:var(--shadow);
@@ -3513,7 +3513,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
   .weather-label{ position:static !important; margin-bottom:10px;}
   .home-hero h1{ padding-right:0;}
 }
-.quicklinks{ grid-template-columns:repeat(auto-fit,minmax(190px,1fr));}
+.quicklinks{ grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin-left:-26px; margin-right:-26px; padding-left:26px; padding-right:26px;}
 .qlink{ padding:16px; cursor:pointer; transition:transform .12s, box-shadow .12s;}
 .qlink:hover{ transform:translateY(-2px); box-shadow:0 10px 24px rgba(0,0,0,.12);}
 .qlink .ico{ font-size:20px;}
@@ -3905,7 +3905,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   .kpi .val{ font-size:22px;}
   .charts-row{ grid-template-columns:1fr;}
   .two-col{ grid-template-columns:1fr;}
-  .quicklinks{ grid-template-columns:repeat(2,1fr);}
+  .quicklinks{ grid-template-columns:repeat(2,1fr); margin-left:-12px; margin-right:-12px; padding-left:12px; padding-right:12px;}
   .toolbar{ flex-wrap:nowrap; overflow-x:auto;}
   .toolbar input[type=text]{ min-width:180px;}
   .search-input-wrap{ flex:none;}
@@ -4012,7 +4012,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   .home-scroll-body{ margin:0 -10px; padding-left:10px; padding-right:10px; padding-bottom:92px;}
   .kpi{ padding:10px;}
   .grid.kpis{ grid-template-columns:repeat(2,1fr); gap:8px;}
-  .quicklinks{ grid-template-columns:1fr 1fr;}
+  .quicklinks{ grid-template-columns:1fr 1fr; margin-left:-10px; margin-right:-10px; padding-left:10px; padding-right:10px;}
   .id-card{ font-size:12.5px;}
 }
 html, body{ overflow-x:hidden;}
@@ -4220,7 +4220,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <button type="button" class="auth-mobile-back" onclick="mobileAuthBack()">← Back</button>
         <div class="lock-loan-search">
           <span class="lls-ic" id="lockLoanSearchIcon">🔎</span>
-          <input type="text" id="lockLoanSearchInput" placeholder="Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
+          <input type="text" id="lockLoanSearchInput" placeholder="◎ Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
           <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔎</button>
           <div id="lockLoanSuggest" class="scan-suggest lock-search-suggest"></div>
         </div>
@@ -4281,7 +4281,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       <div class="topbar-right">
         <div class="topbar-search" id="topbarSearch">
           <button class="icon-btn topbar-search-icon" id="globalSearchBtn" onclick="openGlobalSearch()" title="Search everything (Ctrl/Cmd+K)" aria-label="Search everything">🔎</button>
-          <input type="text" class="topbar-search-input" id="topbarSearchInput" placeholder="Search titles, members, transactions…" autocomplete="off"
+          <input type="text" class="topbar-search-input" id="topbarSearchInput" placeholder="◎ Search titles, members, transactions…" autocomplete="off"
             oninput="debouncedTopbarSearch(this.value)" onfocus="renderTopbarSearchResults(this.value)"
             onkeydown="if(event.key==='Escape'){this.value=''; this.blur(); closeTopbarSearch();}">
           <div class="topbar-search-results" id="topbarSearchResults"></div>
@@ -6808,7 +6808,7 @@ function applyAppBackground(){
   const opacity = appBackgroundPreviewDirty && opacityDraftEl ? (+opacityDraftEl.value||0) : (DB.setup.appBackgroundOpacity??15);
   const image = appBackgroundDraftImage || DB.setup.appBackgroundImage;
   if(image){
-    const bgImg = `linear-gradient(rgba(255,255,255,${1-opacity/100}),rgba(255,255,255,${1-opacity/100})), url('${image}')`;
+    const bgImg = `linear-gradient(rgba(0,0,0,${(1-opacity/100)*0.15}),rgba(0,0,0,${(1-opacity/100)*0.15})), url('${image}')`;
     el.style.backgroundImage = bgImg;
     el.style.backgroundSize = 'cover'; el.style.backgroundPosition = 'center'; el.style.backgroundAttachment = 'fixed';
     document.documentElement.style.setProperty('--section-bg-image', `url('${image}')`);
@@ -7730,7 +7730,7 @@ function fieldHtml(f,values){
     // long enough (e.g. "copy from an existing title") that jumping by first letter isn't useful.
     const opts = f.options||[];
     const usePlaceholder = f.placeholder !== false;
-    const placeholderText = typeof f.placeholder==='string' ? f.placeholder : ('Search '+String(f.label||'').replace(/\s*\*$/,''));
+    const placeholderText = typeof f.placeholder==='string' ? f.placeholder : ('◎ Search '+String(f.label||'').replace(/\s*\*$/,''));
     input = `<div class="quickpick fieldSearchSelect" id="ss_${f.key}" data-options-count="${opts.length}">
       <input type="text" id="f_${f.key}__search" autocomplete="off" placeholder="${esc(placeholderText)}" value="${esc(val)}">
       <input type="hidden" id="f_${f.key}" value="${esc(val)}">
@@ -8046,10 +8046,11 @@ function GenericModule(cfg){
         <div class="dropdown-menu" id="moremenu_${cfg.key}">${items.map(it=>`<a data-act="${it.act}" ${it.danger?'class="danger-text"':''}>${it.label}</a>`).join('')}</div>
       </div>` : promotedHtml;
     }
-    return `${menuHtml}
+    return `
       ${cfg.onAdd && isAdmin() ? `<button class="btn small" data-act="add-${cfg.key}">${cfg.addLabel||'+ Add'}</button>`:''}
-      ${cfg.onAdd && !isAdmin() ? `<span class="badge grey">View only</span>`:''}`;
-  }
+      ${cfg.onAdd && !isAdmin() ? `<span class="badge grey">View only</span>`:''}
+      ${menuHtml}
+    `;
   return {
     resultsHtml,
     render(){
@@ -8061,7 +8062,7 @@ function GenericModule(cfg){
         </div>
         <div class="toolbar">
           <div class="search-input-wrap">
-            <input type="text" placeholder="🔎 Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
+            <input type="text" placeholder="◎ Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
             <button type="button" class="search-clear-btn" id="qclear_${cfg.key}" style="${state.q?'':'display:none'}" title="Clear search" aria-label="Clear search">✕</button>
           </div>
           ${(cfg.filters||[]).map(f=>`
@@ -9771,7 +9772,7 @@ function pageCatalogue(){
         return {added, skipped};
       }
     }),
-    rowActions:r=>`<button class="btn secondary small" onclick="viewBook('${esc(r.acc)}')">Details</button> <button class="btn secondary small" onclick="openBookForm('${r.acc}')">Edit</button>`,
+    rowActions:r=>`<div style="display:flex;gap:6px;flex-wrap:nowrap"><button class="btn secondary small" onclick="viewBook('${esc(r.acc)}')">Details</button> <button class="btn secondary small" onclick="openBookForm('${r.acc}')">Edit</button></div>`,
     onRowDblClick:r=>`viewBook('${esc(r.acc)}')`,
   });
   return `<div id="mod_catalogue"></div>`;
@@ -9829,7 +9830,7 @@ function viewBook(acc){
 function bookFields(b={}, isNew){
   return [
     ...(isNew && DB.catalogue.length ? [
-      {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'searchselect', placeholder:'Search a title to copy from…',
+      {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'searchselect', placeholder:'◎ Search a title to copy from…',
         options: [...DB.catalogue].sort((a,b2)=>(a.title||'').localeCompare(b2.title||'')).map(x=>`${x.title} — ${x.acc}`),
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
@@ -10376,7 +10377,7 @@ function pageUsers(){
         return {added, skipped};
       }
     }),
-    rowActions:r=>`<button class="btn secondary small" onclick="openMemberProfile('${esc(r.id)}')">Profile</button> <button class="btn secondary small" onclick="openUserForm('${r.id}')">Edit</button>`,
+    rowActions:r=>`<div style="display:flex;gap:6px;flex-wrap:nowrap"><button class="btn secondary small" onclick="openMemberProfile('${esc(r.id)}')">Profile</button> <button class="btn secondary small" onclick="openUserForm('${r.id}')">Edit</button></div>`,
     onRowDblClick:r=>`openMemberProfile('${esc(r.id)}')`,
   });
   return `<div id="mod_users"></div>`;
@@ -11242,9 +11243,11 @@ function pageCirculationTable(){
       {label:'Borrowed', get:r=>fmtDate(r.dateBorrowed)}, {label:'Due', get:r=>fmtDate(r.dueDate)},
       {label:'Returned', get:r=>r.returnDate?fmtDate(r.returnDate):'—'}, {label:'Status', get:r=>r.status},
     ],
-    rowActions:r=>`<button class="btn secondary small" onclick="viewTransaction('${esc(r.trxId)}')">View</button>
+    rowActions:r=>`<div style="display:flex;gap:6px;flex-wrap:nowrap">
+      <button class="btn secondary small" onclick="viewTransaction('${esc(r.trxId)}')">View</button>
       ${!r.returnDate? `<button class="btn secondary small" onclick="renewLoan('${esc(r.trxId)}')">Renew</button>`:''}
-      ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}`,
+      ${DB.setup.fineEnabled && fineStatus(r).outstanding>0? `<button class="btn secondary small" onclick="openFinePaymentModal('${esc(r.trxId)}')">Record fine payment</button>`:''}
+    </div>`,
     onRowDblClick:r=>`viewTransaction('${esc(r.trxId)}')`,
     hidePrint:true,
     extraActions:[
@@ -11349,10 +11352,10 @@ function pageReservations(){
       {label:'Requested', get:r=>fmtDate(r.dateRequested)}, {label:'Status', get:r=>r.status},
       {label:'Queue position', get:r=>reservationQueuePosition(r)||''},
     ],
-    rowActions:r=>`
+    rowActions:r=>`<div style="display:flex;gap:6px;flex-wrap:nowrap">
       ${r.status==='READY'? `<button class="btn secondary small" onclick="fulfillReservation('${esc(r.id)}')">Mark fulfilled</button>`:''}
       ${r.status!=='FULFILLED'? `<button class="btn danger small" onclick="cancelReservation('${esc(r.id)}')">Cancel</button>`:''}
-    `,
+    </div>`,
     onRowDblClick:r=>`openMemberProfile('${esc(r.userId)}')`,
   });
   if(!isStaff()){
@@ -12256,7 +12259,7 @@ function openGlobalSearch(){
   wrap.id = 'gsearchBackdrop';
   wrap.innerHTML = `
     <div class="gsearch-box">
-      <input type="text" class="gsearch-input" id="gsearchInput" placeholder="Search titles, members, transactions…" autocomplete="off">
+      <input type="text" class="gsearch-input" id="gsearchInput" placeholder="◎ Search titles, members, transactions…" autocomplete="off">
       <div class="gsearch-results" id="gsearchResults"></div>
     </div>`;
   document.body.appendChild(wrap);
@@ -14163,10 +14166,11 @@ function pageFeedback(){
       {label:'🗑 Delete selected', onClick:deleteSelectedFeedback},
       {label:'⚠ Clear all', onClick:clearAllFeedback, danger:true},
     ] : [],
-    rowActions:r=>`
+    rowActions:r=>`<div style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
       <select onchange="setFeedbackStatus('${r.entryId}',this.value)"><option ${r.status==='NEW'?'selected':''}>NEW</option><option ${r.status==='IN REVIEW'?'selected':''}>IN REVIEW</option><option ${r.status==='RESOLVED'?'selected':''}>RESOLVED</option></select>
       <button class="btn secondary small" onclick="viewFeedback('${r.entryId}')">View</button>
-      ${isAdmin()? `<button class="btn secondary small" onclick="openFeedbackForm('${r.entryId}')">Edit</button> <button class="btn danger small" onclick="deleteFeedback('${r.entryId}')">Delete</button>`:''}`,
+      ${isAdmin()? `<button class="btn secondary small" onclick="openFeedbackForm('${r.entryId}')">Edit</button> <button class="btn danger small" onclick="deleteFeedback('${r.entryId}')">Delete</button>`:''}
+    </div>`,
   });
   return `<div id="mod_feedback"></div>`;
 }
@@ -14489,10 +14493,11 @@ function pageEquipment(){
         `<a onclick="closeRowMoreMenu(); openEquipmentHistoryModal('${esc(r.id)}')">History</a>`,
         `<a onclick="closeRowMoreMenu(); openEquipmentTagModal('${esc(r.id)}')">🏷 Tag</a>`,
       ].join('');
-      return `
+      return `<div style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
       <button class="btn secondary small" onclick="openEquipmentForm('${esc(r.id)}')">Edit</button>
       ${rowMoreButton(r.id, menuItems)}
-      <button class="btn danger small" onclick="deleteEquipmentItem('${esc(r.id)}')">Delete</button>`;
+      <button class="btn danger small" onclick="deleteEquipmentItem('${esc(r.id)}')">Delete</button>
+    </div>`;
     },
     onRowDblClick:r=>`openEquipmentForm('${esc(r.id)}')`,
   });
