@@ -17765,7 +17765,9 @@ async function enterApp(){
   const failsafe = setTimeout(()=>{ 
     const splash = $('#splash');
     if(splash) splash.classList.add('hide'); 
-    if(!$('#authScreen')?.classList.contains('show') && !$('#app')?.classList.contains('show')) {
+    const authScreen = $('#authScreen');
+    const app = $('#app');
+    if((!authScreen || !authScreen.classList.contains('show')) && (!app || !app.classList.contains('show'))) {
       try { showAuthScreen(); } catch(e) { console.error('Failsafe showAuthScreen failed', e); }
     }
   }, 5000);
