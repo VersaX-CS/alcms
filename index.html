@@ -8051,6 +8051,7 @@ function GenericModule(cfg){
       ${cfg.onAdd && !isAdmin() ? `<span class="badge grey">View only</span>`:''}
       ${menuHtml}
     `;
+  }
   return {
     resultsHtml,
     render(){
@@ -17761,16 +17762,8 @@ async function enterApp(){
   tickClocks();
   await loadPrefs();
   tickClocks();
-  // absolute failsafe: no matter what happens above, force the splash away after 5s
-  const failsafe = setTimeout(()=>{ 
-    const splash = $('#splash');
-    if(splash) splash.classList.add('hide'); 
-    const authScreen = $('#authScreen');
-    const app = $('#app');
-    if((!authScreen || !authScreen.classList.contains('show')) && (!app || !app.classList.contains('show'))) {
-      try { showAuthScreen(); } catch(e) { console.error('Failsafe showAuthScreen failed', e); }
-    }
-  }, 5000);
+  // absolute failsafe: no matter what happens above, force the splash away after 9s
+  const failsafe = setTimeout(()=>{ $('#splash').classList.add('hide'); if(!$('#authScreen').classList.contains('show') && !$('#app').classList.contains('show')) showAuthScreen(); }, 9000);
   try{
     ACCOUNTS = await loadAccounts();
     await loadAdminKey();
@@ -17784,21 +17777,19 @@ async function enterApp(){
     await persistSession(null);
     setTimeout(async ()=>{
       clearTimeout(failsafe);
-      const splash = $('#splash');
-      if(splash) splash.classList.add('hide');
+      $('#splash').classList.add('hide');
       try{
         showAuthScreen();
       }catch(e){
         console.error('Post-splash init failed', e);
-        try { showAuthScreen(); } catch(e2) { console.error('Retry showAuthScreen failed', e2); }
+        showAuthScreen();
       }
-    }, 6000);
+    }, 7000);
   }catch(e){
     console.error('Boot failed before splash could hand off', e);
     clearTimeout(failsafe);
-    const splash = $('#splash');
-    if(splash) splash.classList.add('hide');
-    try { showAuthScreen(); } catch(e2) { console.error('Emergency showAuthScreen failed', e2); }
+    $('#splash').classList.add('hide');
+    showAuthScreen();
   }
 })();
 
