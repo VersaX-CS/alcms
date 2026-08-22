@@ -3661,6 +3661,11 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 .hamburger{ display:inline-block; background:none; border:none; font-size:20px; color:var(--forest); padding:8px 12px; cursor:pointer; border-radius:6px; transition:background .12s ease;}
 .hamburger:hover{ background:rgba(0,0,0,.05);}
 .hamburger:focus-visible{ outline:2px solid var(--brass); outline-offset:2px;}
+.hamburger.pulse{ animation:hamburgerPulse 1.5s ease-in-out infinite; }
+@keyframes hamburgerPulse {
+  0%, 100% { transform:scale(1); opacity:1; }
+  50% { transform:scale(1.15); opacity:0.8; }
+}
 .icon-btn{ background:var(--card); border:1px solid var(--line); border-radius:8px; font-size:15px; padding:8px 12px; cursor:pointer; color:var(--forest); min-height:40px; display:inline-flex; align-items:center; justify-content:center; transition:border-color .12s ease, background .12s ease;}
 .icon-btn:hover{ border-color:var(--brass);}
 .icon-btn:focus-visible{ outline:2px solid var(--brass); outline-offset:2px;}
@@ -3678,8 +3683,8 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 
 /* ===== mobile floating action button ===== */
 .mobile-fab{
-  display:none; position:fixed; right:18px; z-index:46;
-  bottom:calc(72px + env(safe-area-inset-bottom,0) + 14px);
+  display:none; position:fixed; right:18px; z-index:150;
+  bottom:calc(24px + env(safe-area-inset-bottom,0));
   width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
   background:var(--brass); color:#221704; font-size:24px; line-height:1;
   align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.28);
@@ -3688,11 +3693,11 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 .mobile-fab:active{ transform:scale(.92);}
 @media (max-width:900px){
   .toast{
-    left:50%; right:auto; bottom:calc(72px + env(safe-area-inset-bottom,0) + 14px);
+    left:50%; right:auto; bottom:calc(24px + env(safe-area-inset-bottom,0));
     transform:translate(-50%,10px);
   }
   .toast.show{ transform:translate(-50%,0);}
-  .cloud-indicator{ bottom:calc(72px + env(safe-area-inset-bottom,0) + 14px);}
+  .cloud-indicator{ bottom:calc(24px + env(safe-area-inset-bottom,0));}
   /* Mobile touch target sizing — ensure at least 44x44px for all interactive elements */
   .btn, .icon-btn, button, select, input[type="checkbox"], input[type="radio"]{
     min-height: 44px;
@@ -3709,10 +3714,10 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 
 /* ===== calendar quick-access FAB — shown on every page, on every screen size ===== */
 .calendar-fab{
-  position:fixed; right:18px; z-index:46;
-  /* Stacked one slot above the mobile "+ Add" FAB (same right edge) so the two never overlap
-     on modules that have both — the extra offset is simply unused space on pages without one. */
-  bottom:calc(72px + env(safe-area-inset-bottom,0) + 14px + 52px + 12px);
+  position:fixed; right:18px; z-index:150;
+  /* On mobile, stack above the mobile "+ Add" FAB (same right edge) so the two never overlap.
+     On desktop, sits in the corner. */
+  bottom:calc(24px + env(safe-area-inset-bottom,0) + 52px + 12px);
   width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
   background:var(--forest); color:#F3EEDD; font-size:20px; line-height:1;
   display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.28);
@@ -4228,9 +4233,9 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       <div class="auth-form-col">
         <button type="button" class="auth-mobile-back" onclick="mobileAuthBack()">← Back</button>
         <div class="lock-loan-search">
-          <span class="lls-ic" id="lockLoanSearchIcon">🔎</span>
+          <span class="lls-ic" id="lockLoanSearchIcon"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQycn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/></span>
           <input type="text" id="lockLoanSearchInput" placeholder="◎ Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
-          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library">🔎</button>
+          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQycn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/></button>
           <div id="lockLoanSuggest" class="scan-suggest lock-search-suggest"></div>
         </div>
         <div class="auth-box">
@@ -4251,7 +4256,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 </div>
 
 <div id="app">
-  <div class="sidebar-overlay show" id="sidebarOverlay" onclick="toggleSidebar(false)"></div>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar(false)"></div>
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="mark">
@@ -4289,7 +4294,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       </div>
       <div class="topbar-right">
         <div class="topbar-search" id="topbarSearch">
-          <button class="icon-btn topbar-search-icon" id="globalSearchBtn" onclick="openGlobalSearch()" title="Search everything (Ctrl/Cmd+K)" aria-label="Search everything">🔎</button>
+          <button class="icon-btn topbar-search-icon" id="globalSearchBtn" onclick="openGlobalSearch()" title="Search everything (Ctrl/Cmd+K)" aria-label="Search everything"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/></button>
           <input type="text" class="topbar-search-input" id="topbarSearchInput" placeholder="◎ Search titles, members, transactions…" autocomplete="off"
             oninput="debouncedTopbarSearch(this.value)" onfocus="renderTopbarSearchResults(this.value)"
             onkeydown="if(event.key==='Escape'){this.value=''; this.blur(); closeTopbarSearch();}">
@@ -5684,7 +5689,14 @@ async function completeLogin(acc, opts={}){
   // That button stays visible everywhere it already was; this just also fires it once, for free,
   // the moment a new account signs up.
   if(opts.isNewSignup){
+    // Add pulse animation to hamburger to draw attention on first signup
+    const hamburgerBtn = $('#hamburgerBtn');
+    if(hamburgerBtn) hamburgerBtn.classList.add('pulse');
     setTimeout(()=> openGettingStartedModal(), 500);
+    // Remove pulse after 8 seconds (5+ cycles of the animation)
+    setTimeout(()=> {
+      if(hamburgerBtn) hamburgerBtn.classList.remove('pulse');
+    }, 8000);
   }
 }
 async function signOut(){
@@ -6634,6 +6646,8 @@ function tapFeedback(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(
 function svgIco(inner, vb){
   return `<svg viewBox="${vb||'0 0 24 24'}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 }
+const MICROSOFT_SEARCH_ICON = `<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/>`;
+
 const SVG_ICONS = {
   home: svgIco(`<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/>`),
   dashboard: svgIco(`<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>`),
@@ -6692,55 +6706,55 @@ const ICON_PACKS = {
   line: {label:'Line Icons (New)', icons:{
     // Cohesive outline/line-icon system (see SVG_ICONS above) - clean single-stroke aesthetic
     analytics:SVG_ICONS.analytics, dashboard:SVG_ICONS.dashboard, catalogue:SVG_ICONS.catalogue, users:SVG_ICONS.users, equipment:SVG_ICONS.equipment, circulation:SVG_ICONS.circulation, reservations:SVG_ICONS.reservations, reminders:SVG_ICONS.reminders, register:SVG_ICONS.register, schedule:SVG_ICONS.schedule, feedback:SVG_ICONS.feedback, setup:SVG_ICONS.setup, settings:SVG_ICONS.settings, security:SVG_ICONS.security, activitylog:SVG_ICONS.activitylog, backup:SVG_ICONS.backup, guide:SVG_ICONS.guide, about:SVG_ICONS.about, account:SVG_ICONS.account,
-    search:SVG_ICONS.search,
+    search:MICROSOFT_SEARCH_ICON,
   }},
   minimal: {label:'Minimal (default)', icons:{
     // Pure geometric/symbol characters - consistent outline/minimal style throughout
     analytics:'◔',dashboard:'▤',catalogue:'▥',users:'⚇',equipment:'▧',circulation:'⇄',reservations:'⚑',reminders:'✉',register:'✎',schedule:'▦',feedback:'✎',setup:'⚙',settings:'◐',security:'⛨',activitylog:'▨',backup:'⟲',guide:'❖',about:'ⓘ',account:'◯',
     email:'✉',whatsapp:'◉',call:'☏',query:'✎',camera:'▢',
-    search:'⌕',tips:'✦',rocket:'▲',
+    search:MICROSOFT_SEARCH_ICON,tips:'✦',rocket:'▲',
   }},
   emoji: {label:'Emoji', icons:{
     // Bright, colorful emoji throughout - consistent modern style
     analytics:'📈',dashboard:'📊',catalogue:'📚',users:'👥',equipment:'🧰',circulation:'🔄',reservations:'🔖',reminders:'📨',register:'📝',schedule:'🗓️',feedback:'💬',setup:'🛠️',settings:'⚙️',security:'🔐',activitylog:'📜',backup:'☁️',guide:'📖',about:'ℹ️',account:'👤',
     email:'📧',whatsapp:'💚',call:'☎️',query:'📮',camera:'📸',
-    search:'🔎',tips:'💡',rocket:'🚀',
+    search:MICROSOFT_SEARCH_ICON,tips:'💡',rocket:'🚀',
   }},
   outline: {label:'Outline', icons:{
     // Clean outline/stroke style - consistent thin-line aesthetic throughout
     analytics:'△',dashboard:'▢',catalogue:'▭',users:'⚇',equipment:'▧',circulation:'↺',reservations:'◇',reminders:'✎',register:'▤',schedule:'▦',feedback:'◫',setup:'✦',settings:'✧',security:'◈',activitylog:'▥',backup:'↻',guide:'▣',about:'○',account:'◯',
     email:'▷',whatsapp:'◉',call:'◐',query:'✎',camera:'▢',
-    search:'◎',tips:'☼',rocket:'▲',
+    search:MICROSOFT_SEARCH_ICON,tips:'☼',rocket:'▲',
   }},
   bold: {label:'Bold Symbols', icons:{
     // Bold, solid filled symbols - consistent thick/bold aesthetic throughout
     analytics:'✦',dashboard:'⬢',catalogue:'⬛',users:'⬟',equipment:'⬫',circulation:'⬈',reservations:'⬇',reminders:'⬗',register:'⬖',schedule:'⬔',feedback:'⬕',setup:'⬌',settings:'⬍',security:'⬎',activitylog:'⬏',backup:'⬐',guide:'⬒',about:'⬓',account:'⬑',
     email:'⬚',whatsapp:'⬞',call:'⬝',query:'⬜',camera:'◼',
-    search:'◆',tips:'◾',rocket:'◻',
+    search:MICROSOFT_SEARCH_ICON,tips:'◾',rocket:'◻',
   }},
   classic: {label:'Classic Serif', icons:{
     // Classic serif/decorative style - consistent ornate aesthetic throughout
     analytics:'✚',dashboard:'☰',catalogue:'❦',users:'ⱴ',equipment:'❊',circulation:'∞',reservations:'❀',reminders:'✍',register:'✎',schedule:'☷',feedback:'✒',setup:'⚒',settings:'☸',security:'♜',activitylog:'❁',backup:'☂',guide:'☘',about:'✦',account:'☺',
     email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',
-    search:'⚲',tips:'☀',rocket:'➤',
+    search:MICROSOFT_SEARCH_ICON,tips:'☀',rocket:'➤',
   }},
   duotone: {label:'Duotone Squares', icons:{
     // Geometric squares with fill patterns - consistent blocky aesthetic throughout
     analytics:'◨',dashboard:'▦',catalogue:'▤',users:'▥',equipment:'⬒',circulation:'◫',reservations:'⬓',reminders:'▧',register:'▨',schedule:'▩',feedback:'◪',setup:'◩',settings:'◭',security:'◮',activitylog:'⬔',backup:'◱',guide:'◳',about:'◲',account:'◰',
     email:'▧',whatsapp:'◨',call:'◧',query:'▨',camera:'▦',
-    search:'⬕',tips:'⬙',rocket:'⬚',
+    search:MICROSOFT_SEARCH_ICON,tips:'⬙',rocket:'⬚',
   }},
   nature: {label:'Nature', icons:{
     // Nature/flora theme - consistent organic/natural aesthetic throughout
     analytics:'🌱',dashboard:'🍃',catalogue:'🌿',users:'🐿️',equipment:'🪵',circulation:'🍂',reservations:'🌰',reminders:'🌾',register:'🪶',schedule:'🌤️',feedback:'🦋',setup:'🌲',settings:'🪴',security:'🦉',activitylog:'🌼',backup:'🌦️',guide:'🍄',about:'🌻',account:'🐦',
     email:'🍁',whatsapp:'🐝',call:'🐦',query:'🌾',camera:'🌷',
-    search:'🌻',tips:'🌞',rocket:'🌙',
+    search:MICROSOFT_SEARCH_ICON,tips:'🌞',rocket:'🌙',
   }},
   vintage: {label:'Vintage Decorative', icons:{
     // Vintage/antique decorative style - consistent classical aesthetic throughout
     analytics:'❧',dashboard:'✥',catalogue:'❦',users:'ⵁ',equipment:'⚒',circulation:'∞',reservations:'❃',reminders:'✒',register:'✎',schedule:'⌛',feedback:'❝',setup:'⚙',settings:'✺',security:'♜',activitylog:'❡',backup:'☔',guide:'☙',about:'✦',account:'☺',
     email:'✎',whatsapp:'☏',call:'☏',query:'❧',camera:'◎',
-    search:'⚲',tips:'☀',rocket:'⤒',
+    search:MICROSOFT_SEARCH_ICON,tips:'☀',rocket:'⤒',
   }},
 };
 function renderCustomQuoteRows(){
@@ -6943,9 +6957,9 @@ function applyIconPack(){
   setIcon('sidebarPinBtn', 'pin', '📌');
   setIcon('hamburgerBtn', 'menu', '☰');
   setIcon('topHomeBtn', 'home', '⌂');
-  setIcon('globalSearchBtn', 'search', '🔎');
-  setIcon('lockLoanSearchBtn', 'search', '🔎');
-  setIcon('lockLoanSearchIcon', 'search', '🔎');
+  setIcon('globalSearchBtn', 'search', MICROSOFT_SEARCH_ICON);
+  setIcon('lockLoanSearchBtn', 'search', MICROSOFT_SEARCH_ICON);
+  setIcon('lockLoanSearchIcon', 'search', MICROSOFT_SEARCH_ICON);
   setIcon('installHintDismissBtn', 'close', '✕');
 
   // Buttons that keep a trailing label/badge <span> alongside the icon — only the leading icon
@@ -7633,7 +7647,7 @@ function openTipsCarouselModal(title, tips){
   prevBtn.style.visibility = 'hidden';
 }
 const QUICK_TIPS = [
-  {ico:'🔎', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
+  {ico:'<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:24px; height:24px; display:inline-block; vertical-align:middle;" alt="Search"/>', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
   {ico:'⇄', heading:'Issue & return', body:'Circulation lets you issue a title to a member in a few keystrokes, and batch several titles together with "+ Add to batch".'},
   {ico:'💾', heading:'Save often', body:'Use the save icon in the sidebar, or a checkpoint in Backup & Restore, so nothing is lost if the browser closes.'},
   {ico:'🔔', heading:'Stay on top of overdue loans', body:'The Reminder Log flags overdue titles, and can message the borrower (or their class teacher) on WhatsApp directly.'},
@@ -9845,7 +9859,7 @@ function bookFields(b={}, isNew){
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
     {row:[
-      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN">🔎 Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
+      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;" alt="Search"/> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
       {key:'acc',label:'Accession No.',required:true, default:b.acc || nextSequentialId('ACC', DB.catalogue.map(x=>x.acc))},
     ]},
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
@@ -9854,7 +9868,7 @@ function bookFields(b={}, isNew){
     {row:[{key:'category',label:'Subject / Category', default:b.category},{key:'vol',label:'Volume', default:b.vol}]},
     {row:[
       {key:'mainClass',label:'Main class (Dewey)', type:'select', required:true, options:DB.setup.mainClasses, default:b.mainClass||'',
-        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library">🔎 Suggest</button>`,
+        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;" alt="Search"/> Suggest</button>`,
         subHint:'Suggested automatically from the title once you move on — always yours to change.'},
       {key:'shelf',label:'Shelf location', type:'select', required:true, options:DB.setup.shelves, default:b.shelf||'',
         subHint: (DB.setup.shelfMap && Object.keys(DB.setup.shelfMap).length) ? 'Auto-picked from the shelf mapping once a main class is set — always yours to change.' : undefined},
@@ -12028,7 +12042,7 @@ function renderLockLoanSuggest(){
   if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${esc(t.name)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
   if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · ${esc(r.status)}</span></span></div>`).join(''); }
   if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
-  if(!html){ box.classList.remove('open'); box.innerHTML=`<div class="empty" style="padding:16px 10px"><div class="big">🔎</div>No matches for "${esc(q)}"</div>`; box.classList.add('open'); positionFloatingPanel(box, input); return; }
+  if(!html){ box.classList.remove('open'); box.innerHTML=`<div class="empty" style="padding:16px 10px"><div class="big"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:32px; height:32px; display:inline-block;" alt="Search"/></div>No matches for "${esc(q)}"</div>`; box.classList.add('open'); positionFloatingPanel(box, input); return; }
   box.innerHTML = html;
   box.classList.add('open');
   positionFloatingPanel(box, input);
@@ -12313,7 +12327,7 @@ function buildGlobalSearchHTML(q){
   if(!DB) return '';
   const m = collectSearchMatches(q);
   if(!m.query){
-    return `<div class="empty" style="padding:20px 10px"><div class="big">🔎</div>Search books, members, loans, reminders and reservations across the whole app</div>`;
+    return `<div class="empty" style="padding:20px 10px"><div class="big"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:32px; height:32px; display:inline-block;" alt="Search"/></div>Search books, members, loans, reminders and reservations across the whole app</div>`;
   }
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="gsearch-row" onclick="globalSearchGoto('book','${esc(b.acc)}')"><span class="gs-ic">📘</span><div class="gs-main"><div class="ttl">${esc(b.title)}</div><div class="sub">${esc(b.acc)} · ${esc(b.available)}</div></div></div>`).join(''); }
@@ -12321,7 +12335,7 @@ function buildGlobalSearchHTML(q){
   if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub">${esc(t.name)} · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
   if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · ${esc(r.status)}</div></div></div>`).join(''); }
   if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
-  return html || `<div class="empty" style="padding:20px 10px"><div class="big">🔎</div>No matches for "${esc(q)}"</div>`;
+  return html || `<div class="empty" style="padding:20px 10px"><div class="big"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:32px; height:32px; display:inline-block;" alt="Search"/></div>No matches for "${esc(q)}"</div>`;
 }
 function renderGlobalSearchResults(q){
   const el = document.getElementById('gsearchResults'); if(!el) return;
@@ -14975,7 +14989,7 @@ function pageSetup(){
     <div class="panel-head"><h3>Shelf mapping by main class</h3><div class="hint">Every shelf can only belong to one class at a time.</div></div>
     <div id="shelfMapGrid">${renderShelfMapHtml()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button class="btn secondary" onclick="proposeShelfMap()">🔎 Auto-propose from current collection sizes</button>
+      <button class="btn secondary" onclick="proposeShelfMap()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;" alt="Search"/> Auto-propose from current collection sizes</button>
       <button class="btn" onclick="saveShelfMap()">Save shelf mapping</button>
     </div>
     <button class="btn secondary" style="margin-top:10px" onclick="autoGroupCatalogueIntoShelves()">📦 Auto-group existing catalogue items into these shelves</button>
@@ -17743,6 +17757,12 @@ function render(){
 /* ================= boot ================= */
 async function enterApp(){
   $('#app').classList.add('show');
+  // Ensure sidebar is closed on login
+  const sidebarOverlay = $('#sidebarOverlay');
+  const sidebar = $('#sidebar');
+  if(sidebarOverlay) sidebarOverlay.classList.remove('show');
+  if(sidebar) sidebar.classList.remove('open');
+  
   renderAccountChip();
   applyAppBackground();
   applyIconPack();
