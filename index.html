@@ -2946,10 +2946,16 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
 .topbar-right{ display:flex; align-items:center; gap:14px; flex:none;}
 .topbar-search{ position:relative; display:flex; align-items:center;}
 .topbar-search-input{ display:none;}
+/* Decorative icon sitting inside the input's left padding gutter (the input already reserves
+   36px there — see the min-width:901px block below). Hidden by default/on mobile, same as the
+   input itself: mobile shows the real .topbar-search-icon button instead (see .topbar-search
+   .topbar-search-icon rule below), so there's no input for this to sit inside of yet. */
+.topbar-search-input-icon{ display:none; position:absolute; left:13px; top:50%; transform:translateY(-50%); color:rgba(239,232,211,.55); pointer-events:none; z-index:1;}
 .topbar-search-results{ display:none; position:absolute; top:calc(100% + 8px); left:0; right:0; max-height:280px; overflow-y:auto; overflow-x:hidden;
   background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,.32); padding:6px; z-index:60; flex-direction:column;}
 .topbar-search-results.open{ display:flex;}
 @media (min-width:901px){
+  .topbar-search-input-icon{ display:flex;}
   /* The search box used to be sized off the raw viewport (min(440px,32vw)), so it never
      responded to how much room was actually left in the topbar — it stayed the same width
      whether the title was long, the sidebar was expanded, or other topbar icons took more
@@ -3470,7 +3476,8 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 .notif-row-close:hover{ color:var(--terracotta);}
 
 .gsearch-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:500; display:flex; align-items:flex-start; justify-content:center; padding-top:10vh;}
-.gsearch-box{ width:560px; max-width:92vw; max-height:70vh; background:var(--card); border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.35); overflow:hidden; display:flex; flex-direction:column;}
+.gsearch-box{ width:560px; max-width:92vw; max-height:70vh; background:var(--card); border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.35); overflow:hidden; display:flex; flex-direction:column; position:relative;}
+.gsearch-input-icon{ position:absolute; left:14px; top:22px; color:var(--muted); pointer-events:none; z-index:1;}
 .gsearch-input{ width:100%; border:none; border-bottom:1px solid var(--line); padding:16px 18px 16px 36px; font-size:15px; background:transparent; color:var(--ink);}
 .gsearch-input:focus{ outline:none;}
 .gsearch-results{ overflow:auto; padding:4px 6px; display:flex; flex-direction:column; gap:0;}
@@ -4233,9 +4240,9 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       <div class="auth-form-col">
         <button type="button" class="auth-mobile-back" onclick="mobileAuthBack()">← Back</button>
         <div class="lock-loan-search">
-          <span class="lls-ic" id="lockLoanSearchIcon"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQycn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/></span>
-          <input type="text" id="lockLoanSearchInput" placeholder="◎ Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
-          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQycn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/></button>
+          <span class="lls-ic" id="lockLoanSearchIcon"><svg viewBox="0 0 20 20" width="15" height="15" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></span>
+          <input type="text" id="lockLoanSearchInput" placeholder="Search titles, members, loans, reminders, reservations…" autocomplete="off" oninput="renderLockLoanSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();lockLoanSearchSubmit();}else if(event.key==='Escape'){if(this.value){this.value='';renderLockLoanSuggest();}else{this.blur();}}">
+          <button type="button" class="icon-btn" id="lockLoanSearchBtn" onclick="lockLoanSearchSubmit()" title="Search the library" aria-label="Search the library"><svg viewBox="0 0 20 20" width="15" height="15" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></button>
           <div id="lockLoanSuggest" class="scan-suggest lock-search-suggest"></div>
         </div>
         <div class="auth-box">
@@ -4294,8 +4301,9 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       </div>
       <div class="topbar-right">
         <div class="topbar-search" id="topbarSearch">
-          <button class="icon-btn topbar-search-icon" id="globalSearchBtn" onclick="openGlobalSearch()" title="Search everything (Ctrl/Cmd+K)" aria-label="Search everything"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/></button>
-          <input type="text" class="topbar-search-input" id="topbarSearchInput" placeholder="◎ Search titles, members, transactions…" autocomplete="off"
+          <button class="icon-btn topbar-search-icon" id="globalSearchBtn" onclick="openGlobalSearch()" title="Search everything (Ctrl/Cmd+K)" aria-label="Search everything"><svg viewBox="0 0 20 20" width="16" height="16" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="display:inline-block; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></button>
+          <span class="topbar-search-input-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="15" height="15" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></span>
+          <input type="text" class="topbar-search-input" id="topbarSearchInput" placeholder="Search titles, members, transactions…" autocomplete="off"
             oninput="debouncedTopbarSearch(this.value)" onfocus="renderTopbarSearchResults(this.value)"
             onkeydown="if(event.key==='Escape'){this.value=''; this.blur(); closeTopbarSearch();}">
           <div class="topbar-search-results" id="topbarSearchResults"></div>
@@ -6646,7 +6654,13 @@ function tapFeedback(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(
 function svgIco(inner, vb){
   return `<svg viewBox="${vb||'0 0 24 24'}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 }
-const MICROSOFT_SEARCH_ICON = `<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:16px; height:16px; display:inline-block; vertical-align:middle;" alt="Search"/>`;
+/* Was previously a base64 PNG data-URI, but that PNG data was truncated (missing its closing
+   chunk) — Chrome happened to render the partial pixel data anyway, but it wasn't valid image
+   data and could fail to decode elsewhere (other browsers, html2canvas/PDF export, etc). Replaced
+   with a clean inline SVG in the Windows 10/11 Fluent "Search" glyph style — a plain circle +
+   handle magnifying glass. Uses currentColor so it follows theme/text colour like every other
+   line icon instead of being a fixed-colour raster image. */
+const MICROSOFT_SEARCH_ICON = `<svg viewBox="0 0 20 20" width="16" height="16" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="display:inline-block; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg>`;
 
 const SVG_ICONS = {
   home: svgIco(`<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/>`),
@@ -6669,7 +6683,8 @@ const SVG_ICONS = {
   guide: svgIco(`<circle cx="12" cy="12" r="9"/><path d="M15.2 8.8l-2 6-6 2 2-6 6-2z"/>`),
   about: svgIco(`<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.2"/><circle cx="12" cy="7.7" r="1"/>`),
   account: svgIco(`<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.3 18.5a6 6 0 0 1 11.4 0"/>`),
-  search: svgIco(`<circle cx="10.5" cy="10.5" r="6"/><line x1="15.2" y1="15.2" x2="20" y2="20"/>`),
+  // search icon lives in MICROSOFT_SEARCH_ICON above (Fluent-style filled glyph), not here —
+  // every icon pack references that constant directly, so no stroke-style entry is needed.
   sun: svgIco(`<circle cx="12" cy="12" r="4.3"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/>`),
   moon: svgIco(`<path d="M20 14.6a8.5 8.5 0 1 1-9.6-13 7 7 0 0 0 9.6 13z"/>`),
   pin: svgIco(`<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>`),
@@ -7647,7 +7662,7 @@ function openTipsCarouselModal(title, tips){
   prevBtn.style.visibility = 'hidden';
 }
 const QUICK_TIPS = [
-  {ico:'<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:24px; height:24px; display:inline-block; vertical-align:middle;" alt="Search"/>', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
+  {ico:'<svg viewBox="0 0 20 20" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg>', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
   {ico:'⇄', heading:'Issue & return', body:'Circulation lets you issue a title to a member in a few keystrokes, and batch several titles together with "+ Add to batch".'},
   {ico:'💾', heading:'Save often', body:'Use the save icon in the sidebar, or a checkpoint in Backup & Restore, so nothing is lost if the browser closes.'},
   {ico:'🔔', heading:'Stay on top of overdue loans', body:'The Reminder Log flags overdue titles, and can message the borrower (or their class teacher) on WhatsApp directly.'},
@@ -7753,7 +7768,7 @@ function fieldHtml(f,values){
     // long enough (e.g. "copy from an existing title") that jumping by first letter isn't useful.
     const opts = f.options||[];
     const usePlaceholder = f.placeholder !== false;
-    const placeholderText = typeof f.placeholder==='string' ? f.placeholder : ('◎ Search '+String(f.label||'').replace(/\s*\*$/,''));
+    const placeholderText = typeof f.placeholder==='string' ? f.placeholder : ('Search '+String(f.label||'').replace(/\s*\*$/,''));
     input = `<div class="quickpick fieldSearchSelect" id="ss_${f.key}" data-options-count="${opts.length}">
       <input type="text" id="f_${f.key}__search" autocomplete="off" placeholder="${esc(placeholderText)}" value="${esc(val)}">
       <input type="hidden" id="f_${f.key}" value="${esc(val)}">
@@ -8086,7 +8101,7 @@ function GenericModule(cfg){
         </div>
         <div class="toolbar">
           <div class="search-input-wrap">
-            <input type="text" placeholder="◎ Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
+            <input type="text" placeholder="Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
             <button type="button" class="search-clear-btn" id="qclear_${cfg.key}" style="${state.q?'':'display:none'}" title="Clear search" aria-label="Clear search">✕</button>
           </div>
           ${(cfg.filters||[]).map(f=>`
@@ -9854,12 +9869,12 @@ function viewBook(acc){
 function bookFields(b={}, isNew){
   return [
     ...(isNew && DB.catalogue.length ? [
-      {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'searchselect', placeholder:'◎ Search a title to copy from…',
+      {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'searchselect', placeholder:'Search a title to copy from…',
         options: [...DB.catalogue].sort((a,b2)=>(a.title||'').localeCompare(b2.title||'')).map(x=>`${x.title} — ${x.acc}`),
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
     {row:[
-      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;" alt="Search"/> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
+      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
       {key:'acc',label:'Accession No.',required:true, default:b.acc || nextSequentialId('ACC', DB.catalogue.map(x=>x.acc))},
     ]},
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
@@ -9868,7 +9883,7 @@ function bookFields(b={}, isNew){
     {row:[{key:'category',label:'Subject / Category', default:b.category},{key:'vol',label:'Volume', default:b.vol}]},
     {row:[
       {key:'mainClass',label:'Main class (Dewey)', type:'select', required:true, options:DB.setup.mainClasses, default:b.mainClass||'',
-        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;" alt="Search"/> Suggest</button>`,
+        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`,
         subHint:'Suggested automatically from the title once you move on — always yours to change.'},
       {key:'shelf',label:'Shelf location', type:'select', required:true, options:DB.setup.shelves, default:b.shelf||'',
         subHint: (DB.setup.shelfMap && Object.keys(DB.setup.shelfMap).length) ? 'Auto-picked from the shelf mapping once a main class is set — always yours to change.' : undefined},
@@ -12042,7 +12057,7 @@ function renderLockLoanSuggest(){
   if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${esc(t.name)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
   if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · ${esc(r.status)}</span></span></div>`).join(''); }
   if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
-  if(!html){ box.classList.remove('open'); box.innerHTML=`<div class="empty" style="padding:16px 10px"><div class="big"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:32px; height:32px; display:inline-block;" alt="Search"/></div>No matches for "${esc(q)}"</div>`; box.classList.add('open'); positionFloatingPanel(box, input); return; }
+  if(!html){ box.classList.remove('open'); box.innerHTML=`<div class="empty" style="padding:16px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`; box.classList.add('open'); positionFloatingPanel(box, input); return; }
   box.innerHTML = html;
   box.classList.add('open');
   positionFloatingPanel(box, input);
@@ -12283,7 +12298,8 @@ function openGlobalSearch(){
   wrap.id = 'gsearchBackdrop';
   wrap.innerHTML = `
     <div class="gsearch-box">
-      <input type="text" class="gsearch-input" id="gsearchInput" placeholder="◎ Search titles, members, transactions…" autocomplete="off">
+      <span class="gsearch-input-icon" aria-hidden="true"><svg viewBox="0 0 20 20" width="15" height="15" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></span>
+      <input type="text" class="gsearch-input" id="gsearchInput" placeholder="Search titles, members, transactions…" autocomplete="off">
       <div class="gsearch-results" id="gsearchResults"></div>
     </div>`;
   document.body.appendChild(wrap);
@@ -12327,7 +12343,7 @@ function buildGlobalSearchHTML(q){
   if(!DB) return '';
   const m = collectSearchMatches(q);
   if(!m.query){
-    return `<div class="empty" style="padding:20px 10px"><div class="big"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:32px; height:32px; display:inline-block;" alt="Search"/></div>Search books, members, loans, reminders and reservations across the whole app</div>`;
+    return `<div class="empty" style="padding:20px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>Search books, members, loans, reminders and reservations across the whole app</div>`;
   }
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="gsearch-row" onclick="globalSearchGoto('book','${esc(b.acc)}')"><span class="gs-ic">📘</span><div class="gs-main"><div class="ttl">${esc(b.title)}</div><div class="sub">${esc(b.acc)} · ${esc(b.available)}</div></div></div>`).join(''); }
@@ -12335,7 +12351,7 @@ function buildGlobalSearchHTML(q){
   if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub">${esc(t.name)} · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
   if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · ${esc(r.status)}</div></div></div>`).join(''); }
   if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
-  return html || `<div class="empty" style="padding:20px 10px"><div class="big"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:32px; height:32px; display:inline-block;" alt="Search"/></div>No matches for "${esc(q)}"</div>`;
+  return html || `<div class="empty" style="padding:20px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`;
 }
 function renderGlobalSearchResults(q){
   const el = document.getElementById('gsearchResults'); if(!el) return;
@@ -14989,7 +15005,7 @@ function pageSetup(){
     <div class="panel-head"><h3>Shelf mapping by main class</h3><div class="hint">Every shelf can only belong to one class at a time.</div></div>
     <div id="shelfMapGrid">${renderShelfMapHtml()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button class="btn secondary" onclick="proposeShelfMap()"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABCCAYAAAAbtPsfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKSSURBVHhe7Zo9rzFBFIAPNyIRjYivBC2FSkPjByioJGqdSq98f4hClCqJQpQqShJEoVALEfERHwn3PfvOTSTv5R7c7MxuzpOImbNbPTlz9szuWBwOxxWYh1jFP/MAlkSAJRFgSQRYEgGWRECJFuB6VbsLkSoJ5Xi9Xkgmk+Dz+cBut4sraiFVksfjgWw2C9PpFGazGez3e3FFLaRJwizKZDKw2WxgPB6LqJpILdx+v1/LINWRJgkzCWuQqkvsFm4BCLAkAiyJgCklYd8Vi8XE7H0+bDbbHzHWFSzciUQCRqORiLyHy+WCfD4P6XQanE4nBINBrcXA+GQyEXe9hrQ+6XK5QKlUgnq9LiLvUS6XNRmNRkNE/onL5XJwOp2gVCoRUSwW4Xe9XudaVfsjTRJmEmZRJpOBzWYDrVZLRN5DpVJBv98X0ecxhSSs8CGfz4PVahWRf2I0GmEymYjpv1DMJCkVCpBKpWAymYiIiJiCqqaQ9OXbNzGL31EqFYiG/0/1er1n87NJUqvVoF6vP5ubh1ydXq8HZ2dnoNlsRq9T0tXVFZycnIDX6325JjZVaI0f0Xk8HpBlGWSzWWi329rjC4UCxGKxt+AKuVwORqMRmE6nUKvV4HA4wHQ6hVwuB8fHx+D1ei3L/wtQs36SzGZzCIVC8PHxAalUCgqFAsiyDNvtFg6HAwwGA7DZbLBcLsWFflL/Wr1eV9OzGoxGo7rdbhCLxeB4PArpv1P1ej1N+/0eOp2O+Gvg+t81TdO0w+HQVD9JXl9fhfSfSaPRaGazWdPpdIQ0X0zSK4qiZowxu90uprxB+0aRLNSxAAEyxrhaLZXfJi3gK+GwLJO6rquZTAYymQicn5+Dw+Foeapk4bX2SqaI/pnZqgNz6eQwWYJL+h7L5VJ83DFb9YIlEWBJBFgSAf8Au+LfVMlLQOgAAAAASUVORK5CYII=" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;" alt="Search"/> Auto-propose from current collection sizes</button>
+      <button class="btn secondary" onclick="proposeShelfMap()"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Auto-propose from current collection sizes</button>
       <button class="btn" onclick="saveShelfMap()">Save shelf mapping</button>
     </div>
     <button class="btn secondary" style="margin-top:10px" onclick="autoGroupCatalogueIntoShelves()">📦 Auto-group existing catalogue items into these shelves</button>
@@ -17757,11 +17773,21 @@ function render(){
 /* ================= boot ================= */
 async function enterApp(){
   $('#app').classList.add('show');
-  // Ensure sidebar is closed on login
+  // Ensure sidebar is closed on login. 'open' only governs the mobile drawer — the desktop
+  // sidebar is visible by default (its base CSS is translateX(0)) and only hides once
+  // 'desktop-collapsed' is added, so that has to be set here too or the sidebar shows as
+  // active on every fresh login even though nothing asked it to open. sidebarPersistMode
+  // (pin) always starts false each load — it's session-only, never persisted — so it's safe
+  // to collapse unconditionally here; setSidebarPersist() is what re-opens/pins it later if
+  // the person chooses to.
   const sidebarOverlay = $('#sidebarOverlay');
   const sidebar = $('#sidebar');
   if(sidebarOverlay) sidebarOverlay.classList.remove('show');
-  if(sidebar) sidebar.classList.remove('open');
+  if(sidebar){
+    sidebar.classList.remove('open');
+    sidebar.classList.remove('pinned');
+    sidebar.classList.add('desktop-collapsed');
+  }
   
   renderAccountChip();
   applyAppBackground();
