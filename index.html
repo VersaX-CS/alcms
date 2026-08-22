@@ -3121,16 +3121,25 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
 
 .panel{ padding:18px 20px; margin-bottom:18px;}
 .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;}
-/* Personalization page: one sticky toolbar holding the global Save + Reset buttons, floating
-   at the top of the scroll area (inside .content, which is what actually scrolls) so it stays
-   reachable no matter how far down the long list of appearance/typography/lockscreen/etc cards
-   the admin has scrolled — instead of the old pattern of a separate "Save" button living at the
-   bottom of every single card. */
+/* Personalization page: one toolbar holding the global Save + Reset buttons, pinned to the
+   bottom of the actual browser viewport (position:fixed, not just sticky-within-.content) so it
+   stays visible on screen at all times no matter how far down the long list of
+   appearance/typography/lockscreen/etc cards the admin has scrolled — instead of the old pattern
+   of a separate "Save" button living at the bottom of every single card. Left offset matches the
+   pinned sidebar's real width (see the .sidebar.pinned ~ .main rule below) so it never runs
+   underneath it; the matching padding-bottom spacer at the end of pageSettings() keeps the last
+   card from being hidden behind it. */
 .settings-toolbar{
-  position:sticky; bottom:0; z-index:80;
+  position:fixed; left:0; right:0; bottom:0; z-index:80;
   display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-  padding:12px 16px; margin-bottom:14px; box-shadow:var(--shadow);
+  background:var(--card); border-top:1px solid var(--line);
+  padding:12px 26px; box-shadow:0 -6px 20px rgba(0,0,0,.14);
+}
+@media (min-width:901px){
+  .sidebar.pinned ~ .main .settings-toolbar{ left:260px;}
+}
+@media (max-width:900px){
+  .settings-toolbar{ left:0; padding:12px 14px; bottom:calc(72px + env(safe-area-inset-bottom,0));}
 }
 .settings-toolbar .hint{ flex:1 1 auto; min-width:160px;}
 /* Only the primary action (+ Add) and the "⋯ More" trigger stay visible in the header row;
@@ -15330,7 +15339,7 @@ function pageSettings(){
   <div class="card panel">
     <div class="panel-head"><h3>Theme sets</h3><div class="hint">One-click bundles of colour palette, typography, icon pack, transitions, and section/modal/title-bar style — pick a preset, tweak it, or build your own from scratch</div></div>
     ${editingThemeSetKey ? `<div class="field-hint" style="background:rgba(184,134,62,.12);border:1px solid var(--brass);border-radius:8px;padding:8px 10px;margin-bottom:10px">
-      Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page, click the Save button at the top to apply them, then come back here.
+      Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page, click the Save button at the bottom to apply them, then come back here.
       <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary small" onclick="updateThemeSet()">💾 Update this theme</button>
         <button class="btn secondary small" onclick="stopEditingThemeSet()">Done editing</button>
@@ -15359,7 +15368,7 @@ function pageSettings(){
       <div class="field"><label>Theme</label><select id="setTheme" onchange="previewTheme(this.value)"><option value="system" ${PREFS.theme==='system'?'selected':''}>Match system</option><option value="light" ${PREFS.theme==='light'?'selected':''}>Light</option><option value="dark" ${PREFS.theme==='dark'?'selected':''}>Dark</option></select></div>
       <div class="field"><label>Colour palette</label><select id="setPalette" onchange="previewPalette(this.value)">${Object.entries(allPalettes()).map(([k,p])=>`<option value="${k}" ${PREFS.palette===k?'selected':''}>${esc(p.label)}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
+    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
     <div class="palette-swatch-row" id="paletteSwatches">${Object.entries(allPalettes()).map(([k,p])=>`
       <div class="palette-chip ${PREFS.palette===k?'selected':''}" onclick="document.getElementById('setPalette').value='${k}'; previewPalette('${k}')" title="${esc(p.label)}">
         <span class="palette-chip-dots">
@@ -15393,7 +15402,7 @@ function pageSettings(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Typography</h3><div class="hint">Fonts, weight and size — applies across the whole app</div></div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
+    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
     <div class="field-row">
       <div class="field">
         <label style="font-weight:700;display:block;margin-bottom:6px">Heading</label>
@@ -15427,7 +15436,7 @@ function pageSettings(){
       <div class="field"><label>Background image</label><input type="file" accept="image/*" id="appBgInput" onchange="previewAppBackground()"></div>
       <div class="field"><label>Opacity (${DB.setup.appBackgroundOpacity??15}%)</label><input type="range" id="appBgOpacity" min="0" max="60" value="${DB.setup.appBackgroundOpacity??15}" oninput="previewAppBackground()"></div>
     </div>
-    <p class="field-hint" style="margin:-6px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
+    <p class="field-hint" style="margin:-6px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       ${DB.setup.appBackgroundImage? `<button class="btn danger" onclick="clearAppBackground()">Remove background</button>`:''}
     </div>
@@ -15457,7 +15466,7 @@ function pageSettings(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Icons &amp; motion</h3><div class="hint">Nav icon style and how modals animate</div></div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
+    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
     <div class="field-row">
       <div class="field"><label>Icon pack</label><select id="setIconPack" onchange="previewPersonalizationExtras()">${Object.entries(ICON_PACKS).map(([k,v])=>`<option value="${k}" ${(PREFS.iconPack||'minimal')===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Modal transition</label><select id="setTransitionStyle" onchange="previewPersonalizationExtras()">${Object.entries(TRANSITION_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.transitionStyle||'scale')===k?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
@@ -15475,7 +15484,7 @@ function pageSettings(){
       <div class="field"><label>Clock font</label><select id="setClockFont" onchange="applyClockFont(this.value)">${Object.entries(CLOCK_FONTS).map(([k,v])=>`<option value="${k}" ${(PREFS.clockFont||'digital')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="field"><label>Date font</label><select id="setDateFontDisplay" onchange="applyDateFont(this.value)">${Object.entries(DATE_FONTS).map(([k,v])=>`<option value="${k}" ${(PREFS.dateFont||'default')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
+    <p class="field-hint" style="margin:4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Lockscreen (sign-in screen)</h3><div class="hint">Background image, its opacity, the login box appearance, the clock style, decoration and quotes shown in the carousel</div></div>
@@ -15484,7 +15493,7 @@ function pageSettings(){
       <div class="field"><label>Background opacity (${DB.setup.authBackgroundOpacity??45}%)</label><input type="range" id="authBgOpacity" min="10" max="90" value="${DB.setup.authBackgroundOpacity??45}" oninput="this.previousElementSibling.textContent=this.previousElementSibling.textContent.replace(/\\d+/,this.value); previewAuthBackground();"></div>
       <div class="field"><label>Login box opacity (<span id="authBoxOpacityVal">${PREFS.authBoxOpacity??90}</span>%)</label><input type="range" id="setAuthBoxOpacity" min="30" max="100" value="${PREFS.authBoxOpacity??90}" oninput="document.getElementById('authBoxOpacityVal').textContent=this.value; document.documentElement.style.setProperty('--auth-box-opacity', this.value/100);"></div>
     </div>
-    <p class="field-hint">Login box opacity controls how see-through the frosted glass sign-in form container is over the background. Its colour is set above, in Backgrounds → Login container colour. The background image and opacity above preview live on the (currently hidden) sign-in screen — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
+    <p class="field-hint">Login box opacity controls how see-through the frosted glass sign-in form container is over the background. Its colour is set above, in Backgrounds → Login container colour. The background image and opacity above preview live on the (currently hidden) sign-in screen — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
     <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Sign-in screen clock &amp; decoration style</h4><div class="hint">Clock style, and the corner flourish behind the sign-in form</div></div>
     <div class="field-row">
       <div class="field"><label>Clock style</label><select id="setAuthClockStyle" onchange="previewClockDatePrefs()">${Object.entries(AUTH_CLOCK_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.authClockStyle||'digital')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
@@ -15523,8 +15532,9 @@ function pageSettings(){
     <p class="field-hint">Pick the scene that's drawn behind the greeting — the colours still change automatically with the time of day.</p>
     <p class="field-hint" style="margin:6px 0 4px">Live preview — how this will look on the Home greeting:</p>
     <div class="quote-live-preview" id="weatherAmbiencePreviewBox">${PREFS.weatherAmbience ? renderWeatherAmbience() : '<p class="field-hint">Ambience is off — nothing will show on the Home greeting.</p>'}</div>
-    <p class="field-hint" style="margin:8px 0">Previewing live — changes apply live as you edit; use the Save button at the top of the page to keep them.</p>
-  </div>`;
+    <p class="field-hint" style="margin:8px 0">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+  </div>
+  <div style="height:70px" aria-hidden="true"></div>`;
 }
 let appearancePreviewDirty = false;
 function previewPalette(name){ appearancePreviewDirty = true; applyPalette(name); }
