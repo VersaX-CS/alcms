@@ -3383,7 +3383,7 @@ body[data-transition="bounce"] .modal-backdrop.closing .modal{ animation:modalSc
    than letting the whole group wrap onto separate rows. */
 .signout-actions{ flex-wrap:nowrap; gap:6px;}
 .signout-actions .btn{ flex:1 1 0; min-width:0; padding:8px 6px; font-size:12.5px; text-align:center; white-space:normal; line-height:1.25;}
-.field{ margin-bottom:12px; display:flex; flex-direction:column; gap:5px;}
+.field{ margin-bottom:12px; display:flex; flex-direction:column; gap:5px; min-width:0;}
 .field label{ font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted-label);}
 .field input,.field select,.field textarea{
   padding:9px 10px; border:1px solid var(--line); border-radius:7px; font-size:13.5px; background:#fffef9;
@@ -3394,6 +3394,12 @@ body[data-transition="bounce"] .modal-backdrop.closing .modal{ animation:modalSc
 }
 .field textarea{ resize:vertical; min-height:60px;}
 .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+/* Fields with an "extra" button (e.g. ISBN's Look up/Scan, Main class's Suggest) put the
+   input/select and the button(s) in a flex row. Without this, the input/select has no
+   explicit width and the flex row's content (input + fixed-width buttons) can be wider than
+   the field-row's 1fr column, overflowing into the neighbouring field's box. flex:1 + min-width:0
+   lets the input/select shrink to fit, and the buttons (flex:none, set inline) hold their size. */
+.field-with-extra > input, .field-with-extra > select{ flex:1; min-width:0;}
 .field-row-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
 @media (max-width:900px){ .field-row-3{ grid-template-columns:1fr;} }
 .palette-swatch-row{ display:flex; flex-wrap:wrap; gap:10px;}
@@ -7798,7 +7804,7 @@ function fieldHtml(f,values){
       input = `<input id="f_${f.key}" type="${f.type||'text'}" value="${esc(val)}" ${f.readonly?'readonly':''}>`;
     }
   }
-  return `<div class="field" ${f.wrapId?`id="${f.wrapId}"`:''} ${f.hidden?'style="display:none"':''}><label>${esc(f.label)}${f.required?' *':''}</label>${f.extra? `<div style="display:flex;gap:6px;align-items:center">${input}${f.extra}</div>` : input}${f.subHint?`<p class="field-hint" id="hint_${f.key}" style="margin-top:4px">${f.subHint}</p>`:''}</div>`;
+  return `<div class="field" ${f.wrapId?`id="${f.wrapId}"`:''} ${f.hidden?'style="display:none"':''}><label>${esc(f.label)}${f.required?' *':''}</label>${f.extra? `<div class="field-with-extra" style="display:flex;gap:6px;align-items:center;min-width:0">${input}${f.extra}</div>` : input}${f.subHint?`<p class="field-hint" id="hint_${f.key}" style="margin-top:4px">${f.subHint}</p>`:''}</div>`;
 }
 /* Wires up every 'searchselect' field rendered by fieldHtml(): typing filters the option list by
    matching each typed word anywhere in the option text (order-independent, e.g. typing "harry
