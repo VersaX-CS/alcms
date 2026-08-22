@@ -6843,10 +6843,20 @@ function previewAppBackground(){
 function applyAppBackground(){
   const el = document.querySelector('.content'); if(!el || !DB || !DB.setup) return;
   const opacityDraftEl = document.getElementById('appBgOpacity');
-  const opacity = appBackgroundPreviewDirty && opacityDraftEl ? (+opacityDraftEl.value||0) : (DB.setup.appBackgroundOpacity??15);
+  const opacity = appBackgroundPreviewDirty && opacityDraftEl ? (+opacityDraftEl.value||0) : (DB.setup.appBackgroundOpacity??60);
   const image = appBackgroundDraftImage || DB.setup.appBackgroundImage;
   if(image){
-    const bgImg = `linear-gradient(rgba(0,0,0,${(1-opacity/100)*0.15}),rgba(0,0,0,${(1-opacity/100)*0.15})), url('${image}')`;
+    // Cross-fade the image against the page's own background colour rather than layering a
+    // near-black tint on top of it. The old version always painted the image at full strength
+    // and only nudged a dark scrim between alpha 0.06 and 0.15 across the *entire* slider — a
+    // ~0.09 swing that was practically invisible, which is why moving the slider looked like it
+    // wasn't doing anything. Blending against --parchment instead means 0% genuinely hides the
+    // image behind a plain page-coloured cover and 100% shows it with no cover at all, so the
+    // full 0–100 range is now visibly different end to end.
+    const coverAlpha = 1 - opacity/100;
+    const parchment = getComputedStyle(document.documentElement).getPropertyValue('--parchment').trim();
+    const rgb = hexToRgbStr(parchment) || '246,241,226';
+    const bgImg = `linear-gradient(rgba(${rgb},${coverAlpha}),rgba(${rgb},${coverAlpha})), url('${image}')`;
     el.style.backgroundImage = bgImg;
     el.style.backgroundSize = 'cover'; el.style.backgroundPosition = 'center'; el.style.backgroundAttachment = 'fixed';
     document.documentElement.style.setProperty('--section-bg-image', `url('${image}')`);
@@ -15464,7 +15474,7 @@ function pageSettings(){
     <div class="panel-head" style="margin-top:0"><h4 style="font-size:13px">In-app background image</h4><div class="hint">A subtle image behind the app content — cards stay readable on top of it</div></div>
     <div class="field-row">
       <div class="field"><label>Background image</label><input type="file" accept="image/*" id="appBgInput" onchange="previewAppBackground()"></div>
-      <div class="field"><label>Opacity (${DB.setup.appBackgroundOpacity??15}%)</label><input type="range" id="appBgOpacity" min="0" max="60" value="${DB.setup.appBackgroundOpacity??15}" oninput="previewAppBackground()"></div>
+      <div class="field"><label>Opacity (${DB.setup.appBackgroundOpacity??60}%)</label><input type="range" id="appBgOpacity" min="0" max="100" value="${DB.setup.appBackgroundOpacity??60}" oninput="previewAppBackground()"></div>
     </div>
     <p class="field-hint" style="margin:-6px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
