@@ -3043,7 +3043,7 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .account-chip .av{ width:30px;height:30px;border-radius:50%; flex:0 0 30px; background:var(--brass-light); color:var(--forest-dark); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; font-family:Georgia,serif;}
 .account-chip .nm{ font-size:12.5px; font-weight:600; line-height:1.2; color:#fff;}
 .account-chip .rl{ font-size:10px; color:rgba(239,232,211,.6); text-transform:uppercase; letter-spacing:.4px;}
-.content{ padding:22px 26px 200px; flex:1; overflow-y:auto; min-height:0;}
+.content{ padding:22px 26px 400px; flex:1; overflow-y:auto; min-height:0;}
 
 /* Home page only: the weather hero + KPI strip must never let the quicklinks scrolling below
    them show through — not even for a frame. position:sticky (tried previously) can't guarantee
@@ -3061,7 +3061,7 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
 .home-scroll-body{
   flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;
   padding-top:18px; /* the little breathing room below the KPIs, before the scrolling area starts */
-  margin:0 -26px; padding-left:26px; padding-right:26px; padding-bottom:200px; /* re-open .content's own padding, which this flex child would otherwise clip */
+  margin:0 -26px; padding-left:26px; padding-right:26px; padding-bottom:400px; /* re-open .content's own padding, which this flex child would otherwise clip */
 }
 .home-frozen-top{
   /* Deliberately no background of its own. Now that this is a plain non-overlapping flex child
@@ -3923,8 +3923,8 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   .account-chip .av{ width:32px; height:32px; flex:0 0 32px; box-shadow:0 0 0 2px rgba(255,255,255,.18);}
   .account-chip > div:last-child{ display:none;} /* name/role text — Account tab already covers this on mobile */
   #noteBtn .note-btn-label, #installAppBtn .note-btn-label{ display:none;} /* label is desktop-only; mobile stays a plain round icon button, matching the rest */
-  .content{ padding:14px 12px 200px;}
-  .home-scroll-body{ margin:0 -12px; padding-left:12px; padding-right:12px; padding-bottom:200px;}
+  .content{ padding:14px 12px 400px;}
+  .home-scroll-body{ margin:0 -12px; padding-left:12px; padding-right:12px; padding-bottom:400px;}
   .content.page-transition{ animation:contentFadeIn .2s ease;}
   @keyframes contentFadeIn{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
   .grid.kpis{ grid-template-columns:repeat(2,1fr); gap:10px;}
@@ -4035,8 +4035,8 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   .chart-data-table{ border-left:none; border-top:1px solid var(--line); padding-left:0; padding-top:10px; max-height:160px;}
 }
 @media (max-width:480px){
-  .content{ padding:12px 10px 200px;}
-  .home-scroll-body{ margin:0 -10px; padding-left:10px; padding-right:10px; padding-bottom:200px;}
+  .content{ padding:12px 10px 400px;}
+  .home-scroll-body{ margin:0 -10px; padding-left:10px; padding-right:10px; padding-bottom:400px;}
   .kpi{ padding:10px;}
   .grid.kpis{ grid-template-columns:repeat(2,1fr); gap:8px;}
   .quicklinks{ grid-template-columns:1fr 1fr; margin-left:-10px; margin-right:-10px; padding-left:10px; padding-right:10px;}
