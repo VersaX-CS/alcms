@@ -6369,7 +6369,7 @@ function buildSeedDB(){
 /* Get count of users currently in library (register-based: checked in but not checked out) */
 function getCurrentUsersInLibrary(){
   const today = todayISO();
-  const todayEntries = DB.registerLog.filter(e => (parseAnyDate(e.date)||'').slice(0,10) === today);
+  const todayEntries = DB.registerLog.filter(e => fmtDate(e.date) === fmtDate(today));
   
   // Count unique members who have checked in but not checked out
   const checkedInUsers = new Set();
