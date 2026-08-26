@@ -9646,7 +9646,7 @@ function pageDashboard(){
   const visitsToday = DB.registerLog.filter(x=> (parseAnyDate(x.date)||0) && fmtDate(x.date)===fmtDate(today)).length;
   const recent = [...t].sort((a,b)=>(parseAnyDate(b.dateBorrowed)||0)-(parseAnyDate(a.dateBorrowed)||0)).slice(0,6);
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
-  const todaysPeriods = DB.scheduleDays.filter(r=>r[0]===weekday);
+  const todaysPeriods = (DB.scheduleDays||[]).filter(r=>r[0]===weekday);
   return `
   <div class="panel-head" style="margin-bottom:14px">
     <div></div>
