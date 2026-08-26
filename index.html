@@ -3260,6 +3260,15 @@ table.datatable tr:hover td{ background:#fbf8ee;}
 .datatable tr.row-muted:hover{ opacity:.85;}
 .mobile-selall{ display:none;}
 
+/* ===== Analytics hover tooltip (top borrowers / top titles) ===== */
+tr.hoverable-row{ cursor:pointer;}
+.analytics-hover-tip{
+  position:fixed; z-index:2000; background:var(--card); color:var(--ink);
+  border:1px solid var(--line); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.25);
+  padding:10px 12px; font-size:12.5px; max-width:280px; pointer-events:none;
+}
+.analytics-hover-tip ul{ list-style:disc;}
+
 .badge{ display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:700; letter-spacing:.3px; text-transform:uppercase;}
 .badge.green{ background:#E4EEE1; color:var(--ok);}
 .badge.red{ background:#F4E1DC; color:var(--warn);}
@@ -9742,6 +9751,10 @@ function pageAnalytics(){
   const topB = Object.entries(byBorrower).sort((a,b)=>b[1].count-a[1].count).slice(0,5);
   const byTitle = {}; t.forEach(x=>{ if(x.title) byTitle[x.title]=(byTitle[x.title]||0)+1; });
   const topT = Object.entries(byTitle).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  // Cache the full loan list behind each row so hover/double-click can look it up by index
+  // without re-scanning DB.circulation or fiddling with escaped names in inline handlers.
+  ANALYTICS_TOP_BORROWERS = topB.map(e=>({name:e[0], cls:e[1].cls, count:e[1].count, loans:t.filter(x=>x.name===e[0])}));
+  ANALYTICS_TOP_TITLES = topT.map(e=>({title:e[0], count:e[1], loans:t.filter(x=>x.title===e[0])}));
   return `
   <div class="panel-head" style="margin-bottom:14px">
     <div></div>
@@ -9752,14 +9765,14 @@ function pageAnalytics(){
   </div>
   <div class="grid two-col">
     <div class="card panel">
-      <div class="panel-head"><h3>Top 5 borrowers</h3></div>
+      <div class="panel-head"><h3>Top 5 borrowers</h3><div class="hint">Hover a row for their books · double-click for full details</div></div>
       <div class="table-wrap"><table class="datatable"><thead><tr><th>#</th><th>Name</th><th>Class / Designation</th><th>Books borrowed</th></tr></thead>
-      <tbody>${topB.map((e,i)=>`<tr><td>${i+1}</td><td>${esc(e[0])}</td><td>${esc(e[1].cls)}</td><td>${e[1].count}</td></tr>`).join('')||'<tr><td colspan=4><div class="empty">No loans yet</div></td></tr>'}</tbody></table></div>
+      <tbody>${topB.map((e,i)=>`<tr class="hoverable-row" onmouseenter="showBorrowerHoverTip(event,${i})" onmousemove="moveAnalyticsHoverTip(event)" onmouseleave="hideAnalyticsHoverTip()" ondblclick="openBorrowerLoansModal(${i})"><td>${i+1}</td><td>${esc(e[0])}</td><td>${esc(e[1].cls)}</td><td>${e[1].count}</td></tr>`).join('')||'<tr><td colspan=4><div class="empty">No loans yet</div></td></tr>'}</tbody></table></div>
     </div>
     <div class="card panel">
-      <div class="panel-head"><h3>Top 5 borrowed titles</h3></div>
+      <div class="panel-head"><h3>Top 5 borrowed titles</h3><div class="hint">Hover a row for borrowers · double-click for full details</div></div>
       <div class="table-wrap"><table class="datatable"><thead><tr><th>#</th><th>Title</th><th>Times borrowed</th></tr></thead>
-      <tbody>${topT.map((e,i)=>`<tr><td>${i+1}</td><td>${esc(e[0])}</td><td>${e[1]}</td></tr>`).join('')||'<tr><td colspan=3><div class="empty">No loans yet</div></td></tr>'}</tbody></table></div>
+      <tbody>${topT.map((e,i)=>`<tr class="hoverable-row" onmouseenter="showTitleHoverTip(event,${i})" onmousemove="moveAnalyticsHoverTip(event)" onmouseleave="hideAnalyticsHoverTip()" ondblclick="openTitleLoansModal(${i})"><td>${i+1}</td><td>${esc(e[0])}</td><td>${e[1]}</td></tr>`).join('')||'<tr><td colspan=3><div class="empty">No loans yet</div></td></tr>'}</tbody></table></div>
     </div>
   </div>
   <div class="grid charts-row">
@@ -9775,6 +9788,103 @@ function pageAnalytics(){
     ${analyticsChartBoxHtml('chPurpose','Register visit purpose')}
   </div>
   `;
+}
+/* ---- hover tooltip + double-click detail modal for top-borrowers / top-titles (Analytics) ----
+   ANALYTICS_TOP_BORROWERS / ANALYTICS_TOP_TITLES are rebuilt each time pageAnalytics() runs, and
+   the rendered rows reference them by index (rather than re-querying DB.circulation by name/title
+   from an inline handler, which would need careful escaping for names containing quotes). */
+let ANALYTICS_TOP_BORROWERS = [], ANALYTICS_TOP_TITLES = [];
+let analyticsHoverTipEl = null;
+function analyticsHoverListHtml(items){
+  if(!items.length) return '<div style="color:var(--muted)">No records</div>';
+  const max = 8;
+  const html = '<ul style="margin:4px 0 0;padding-left:16px">' + items.slice(0,max).map(s=>`<li style="margin:2px 0">${esc(s)}</li>`).join('') + '</ul>';
+  return html + (items.length>max ? `<div style="margin-top:4px;color:var(--muted);font-size:11px">+ ${items.length-max} more — double-click for full list</div>` : '');
+}
+function showAnalyticsHoverTip(evt, html){
+  hideAnalyticsHoverTip();
+  const el = document.createElement('div');
+  el.className = 'analytics-hover-tip';
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  analyticsHoverTipEl = el;
+  positionAnalyticsHoverTip(evt);
+}
+function positionAnalyticsHoverTip(evt){
+  const el = analyticsHoverTipEl;
+  if(!el) return;
+  const pad = 14;
+  const rect = el.getBoundingClientRect();
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if(x + rect.width > window.innerWidth - 8) x = evt.clientX - rect.width - pad;
+  if(y + rect.height > window.innerHeight - 8) y = evt.clientY - rect.height - pad;
+  el.style.left = Math.max(8,x)+'px';
+  el.style.top = Math.max(8,y)+'px';
+}
+function moveAnalyticsHoverTip(evt){ if(analyticsHoverTipEl) positionAnalyticsHoverTip(evt); }
+function hideAnalyticsHoverTip(){
+  if(analyticsHoverTipEl){ analyticsHoverTipEl.remove(); analyticsHoverTipEl = null; }
+}
+function showBorrowerHoverTip(evt, idx){
+  const b = ANALYTICS_TOP_BORROWERS[idx];
+  if(!b) return;
+  const titles = b.loans.map(l=>l.title||'Untitled');
+  showAnalyticsHoverTip(evt, `<div style="font-weight:600;margin-bottom:2px">${esc(b.name)} — books borrowed</div>${analyticsHoverListHtml(titles)}`);
+}
+function showTitleHoverTip(evt, idx){
+  const tt = ANALYTICS_TOP_TITLES[idx];
+  if(!tt) return;
+  const names = tt.loans.map(l=>l.name||'Unknown member');
+  showAnalyticsHoverTip(evt, `<div style="font-weight:600;margin-bottom:2px">${esc(tt.title)} — borrowed by</div>${analyticsHoverListHtml(names)}`);
+}
+function analyticsLoanDetailModal(titleHtml, subHtml, columns, rows){
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal wide">
+      <div class="modal-head"><h3>${titleHtml}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        ${subHtml? `<p class="field-hint" style="margin-top:0">${subHtml}</p>` : ''}
+        <div class="table-wrap"><table class="datatable"><thead><tr>${columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.length? rows.join('') : `<tr><td colspan="${columns.length}"><div class="empty">No loans found</div></td></tr>`}</tbody></table></div>
+      </div>
+      <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#mCancel').onclick = close;
+}
+function openBorrowerLoansModal(idx){
+  const b = ANALYTICS_TOP_BORROWERS[idx];
+  if(!b) return;
+  hideAnalyticsHoverTip();
+  const rows = b.loans.map(l=>{
+    const status = txnStatus(l);
+    return `<tr><td>${esc(l.title||'—')}</td><td>${esc(l.acc||'—')}</td><td>${fmtDate(l.dateBorrowed)}</td><td>${fmtDate(l.dueDate)}</td><td>${l.returnDate?fmtDate(l.returnDate):'—'}</td><td><span class="badge ${status==='RETURNED'?'green':status==='OVERDUE'||status==='MISSING'?'red':'gold'}">${status}</span></td></tr>`;
+  });
+  analyticsLoanDetailModal(
+    `${esc(b.name)} — books borrowed`,
+    `${esc(b.cls||'')} · ${b.loans.length} loan(s) total`,
+    ['Title','Acc. No','Date borrowed','Due date','Return date','Status'],
+    rows
+  );
+}
+function openTitleLoansModal(idx){
+  const tt = ANALYTICS_TOP_TITLES[idx];
+  if(!tt) return;
+  hideAnalyticsHoverTip();
+  const rows = tt.loans.map(l=>{
+    const status = txnStatus(l);
+    return `<tr><td>${esc(l.name||'—')}</td><td>${esc(l.cls||'—')}</td><td>${esc(l.acc||'—')}</td><td>${fmtDate(l.dateBorrowed)}</td><td>${fmtDate(l.dueDate)}</td><td>${l.returnDate?fmtDate(l.returnDate):'—'}</td><td><span class="badge ${status==='RETURNED'?'green':status==='OVERDUE'||status==='MISSING'?'red':'gold'}">${status}</span></td></tr>`;
+  });
+  analyticsLoanDetailModal(
+    `${esc(tt.title)} — borrow history`,
+    `${tt.loans.length} loan(s) total`,
+    ['Member','Class','Acc. No','Date borrowed','Due date','Return date','Status'],
+    rows
+  );
 }
 /* Renders one chart card: heading + caption on top, the live canvas on the left and a compact
    table of the exact data behind it on the right (same aggregates used for CSV/Excel export). */
@@ -17872,6 +17982,7 @@ function restoreScrollPositions(root, map){
   });
 }
 function render(){
+  hideAnalyticsHoverTip();
   if(appearancePreviewDirty && route!=='settings'){
     applyTheme(); applyPalette(PREFS.palette); applyTypography(); applyIconPack(); appearancePreviewDirty = false;
   }
