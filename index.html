@@ -8298,8 +8298,20 @@ function GenericModule(cfg){
         // the scroll container's position around the swap so a checkbox click can't move the page.
         const scrollEl = document.getElementById('content');
         const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
+        // The table itself also scrolls independently: .table-wrap has its own overflow:auto
+        // with a max-height, so long lists (e.g. Register, capped at 200 rows) scroll within
+        // that inner box rather than the outer #content pane. That box gets torn down and
+        // recreated by the innerHTML swap below, so a fresh one always starts at scrollTop 0 —
+        // which is what actually causes ticking a checkbox far down the list to snap back to
+        // row 1, even though the outer-page fix above already prevents #content from moving.
+        // Snapshot/restore its scroll position too, on both axes.
+        const wrapEl = el.querySelector('.table-wrap');
+        const wrapScrollTop = wrapEl ? wrapEl.scrollTop : 0;
+        const wrapScrollLeft = wrapEl ? wrapEl.scrollLeft : 0;
         el.innerHTML = resultsHtml();
         if(scrollEl) scrollEl.scrollTop = scrollTop;
+        const newWrapEl = el.querySelector('.table-wrap');
+        if(newWrapEl){ newWrapEl.scrollTop = wrapScrollTop; newWrapEl.scrollLeft = wrapScrollLeft; }
         bindRowSelection();
       };
       const doSearch = debounce(v=>{ state.q=v; updateResultsOnly(); }, 180);
