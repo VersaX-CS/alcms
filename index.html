@@ -8290,7 +8290,16 @@ function GenericModule(cfg){
       const qClearEl = document.getElementById('qclear_'+cfg.key);
       const updateResultsOnly = ()=>{
         const el = document.getElementById('results_'+cfg.key);
-        if(el) el.innerHTML = resultsHtml();
+        if(!el) return;
+        // Replacing the table's innerHTML removes whatever was focused inside it (e.g. the
+        // checkbox that was just clicked). Losing focus hands focus to <body>, which sits at
+        // the top of the scrolling #content pane, and some browsers then scroll that pane to
+        // bring the new focus target into view — the "jumps to top" bug. Snapshot and restore
+        // the scroll container's position around the swap so a checkbox click can't move the page.
+        const scrollEl = document.getElementById('content');
+        const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
+        el.innerHTML = resultsHtml();
+        if(scrollEl) scrollEl.scrollTop = scrollTop;
         bindRowSelection();
       };
       const doSearch = debounce(v=>{ state.q=v; updateResultsOnly(); }, 180);
@@ -14083,6 +14092,7 @@ function pageRegister(){
     ],
   });
   return `
+  ${libraryBannerHtml()}
   <div class="card panel">
     <div class="panel-head">
       <div><h3>Batch check-in</h3></div>
@@ -14164,8 +14174,8 @@ function bulkClearRegister(){
 }
 /* Batch edit: every field here is optional and only touches selected entries whose value you
    actually fill in — leaving a field blank leaves that field alone on every selected entry,
-   rather than overwriting them all with an empty value. Note is appended (not overwritten) so
-   each entry's existing note is preserved alongside the batch note. */
+   rather than overwriting them all with an empty value. The note field lets you choose whether
+   it's appended to each entry's existing note or replaces it outright. */
 function bulkEditRegister(){
   if(!isAdmin()) return requireAdmin('edit register entries');
   const ids = [...(registerModuleState.selected||[])];
@@ -14177,7 +14187,8 @@ function bulkEditRegister(){
       {key:'purpose', label:'Purpose / reason (optional)'},
       {key:'offense', label:'Offense (optional)', type:'select', options:['', ...(DB.setup.offenseTypes||[])]},
       {key:'consequence', label:'Consequence (optional)', type:'select', options:['', 'VERBAL WARNING','WRITTEN WARNING','PARENT CONTACTED','DETENTION','SUSPENSION','OTHER']},
-      {key:'note', label:'Note to append to each entry (optional)', type:'textarea'},
+      {key:'note', label:'Note (optional)', type:'textarea'},
+      {key:'noteMode', label:'Note action', type:'select', placeholder:false, options:['Append to existing note','Replace existing note'], default:'Append to existing note'},
     ],
     validate:(vals)=>{
       if(!vals.timeIn && !vals.timeOut && !vals.purpose && !vals.offense && !vals.consequence && !(vals.note||'').trim()) return 'Fill in at least one field to apply to the selected entries';
@@ -14185,6 +14196,7 @@ function bulkEditRegister(){
     },
     onSave:(vals)=>{
       let changed = 0;
+      const noteText = (vals.note||'').trim();
       DB.registerLog.forEach(r=>{
         if(!ids.includes(r.entryId)) return;
         let touched = false;
@@ -14193,7 +14205,10 @@ function bulkEditRegister(){
         if(vals.purpose){ r.purpose = vals.purpose; touched = true; }
         if(vals.offense){ r.offense = vals.offense; touched = true; }
         if(vals.consequence){ r.consequence = vals.consequence; touched = true; }
-        if((vals.note||'').trim()){ r.note = r.note ? r.note+' — '+vals.note.trim() : vals.note.trim(); touched = true; }
+        if(noteText){
+          r.note = (vals.noteMode==='Replace existing note' || !r.note) ? noteText : r.note+' — '+noteText;
+          touched = true;
+        }
         if(touched) changed++;
       });
       registerModuleState.selected.clear();
@@ -14208,18 +14223,27 @@ function bulkEditRegister(){
 let batchStaging = []; // {id,name,cls,category}
 let batchChecked = {}; // id -> bool
 let batchPicker;
+// The "Currently in Library" count used to be the first thing inside the Batch check-in card,
+// which meant it scrolled away with the rest of the page — on a page whose whole point is a
+// quick at-a-glance headcount, that's exactly the piece worth keeping visible. It now lives in
+// its own function so pageRegister() can place it above every panel and pin it there (see
+// libraryBannerHtml() / the sticky wrapper in pageRegister()).
+function libraryBannerHtml(){
+  if(!isStaff()) return '';
+  const currentUsers = getCurrentUsersInLibrary();
+  return `
+  <div class="card" style="display:flex;align-items:center;gap:12px;padding:12px;position:sticky;top:0;z-index:20;margin-bottom:16px">
+    <div style="font-size:24px">${navIcon('users','👥')}</div>
+    <div>
+      <div style="font-size:12px;color:var(--muted-label);text-transform:uppercase;letter-spacing:0.5px">Currently in Library</div>
+      <div style="font-size:22px;font-weight:600">${currentUsers} member${currentUsers!==1?'s':''}</div>
+    </div>
+  </div>`;
+}
 function renderBatchStagingHtml(){
   if(!isStaff()) return `<div class="guest-lock">Batch check-in needs a staff or admin account.</div>`;
   const selectedCount = Object.values(batchChecked).filter(Boolean).length;
-  const currentUsers = getCurrentUsersInLibrary();
   return `
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:rgba(255,255,255,.08);border-radius:6px">
-    <div style="font-size:24px">${navIcon('users','👥')}</div>
-    <div>
-      <div style="font-size:12px;color:rgba(239,232,211,.6);text-transform:uppercase;letter-spacing:0.5px">Currently in Library</div>
-      <div style="font-size:22px;font-weight:600;color:#fff">${currentUsers} member${currentUsers!==1?'s':''}</div>
-    </div>
-  </div>
   <div class="stage-toolbar">
     <div class="field" style="flex:1;min-width:220px">
       <label>Add one student</label>
