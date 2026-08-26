@@ -14053,6 +14053,7 @@ function pageRegister(){
     state:registerModuleState, key:'register', title:'Register', hint:'Desk sign-ins and class period visits together', cap:200,
     data:()=>DB.registerLog,
     searchKeys:['id','name','purpose','cls','verifiedBy'],
+    selectable:true, rowKey:r=>r.entryId,
     filters:[
       {key:'cls', label:'Class', options:sortedClasses()},
     ],
@@ -14076,7 +14077,8 @@ function pageRegister(){
     hidePrint:true,
     extraActions:[
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
-      {label:'🗑 Clear all', onClick:clearAllRegister, danger:true},
+      {label:'🗑 Clear selected', onClick:()=>bulkClearRegister(), danger:true},
+      {label:'⚠ Clear all', onClick:clearAllRegister, danger:true},
     ],
   });
   return `
@@ -14101,6 +14103,7 @@ function openRegisterEdit(entryId){
   openModal({
     title:'Edit entry — '+(r.name||r.cls||''),
     fields:[
+      {key:'purpose', label:'Purpose / reason for visit', default:r.purpose||''},
       {key:'offense', label:'Offense', type:'select', options:['', ...(DB.setup.offenseTypes||[])], default:r.offense||''},
       {key:'offenseOther', label:'Custom offense (if "OTHER")', default:r.offenseOther||''},
       {key:'consequence', label:'Consequence', type:'select', options:['', 'VERBAL WARNING','WRITTEN WARNING','PARENT CONTACTED','DETENTION','SUSPENSION','OTHER'], default:r.consequence||''},
@@ -14145,6 +14148,17 @@ function clearAllRegister(){
     DB.registerLog = [];
     saveDB(); render(); toast('Register cleared — ready for a new session');
   }, {confirmLabel:'Clear all', danger:true});
+}
+function bulkClearRegister(){
+  if(!isAdmin()) return requireAdmin('clear register entries');
+  const ids = [...(registerModuleState.selected||[])];
+  if(!ids.length){ toast('Tick one or more entries first'); return; }
+  confirmDelete(`Clear ${ids.length} selected register entry(ies)? This cannot be undone.`, ()=>{
+    DB.registerLog = DB.registerLog.filter(x=>!ids.includes(x.entryId));
+    registerModuleState.selected.clear();
+    logActivity('register', 'delete', `Cleared ${ids.length} register entry(ies) in bulk`);
+    saveDB(); render(); toast(`${ids.length} entry(ies) cleared`);
+  });
 }
 
 
