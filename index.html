@@ -4314,6 +4314,8 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
             onkeydown="if(event.key==='Escape'){this.value=''; this.blur(); closeTopbarSearch();}">
           <div class="topbar-search-results" id="topbarSearchResults"></div>
         </div>
+        <button class="icon-btn" id="undoBtn" onclick="event.stopPropagation();toggleUndoMenu();" title="Undo history (Ctrl+Z)" aria-label="Undo history" style="position:relative" aria-haspopup="true">↩️<span id="undoCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span></button>
+        <div class="dropdown-menu" id="undoMenu" style="display:none;position:fixed;right:0;top:60px;width:300px;max-height:300px;overflow-y:auto;z-index:1200"></div>
         <button class="icon-btn" id="installAppBtn" onclick="promptInstallApp()" title="Install app" aria-label="Install app" style="display:none">⬇️<span class="note-btn-label">Install</span></button>
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
@@ -5238,6 +5240,23 @@ function routeExternalScanPayload(code, meta={}){
 (function initHardwareScanner(){
   let buffer = '', lastTime = 0;
   document.addEventListener('keydown', (e)=>{
+    // Ctrl+S or Cmd+S to save
+    if((e.ctrlKey || e.metaKey) && e.key === 's'){
+      e.preventDefault();
+      const saveBtn = document.getElementById('sidebarSaveBtn');
+      if(saveBtn) saveBtn.click();
+      return;
+    }
+    
+    // Ctrl+Z or Cmd+Z to undo
+    if((e.ctrlKey || e.metaKey) && e.key === 'z'){
+      e.preventDefault();
+      if(actionHistory.length > 0){
+        undoToAction(actionHistory.length - 1);
+      }
+      return;
+    }
+    
     const active = document.activeElement;
     const inTextField = active && (active.tagName==='INPUT' || active.tagName==='TEXTAREA' || active.isContentEditable);
     if(inTextField) return; // a focused field (including the Scan modal's own input) handles its own typing/scanning
@@ -6147,7 +6166,90 @@ function migrateNewFeatureData(db){
     if(t.fineWaiveReason===undefined) t.fineWaiveReason = '';
   });
 }
-async function saveDB(){
+// Undo/History system
+const actionHistory = [];
+const MAX_HISTORY = 50;
+
+function trackAction(description, state){
+  if(actionHistory.length >= MAX_HISTORY){
+    actionHistory.shift(); // remove oldest action
+  }
+  actionHistory.push({
+    description: description,
+    timestamp: new Date().toLocaleTimeString(),
+    state: JSON.parse(JSON.stringify(state)) // deep copy
+  });
+  updateUndoButton();
+}
+
+function updateUndoButton(){
+  const count = actionHistory.length;
+  const badge = document.getElementById('undoCount');
+  if(count > 0 && badge){
+    badge.textContent = count;
+    badge.style.display = 'block';
+  } else if(badge){
+    badge.style.display = 'none';
+  }
+}
+
+function toggleUndoMenu(){
+  const menu = document.getElementById('undoMenu');
+  if(menu.style.display === 'none'){
+    renderUndoMenu();
+    menu.style.display = 'block';
+    document.addEventListener('click', closeUndoMenuOnClickOutside);
+  } else {
+    menu.style.display = 'none';
+    document.removeEventListener('click', closeUndoMenuOnClickOutside);
+  }
+}
+
+function closeUndoMenuOnClickOutside(e){
+  const menu = document.getElementById('undoMenu');
+  const btn = document.getElementById('undoBtn');
+  if(!menu.contains(e.target) && !btn.contains(e.target)){
+    menu.style.display = 'none';
+    document.removeEventListener('click', closeUndoMenuOnClickOutside);
+  }
+}
+
+function renderUndoMenu(){
+  const menu = document.getElementById('undoMenu');
+  if(actionHistory.length === 0){
+    menu.innerHTML = '<div style="padding:10px;text-align:center;color:rgba(239,232,211,.5)">No undo history</div>';
+    return;
+  }
+  let html = '<div style="padding:6px 8px">';
+  for(let i = actionHistory.length - 1; i >= 0; i--){
+    const action = actionHistory[i];
+    const displayText = `${action.timestamp} - ${action.description}`;
+    html += `<button style="display:block;width:100%;text-align:left;padding:8px 10px;background:transparent;border:none;color:var(--ink);font-size:12px;cursor:pointer;border-radius:4px;margin:2px 0" onmouseover="this.style.background='rgba(255,255,255,.1)'" onmouseout="this.style.background='transparent'" onclick="undoToAction(${i})">${displayText}</button>`;
+  }
+  html += '</div>';
+  menu.innerHTML = html;
+}
+
+function undoToAction(index){
+  if(index < 0 || index >= actionHistory.length) return;
+  
+  const action = actionHistory[index];
+  DB = JSON.parse(JSON.stringify(action.state)); // restore state
+  
+  // Remove all actions after this one
+  actionHistory.splice(index + 1);
+  
+  updateUndoButton();
+  toggleUndoMenu();
+  render();
+  toast(`↩️ Reverted to: ${action.description}`);
+  saveDB();
+}
+
+async function saveDB(actionDescription = 'Data change'){
+  // Track action in undo history
+  trackAction(actionDescription, DB);
+  
   try{ return await storeSet(STORAGE_KEY, JSON.stringify(DB)); }
   catch(e){ console.error('save failed', e); return false; }
 }
@@ -6262,6 +6364,54 @@ function buildSeedDB(){
     scheduleDays: SEED_SCHEDULE_DAYS.map(r=>[...r]), scheduleRoster: SEED_SCHEDULE_ROSTER.map(r=>[...r]), scheduleSubjects: [...SEED_SCHEDULE_SUBJECTS],
     setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
   };
+}
+
+/* Get count of users currently in library (register-based: checked in but not checked out) */
+function getCurrentUsersInLibrary(){
+  const today = todayISO();
+  const todayEntries = DB.registerLog.filter(e => (parseAnyDate(e.date)||'').slice(0,10) === today);
+  
+  // Count unique members who have checked in but not checked out
+  const checkedInUsers = new Set();
+  const checkedOutUsers = new Set();
+  
+  todayEntries.forEach(entry => {
+    if(entry.checkInTime && !entry.checkOutTime){
+      checkedInUsers.add(entry.userId);
+    }
+    if(entry.checkOutTime){
+      checkedOutUsers.add(entry.userId);
+    }
+  });
+  
+  // Users currently in library = checked in minus checked out
+  const currentUsers = [...checkedInUsers].filter(id => !checkedOutUsers.has(id));
+  return currentUsers.length;
+}
+
+/* Get new member registrations this month */
+function getNewRegistrationsThisMonth(){
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0,10);
+  
+  return DB.users.filter(u => {
+    const joinDate = (u.dateAdded || u.dateCreated || '').slice(0,10);
+    return joinDate >= monthStart && joinDate <= monthEnd;
+  }).length;
+}
+
+/* Get percentage of books in good condition */
+function getBooksInGoodConditionPercent(){
+  const conditions = DB.catalogue.map(b => b.condition || 'GOOD');
+  const goodCount = conditions.filter(c => c === 'GOOD').length;
+  if(conditions.length === 0) return 0;
+  return Math.round((goodCount / conditions.length) * 100);
+}
+
+/* Get count of reserved items ready for pickup */
+function getReservationsReadyForPickup(){
+  return (DB.reservations || []).filter(r => r.status === 'READY').length;
 }
 
 /* live status of a loan */
@@ -9448,12 +9598,6 @@ function pageHome(){
       <h1>${greeting}, ${esc(firstNameOf((SESSION&&SESSION.fullName)||''))}!</h1>
       <p>${DB.setup.institutionName? esc(DB.setup.institutionName)+' — ':''}Search the catalogue, issue and return loans, keep an eye on overdue titles, and manage your members — all from one shelf.</p>
     </div>
-    <div class="grid kpis">
-      ${kpi('Issued today', issuedToday, '')}
-      ${kpi('Returned today', returnedToday, '')}
-      ${kpi('Library visits today', visitsToday, 'desk + class periods')}
-      ${kpi('Overdue right now', overdue, overdue? 'needs a reminder':'all clear')}
-    </div>
   </div>
   <div class="home-scroll-body">
   ${(dueList.length && homeAlertsDismissed.dueList!==today)? `
@@ -9506,6 +9650,10 @@ function pageDashboard(){
   const issued = c.filter(b=>b.available==='ISSUED').length;
   const overdue = t.filter(x=>txnStatus(x)==='OVERDUE').length;
   const active = t.filter(x=>txnStatus(x)!=='RETURNED').length;
+  const today = todayISO();
+  const issuedToday = t.filter(x=>(x.dateBorrowed||'').slice(0,10)===today).length;
+  const returnedToday = t.filter(x=>(x.returnDate||'').slice(0,10)===today).length;
+  const visitsToday = DB.registerLog.filter(x=> (parseAnyDate(x.date)||0) && fmtDate(x.date)===fmtDate(today)).length;
   const recent = [...t].sort((a,b)=>(parseAnyDate(b.dateBorrowed)||0)-(parseAnyDate(a.dateBorrowed)||0)).slice(0,6);
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
   const todaysPeriods = DB.scheduleDays.filter(r=>r[0]===weekday);
@@ -9518,10 +9666,23 @@ function pageDashboard(){
     </div>
   </div>
   <div class="grid kpis">
-    ${kpi('Titles in collection', inCatalogue, withdrawn+' withdrawn (not counted)')}
+    <!-- Activity Today -->
+    ${kpi('Issued today', issuedToday, '')}
+    ${kpi('Returned today', returnedToday, '')}
+    ${kpi('Library visits today', visitsToday, 'check-ins')}
+    ${kpi('Currently in library', getCurrentUsersInLibrary(), 'members present')}
+    
+    <!-- Collection Status -->
+    ${kpi('Titles in collection', inCatalogue, withdrawn+' withdrawn')}
     ${kpi('Available now', available, issued+' currently issued')}
-    ${kpi('Registered members', u.length, u.filter(x=>x.category==='STAFF').length+' staff · '+u.filter(x=>x.category==='STUDENT').length+' students')}
     ${kpi('Active loans', active, overdue+' overdue')}
+    ${kpi('Overdue right now', overdue, overdue? 'needs action':'all clear')}
+    
+    <!-- Key Metrics -->
+    ${kpi('Registered members', u.length, u.filter(x=>x.category==='STAFF').length+' staff')}
+    ${kpi('Ready for pickup', getReservationsReadyForPickup(), 'reserved items')}
+    ${kpi('New this month', getNewRegistrationsThisMonth(), 'new members')}
+    ${kpi('Collection health', getBooksInGoodConditionPercent()+'%', 'books in good condition')}
   </div>
   <div class="grid charts-row">
     <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
@@ -10246,7 +10407,7 @@ function deleteBook(acc){
     DB.trash.push({id:'TRSH-'+Date.now()+'-'+Math.random().toString(36).slice(2,6), type:'book', label:b.title+' — '+b.acc, data:b, deletedAt:new Date().toISOString(), deletedBy:(SESSION&&SESSION.fullName)||''});
     DB.catalogue = DB.catalogue.filter(x=>x.acc!==acc);
     logActivity('catalogue', 'delete', `Deleted "${b.title}" (${b.acc})`);
-    saveDB(); render(); toast('Title moved to Trash — restorable for 30 days');
+    saveDB(`Deleted book: ${b.title}`); render(); toast('Title moved to Trash — restorable for 30 days');
   });
 }
 function bulkDeleteCatalogue(){
@@ -10359,8 +10520,9 @@ function classTeacherLabel(cls){
   return staff ? staff.name : (ct.name||'');
 }
 function pageUsers(){
+  const currentUsers = getCurrentUsersInLibrary();
   usersModule = GenericModule({
-    state:usersModuleState, key:'users', title:'Members', hint:'Students and staff registered with the library',
+    state:usersModuleState, key:'users', title:'Members', hint:`Students and staff registered with the library · ${currentUsers} currently in library`,
     data:()=>DB.users,
     searchKeys:['id','name','cls','teacher'],
     selectable:true, rowKey:r=>r.id,
@@ -11137,7 +11299,15 @@ function pageCirculation(){
   if(!isStaff()){
     return `<div class="guest-lock">You're signed in as a guest — issuing and returning titles needs a staff or admin account.</div><div id="mod_circulation"></div>`;
   }
+  const currentUsers = getCurrentUsersInLibrary();
   return `
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:rgba(255,255,255,.08);border-radius:6px">
+    <div style="font-size:24px">👥</div>
+    <div>
+      <div style="font-size:12px;color:rgba(239,232,211,.6);text-transform:uppercase;letter-spacing:0.5px">Currently in Library</div>
+      <div style="font-size:22px;font-weight:600;color:#fff">${currentUsers} member${currentUsers!==1?'s':''}</div>
+    </div>
+  </div>
   <div class="grid two-col">
     <div class="card panel">
       <div class="panel-head"><h3>Issue a title</h3><div class="hint">Type an ID to fetch it instantly · 7-day loan period · capped at each member's max allowed</div></div>
@@ -13864,7 +14034,15 @@ let batchPicker;
 function renderBatchStagingHtml(){
   if(!isStaff()) return `<div class="guest-lock">Batch check-in needs a staff or admin account.</div>`;
   const selectedCount = Object.values(batchChecked).filter(Boolean).length;
+  const currentUsers = getCurrentUsersInLibrary();
   return `
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:rgba(255,255,255,.08);border-radius:6px">
+    <div style="font-size:24px">👥</div>
+    <div>
+      <div style="font-size:12px;color:rgba(239,232,211,.6);text-transform:uppercase;letter-spacing:0.5px">Currently in Library</div>
+      <div style="font-size:22px;font-weight:600;color:#fff">${currentUsers} member${currentUsers!==1?'s':''}</div>
+    </div>
+  </div>
   <div class="stage-toolbar">
     <div class="field" style="flex:1;min-width:220px">
       <label>Add one student</label>
