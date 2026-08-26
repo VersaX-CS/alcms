@@ -9712,7 +9712,7 @@ function pageDashboard(){
     <tbody>${(() => {
       const overdueRows = t.filter(x=>txnStatus(x)==='OVERDUE').map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date())}))
         .sort((a,b)=>b.daysOverdue-a.daysOverdue);
-      return overdueRows.map(r=>\`<tr><td>\${esc(r.userId)}</td><td>\${esc(r.name)}</td><td>\${esc(r.cls)}</td><td>\${esc(r.acc)}</td><td>\${esc(r.title)}</td><td>\${fmtDate(r.dueDate)}</td><td><span class="badge red">\${r.daysOverdue}</span></td></tr>\`).join('')||'<tr><td colspan=7><div class="empty"><div class="big">✓</div>Nothing overdue</div></td></tr>';
+      return overdueRows.map(r=>'<tr><td>'+esc(r.userId)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.cls)+'</td><td>'+esc(r.acc)+'</td><td>'+esc(r.title)+'</td><td>'+fmtDate(r.dueDate)+'</td><td><span class="badge red">'+r.daysOverdue+'</span></td></tr>').join('')||'<tr><td colspan=7><div class="empty"><div class="big">✓</div>Nothing overdue</div></td></tr>';
     })()}</tbody></table></div>
   </div>`;
 }
