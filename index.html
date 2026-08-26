@@ -9600,16 +9600,6 @@ function pageHome(){
     </div>
   </div>
   <div class="home-scroll-body">
-  ${(dueList.length && homeAlertsDismissed.dueList!==today)? `
-  <div class="card panel" style="margin-bottom:16px">
-    <div class="panel-head"><div><h3>Due today &amp; overdue</h3><div class="hint">${dueList.length} loan(s) need attention · click one to return it</div></div>
-      <button class="home-alert-dismiss" title="Dismiss for the rest of today" onclick="event.stopPropagation();dismissHomeAlert('dueList')"><span class="ic">✓</span>Dismiss for today</button></div>
-    ${dueList.slice(0,6).map(r=>`<div class="activity-row" style="cursor:pointer" onclick="viewTransaction('${esc(r.trxId)}')"><div class="dot" style="background:${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
-      <div style="flex:1"><strong>${esc(r.name)}</strong> — <em>${esc(r.title)}</em>
-      <div class="meta">${esc(r.acc)} · due ${fmtDate(r.dueDate)}</div></div>
-      <span class="badge ${r.status==='OVERDUE'?'red':'gold'}">${r.status==='OVERDUE'?'OVERDUE':'DUE TODAY'}</span></div>`).join('')}
-    ${dueList.length>6? `<p class="field-hint" style="margin-top:6px">+ ${dueList.length-6} more — see the full list in <a href="javascript:void(0)" onclick="route='reminders';render()">Reminder Log</a>.</p>`:''}
-  </div>` : ''}
   <div class="grid quicklinks">
     ${qlink(navIcon('dashboard','▤'),'Dashboard', 'Full library overview','dashboard')}
     ${qlink(navIcon('catalogue','▥'),'Catalogue', titlesInCatalogue+' titles on the shelf','catalogue')}
@@ -9684,10 +9674,19 @@ function pageDashboard(){
     ${kpi('New this month', getNewRegistrationsThisMonth(), 'new members')}
     ${kpi('Collection health', getBooksInGoodConditionPercent()+'%', 'books in good condition')}
   </div>
-  <div class="grid charts-row">
-    <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
-    <div class="card chart-box"><h4>Members by class / role / designation</h4><div class="chart-canvas-wrap"><canvas id="chMemberClass"></canvas></div></div>
-  </div>
+  ${(() => {
+    const dueList = t.map(x=>({...x,status:txnStatus(x)})).filter(x=> x.status==='OVERDUE' || (x.status!=='RETURNED' && x.status!=='MISSING' && fmtDate(x.dueDate)===fmtDate(today)))
+      .sort((a,b)=> (a.status==='OVERDUE'?0:1) - (b.status==='OVERDUE'?0:1));
+    return dueList.length ? `
+    <div class="card panel" style="margin-bottom:16px">
+      <div class="panel-head"><div><h3>Due today &amp; overdue</h3><div class="hint">${dueList.length} loan(s) need attention · click one to return it</div></div></div>
+      ${dueList.slice(0,10).map(r=>\`<div class="activity-row" style="cursor:pointer" onclick="viewTransaction('\${esc(r.trxId)}')\"><div class="dot" style="background:\${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
+        <div style="flex:1"><strong>\${esc(r.name)}</strong> — <em>\${esc(r.title)}</em>
+        <div class="meta">\${esc(r.acc)} · due \${fmtDate(r.dueDate)}</div></div>
+        <span class="badge \${r.status==='OVERDUE'?'red':'gold'}">\${r.status==='OVERDUE'?'OVERDUE':'DUE TODAY'}</span></div>\`).join('')}
+      ${dueList.length>10? \`<p class="field-hint" style="margin-top:6px">+ \${dueList.length-10} more — see the full list in <a href="javascript:void(0)" onclick="route='reminders';render()">Reminder Log</a>.</p>\`:''}
+    </div>` : '';
+  })()}
   <div class="grid two-col">
     <div class="card panel">
       <div class="panel-head"><h3>Recent circulation activity</h3></div>
@@ -9702,8 +9701,19 @@ function pageDashboard(){
     </div>
     <div class="card panel">
       <div class="panel-head"><h3>Today's schedule — ${esc(weekday)}</h3></div>
-      ${todaysPeriods.length? todaysPeriods.map(r=>`<div class="activity-row"><div style="flex:1"><strong>${esc(r[1])}</strong> · ${esc(r[3]||'')}<div class="meta">${esc((r[2]||'').slice(0,5))} ${esc(r[4]||'')}</div></div></div>`).join('') : '<div class="empty">No periods scheduled today</div>'}
     </div>
+  </div>
+  <div class="card panel">
+    <div class="panel-head"><h3>Overdue detail</h3><div class="hint">${(() => {
+      const overdueRows = t.filter(x=>txnStatus(x)==='OVERDUE').map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date())}));
+      return overdueRows.length + ' loan(s) past due date';
+    })()}</div></div>
+    <div class="table-wrap"><table class="datatable"><thead><tr><th>Member ID</th><th>Name</th><th>Class</th><th>Acc. No</th><th>Title</th><th>Due date</th><th>Days overdue</th></tr></thead>
+    <tbody>${(() => {
+      const overdueRows = t.filter(x=>txnStatus(x)==='OVERDUE').map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date())}))
+        .sort((a,b)=>b.daysOverdue-a.daysOverdue);
+      return overdueRows.map(r=>\`<tr><td>\${esc(r.userId)}</td><td>\${esc(r.name)}</td><td>\${esc(r.cls)}</td><td>\${esc(r.acc)}</td><td>\${esc(r.title)}</td><td>\${fmtDate(r.dueDate)}</td><td><span class="badge red">\${r.daysOverdue}</span></td></tr>\`).join('')||'<tr><td colspan=7><div class="empty"><div class="big">✓</div>Nothing overdue</div></td></tr>';
+    })()}</tbody></table></div>
   </div>`;
 }
 function kpi(lbl,val,sub){
@@ -9728,8 +9738,6 @@ function drawDashboardCharts(){
 /* ================= PAGE: ANALYTICS ================= */
 function pageAnalytics(){
   const t = DB.circulation;
-  const overdueRows = t.filter(x=>txnStatus(x)==='OVERDUE').map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date())}))
-    .sort((a,b)=>b.daysOverdue-a.daysOverdue);
   const byBorrower = {}; t.forEach(x=>{ if(x.name) (byBorrower[x.name]=byBorrower[x.name]||{cls:x.cls,count:0}).count++; });
   const topB = Object.entries(byBorrower).sort((a,b)=>b[1].count-a[1].count).slice(0,5);
   const byTitle = {}; t.forEach(x=>{ if(x.title) byTitle[x.title]=(byTitle[x.title]||0)+1; });
@@ -9755,6 +9763,10 @@ function pageAnalytics(){
     </div>
   </div>
   <div class="grid charts-row">
+    <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
+    <div class="card chart-box"><h4>Members by class / role / designation</h4><div class="chart-canvas-wrap"><canvas id="chMemberClass"></canvas></div></div>
+  </div>
+  <div class="grid charts-row">
     ${analyticsChartBoxHtml('chAnMonthly','Monthly circulation trend')}
     ${analyticsChartBoxHtml('chCondition','Book condition analysis')}
     ${analyticsChartBoxHtml('chLoanStatus','Loan status breakdown')}
@@ -9762,11 +9774,7 @@ function pageAnalytics(){
     ${analyticsChartBoxHtml('chClassBorrow','Borrowing by class')}
     ${analyticsChartBoxHtml('chPurpose','Register visit purpose')}
   </div>
-  <div class="card panel">
-    <div class="panel-head"><h3>Overdue detail</h3><div class="hint">${overdueRows.length} loan(s) past due date</div></div>
-    <div class="table-wrap"><table class="datatable"><thead><tr><th>Member ID</th><th>Name</th><th>Class</th><th>Acc. No</th><th>Title</th><th>Due date</th><th>Days overdue</th></tr></thead>
-    <tbody>${overdueRows.map(r=>`<tr><td>${esc(r.userId)}</td><td>${esc(r.name)}</td><td>${esc(r.cls)}</td><td>${esc(r.acc)}</td><td>${esc(r.title)}</td><td>${fmtDate(r.dueDate)}</td><td><span class="badge red">${r.daysOverdue}</span></td></tr>`).join('')||'<tr><td colspan=7><div class="empty"><div class="big">✓</div>Nothing overdue</div></td></tr>'}</tbody></table></div>
-  </div>`;
+  `;
 }
 /* Renders one chart card: heading + caption on top, the live canvas on the left and a compact
    table of the exact data behind it on the right (same aggregates used for CSV/Excel export). */
@@ -9878,6 +9886,17 @@ function exportAnalyticsAll(){
 }
 function drawAnalyticsCharts(){
   const c = DB.catalogue, t = DB.circulation.map(x=>({...x, status:txnStatus(x)})), u = DB.users, reg = DB.registerLog;
+
+  // Draw dashboard charts
+  const byClass = groupCount(c, b=>(b.mainClass||'UNCLASSIFIED').replace(/^\d+\s*–\s*/,''));
+  const classEntries = Object.entries(byClass).sort((a,b)=>b[1]-a[1]);
+  makeChart('chMainClass',{type:'doughnut', data:{labels:classEntries.map(e=>e[0]), datasets:[{data:classEntries.map(e=>e[1]), backgroundColor:PALETTE}]},
+    options:{plugins:{legend:{position:'right', labels:{boxWidth:10,font:{size:10}}}}}});
+
+  const byMemberClass = groupCount(u, x=>x.cls||'UNSPECIFIED');
+  const memberClassEntries = Object.entries(byMemberClass).sort((a,b)=>b[1]-a[1]);
+  makeChart('chMemberClass',{type:'doughnut', data:{labels:memberClassEntries.map(e=>e[0]), datasets:[{data:memberClassEntries.map(e=>e[1]), backgroundColor:PALETTE}]},
+    options:{plugins:{legend:{position:'right', labels:{boxWidth:10,font:{size:10}}}}}});
 
   const byMonth = {};
   t.forEach(x=>{ const d=parseAnyDate(x.dateBorrowed); if(!d) return; const k=d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'}); byMonth[k]=(byMonth[k]||0)+1; });
