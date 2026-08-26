@@ -14077,6 +14077,7 @@ function pageRegister(){
     hidePrint:true,
     extraActions:[
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
+      {label:'✎ Batch edit selected', onClick:()=>bulkEditRegister()},
       {label:'🗑 Clear selected', onClick:()=>bulkClearRegister(), danger:true},
       {label:'⚠ Clear all', onClick:clearAllRegister, danger:true},
     ],
@@ -14103,6 +14104,7 @@ function openRegisterEdit(entryId){
   openModal({
     title:'Edit entry — '+(r.name||r.cls||''),
     fields:[
+      {row:[{key:'timeIn', label:'Time in', type:'time', default:(r.timeIn||'').slice(0,5)},{key:'timeOut', label:'Time out', type:'time', default:(r.timeOut||'').slice(0,5)}]},
       {key:'purpose', label:'Purpose / reason for visit', default:r.purpose||''},
       {key:'offense', label:'Offense', type:'select', options:['', ...(DB.setup.offenseTypes||[])], default:r.offense||''},
       {key:'offenseOther', label:'Custom offense (if "OTHER")', default:r.offenseOther||''},
@@ -14158,6 +14160,46 @@ function bulkClearRegister(){
     registerModuleState.selected.clear();
     logActivity('register', 'delete', `Cleared ${ids.length} register entry(ies) in bulk`);
     saveDB(); render(); toast(`${ids.length} entry(ies) cleared`);
+  });
+}
+/* Batch edit: every field here is optional and only touches selected entries whose value you
+   actually fill in — leaving a field blank leaves that field alone on every selected entry,
+   rather than overwriting them all with an empty value. Note is appended (not overwritten) so
+   each entry's existing note is preserved alongside the batch note. */
+function bulkEditRegister(){
+  if(!isAdmin()) return requireAdmin('edit register entries');
+  const ids = [...(registerModuleState.selected||[])];
+  if(!ids.length){ toast('Tick one or more entries first'); return; }
+  openModal({
+    title:`Batch edit ${ids.length} register entry(ies)`,
+    fields:[
+      {row:[{key:'timeIn', label:'Time in (optional)', type:'time'},{key:'timeOut', label:'Time out (optional)', type:'time'}]},
+      {key:'purpose', label:'Purpose / reason (optional)'},
+      {key:'offense', label:'Offense (optional)', type:'select', options:['', ...(DB.setup.offenseTypes||[])]},
+      {key:'consequence', label:'Consequence (optional)', type:'select', options:['', 'VERBAL WARNING','WRITTEN WARNING','PARENT CONTACTED','DETENTION','SUSPENSION','OTHER']},
+      {key:'note', label:'Note to append to each entry (optional)', type:'textarea'},
+    ],
+    validate:(vals)=>{
+      if(!vals.timeIn && !vals.timeOut && !vals.purpose && !vals.offense && !vals.consequence && !(vals.note||'').trim()) return 'Fill in at least one field to apply to the selected entries';
+      return null;
+    },
+    onSave:(vals)=>{
+      let changed = 0;
+      DB.registerLog.forEach(r=>{
+        if(!ids.includes(r.entryId)) return;
+        let touched = false;
+        if(vals.timeIn){ r.timeIn = vals.timeIn; touched = true; }
+        if(vals.timeOut){ r.timeOut = vals.timeOut; touched = true; }
+        if(vals.purpose){ r.purpose = vals.purpose; touched = true; }
+        if(vals.offense){ r.offense = vals.offense; touched = true; }
+        if(vals.consequence){ r.consequence = vals.consequence; touched = true; }
+        if((vals.note||'').trim()){ r.note = r.note ? r.note+' — '+vals.note.trim() : vals.note.trim(); touched = true; }
+        if(touched) changed++;
+      });
+      registerModuleState.selected.clear();
+      logActivity('register', 'edit', `Batch-edited ${changed} register entry(ies)`);
+      saveDB(); render(); toast(`${changed} entry(ies) updated`);
+    }
   });
 }
 
@@ -18144,7 +18186,15 @@ async function enterApp(){
       '<button class="btn" onclick="resetAllData()">Reset to original data</button></div>';
   }
 }
+/* Splash screen: kept up for a minimum duration (see ensureMinSplashDuration in boot() below)
+   so its build-in animation always gets to finish, even when data loads near-instantly. */
+function sleep(ms){ return new Promise(res=>setTimeout(res, ms)); }
+async function ensureMinSplashDuration(startTime, minMs=5000){
+  const elapsed = Date.now() - startTime;
+  if(elapsed < minMs) await sleep(minMs - elapsed);
+}
 (async function boot(){
+  const splashStart = Date.now();
   tickClocks();
   await loadPrefs();
   tickClocks();
@@ -18162,6 +18212,10 @@ async function enterApp(){
     // is discarded rather than honoured.
     await persistSession(null);
     clearTimeout(failsafe);
+    // The splash's build-in/spinner animation is designed to be seen, not skipped past on a fast
+    // connection — hold it up for a minimum of 5s from when boot() started before revealing the
+    // auth screen underneath, even though all the loading above may well finish sooner.
+    await ensureMinSplashDuration(splashStart);
     $('#splash').classList.add('hide');
     try{
       showAuthScreen();
@@ -18172,6 +18226,7 @@ async function enterApp(){
   }catch(e){
     console.error('Boot failed before splash could hand off', e);
     clearTimeout(failsafe);
+    await ensureMinSplashDuration(splashStart);
     $('#splash').classList.add('hide');
     showAuthScreen();
   }
