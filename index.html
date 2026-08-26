@@ -6366,27 +6366,13 @@ function buildSeedDB(){
   };
 }
 
-/* Get count of users currently in library (register-based: checked in but not checked out) */
+/* Get count of users currently in library (register-based: checked in but not checked out).
+   Reuses currentlyInLibrary() — the same source of truth the batch check-out screen uses —
+   so this number always matches what staff see there. (Previously this filtered on
+   entry.checkInTime/checkOutTime/userId, fields that don't exist on register entries —
+   real entries use timeIn/timeOut/id — so this always returned 0.) */
 function getCurrentUsersInLibrary(){
-  const today = todayISO();
-  const todayEntries = DB.registerLog.filter(e => fmtDate(e.date) === fmtDate(today));
-  
-  // Count unique members who have checked in but not checked out
-  const checkedInUsers = new Set();
-  const checkedOutUsers = new Set();
-  
-  todayEntries.forEach(entry => {
-    if(entry.checkInTime && !entry.checkOutTime){
-      checkedInUsers.add(entry.userId);
-    }
-    if(entry.checkOutTime){
-      checkedOutUsers.add(entry.userId);
-    }
-  });
-  
-  // Users currently in library = checked in minus checked out
-  const currentUsers = [...checkedInUsers].filter(id => !checkedOutUsers.has(id));
-  return currentUsers.length;
+  return currentlyInLibrary().length;
 }
 
 /* Get new member registrations this month */
@@ -9701,6 +9687,19 @@ function pageDashboard(){
     </div>
     <div class="card panel">
       <div class="panel-head"><h3>Today's schedule — ${esc(weekday)}</h3></div>
+      ${(() => {
+        if(!todaysPeriods.length) return '<div class="empty">No classes scheduled today</div>';
+        const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===today).map(r=>r.cls));
+        const sorted = [...todaysPeriods].sort((a,b)=>(a[1]||'').localeCompare(b[1]||''));
+        return sorted.map(r=>{
+          const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+          const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
+          return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
+            <div style="flex:1"><strong>${esc(r[1]||'')}</strong> — <em>${esc(classes.join(', ')||'No class assigned')}</em>
+            <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div></div>
+            ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
+        }).join('');
+      })()}
     </div>
   </div>
   <div class="card panel">
@@ -10711,7 +10710,7 @@ function openUserForm(id){
         logActivity('members', 'edit', `Updated member "${existing.name}" (${existing.id})`);
         toast('Member updated');
       } else {
-        Object.assign(vals,{borrowed:0,overdue:0,totalBorrowed:0,strike:0,discipline:'CLEARED'});
+        Object.assign(vals,{borrowed:0,overdue:0,totalBorrowed:0,strike:0,discipline:'CLEARED',dateAdded:todayISO()});
         DB.users.push(vals);
         touchMemberStatusDate(vals);
         logActivity('members', 'add', `Registered member "${vals.name}" (${vals.id})`);
