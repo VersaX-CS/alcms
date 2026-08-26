@@ -9680,11 +9680,11 @@ function pageDashboard(){
     return dueList.length ? `
     <div class="card panel" style="margin-bottom:16px">
       <div class="panel-head"><div><h3>Due today &amp; overdue</h3><div class="hint">${dueList.length} loan(s) need attention · click one to return it</div></div></div>
-      ${dueList.slice(0,10).map(r=>\`<div class="activity-row" style="cursor:pointer" onclick="viewTransaction('\${esc(r.trxId)}')\"><div class="dot" style="background:\${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
-        <div style="flex:1"><strong>\${esc(r.name)}</strong> — <em>\${esc(r.title)}</em>
-        <div class="meta">\${esc(r.acc)} · due \${fmtDate(r.dueDate)}</div></div>
-        <span class="badge \${r.status==='OVERDUE'?'red':'gold'}">\${r.status==='OVERDUE'?'OVERDUE':'DUE TODAY'}</span></div>\`).join('')}
-      ${dueList.length>10? \`<p class="field-hint" style="margin-top:6px">+ \${dueList.length-10} more — see the full list in <a href="javascript:void(0)" onclick="route='reminders';render()">Reminder Log</a>.</p>\`:''}
+      ${dueList.slice(0,10).map(r=>`<div class="activity-row" style="cursor:pointer" onclick="viewTransaction('${esc(r.trxId)}')"><div class="dot" style="background:${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
+        <div style="flex:1"><strong>${esc(r.name)}</strong> — <em>${esc(r.title)}</em>
+        <div class="meta">${esc(r.acc)} · due ${fmtDate(r.dueDate)}</div></div>
+        <span class="badge ${r.status==='OVERDUE'?'red':'gold'}">${r.status==='OVERDUE'?'OVERDUE':'DUE TODAY'}</span></div>`).join('')}
+      ${dueList.length>10? `<p class="field-hint" style="margin-top:6px">+ ${dueList.length-10} more — see the full list in <a href="javascript:void(0)" onclick="route='reminders';render()">Reminder Log</a>.</p>`:''}
     </div>` : '';
   })()}
   <div class="grid two-col">
@@ -18044,16 +18044,14 @@ async function enterApp(){
     // silently restore the previous session. Any session token left over from before this reload
     // is discarded rather than honoured.
     await persistSession(null);
-    setTimeout(async ()=>{
-      clearTimeout(failsafe);
-      $('#splash').classList.add('hide');
-      try{
-        showAuthScreen();
-      }catch(e){
-        console.error('Post-splash init failed', e);
-        showAuthScreen();
-      }
-    }, 7000);
+    clearTimeout(failsafe);
+    $('#splash').classList.add('hide');
+    try{
+      showAuthScreen();
+    }catch(e){
+      console.error('Post-splash init failed', e);
+      showAuthScreen();
+    }
   }catch(e){
     console.error('Boot failed before splash could hand off', e);
     clearTimeout(failsafe);
