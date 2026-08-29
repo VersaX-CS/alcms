@@ -4330,6 +4330,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
+          <div id="notifDropdown" style="display:none;position:absolute;left:0;top:100%;width:380px;max-width:90vw;max-height:70vh;overflow-y:auto;z-index:1200;background:var(--bg);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
         </button>
         <button class="icon-btn" id="themeToggleMobile" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
         <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online"><span id="connectivityIcon">🌐</span><span id="connectivityText">Online</span></div>
@@ -6280,7 +6281,7 @@ function undoToAction(index){
   toggleUndoMenu();
   render();
   toast(`↩️ Reverted to: ${action.description}`);
-  saveDB();
+  saveDB(`Reverted to: ${action.description}`);
 }
 
 async function saveDB(actionDescription = 'Data change'){
@@ -6293,7 +6294,7 @@ async function saveDB(actionDescription = 'Data change'){
 async function saveNow(){
   const btn = document.getElementById('sidebarSaveBtn');
   if(btn){ btn.textContent = '⏳'; btn.disabled = true; }
-  const ok = await saveDB();
+  const ok = await saveDB('Manual save');
   if(btn){ btn.textContent = ok ? '✓' : '⚠'; setTimeout(()=>{ btn.textContent='💾'; btn.disabled=false; }, 1200); }
   if(!ok){
     toast('⚠ Save failed — your browser storage is likely full. This change will be lost on refresh. Delete some checkpoints (Backup &amp; Restore) or download a backup now.');
@@ -6978,12 +6979,12 @@ function addCustomQuote(){
   if(!q){ toast('Enter a quote first'); return; }
   DB.setup.customQuotes = DB.setup.customQuotes || [];
   DB.setup.customQuotes.push({q, author: author||'Unknown'});
-  saveDB(); render(); toast('Quote added');
+  saveDB('Quote added'); render(); toast('Quote added');
 }
 function removeCustomQuote(i){
   if(!isAdmin()) return requireAdmin('remove carousel quotes');
   DB.setup.customQuotes.splice(i,1);
-  saveDB(); render(); toast('Quote removed');
+  saveDB('Quote removed'); render(); toast('Quote removed');
 }
 function saveAppBackground(silent){
   const opacity = +document.getElementById('appBgOpacity').value || 0;
@@ -6992,15 +6993,15 @@ function saveAppBackground(silent){
   if(file){
     if(file.size > 1.5*1024*1024){ toast('Please choose an image under 1.5MB'); return; }
     const reader = new FileReader();
-    reader.onload = ()=>{ DB.setup.appBackgroundImage = reader.result; appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB(); applyAppBackground(); if(!silent){ render(); toast('Background saved'); } };
+    reader.onload = ()=>{ DB.setup.appBackgroundImage = reader.result; appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB('App background updated'); applyAppBackground(); if(!silent){ render(); toast('Background saved'); } };
     reader.readAsDataURL(file);
   } else {
-    appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB(); applyAppBackground();
+    appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB('App background cleared'); applyAppBackground();
     if(!silent) toast('Background saved');
   }
 }
 function clearAppBackground(){
-  appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; DB.setup.appBackgroundImage = null; saveDB(); applyAppBackground(); render(); toast('Background removed');
+  appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; DB.setup.appBackgroundImage = null; saveDB('App background removed'); applyAppBackground(); render(); toast('Background removed');
 }
 // Live preview: reads the picked file (if any) into a draft data-URL and/or the opacity slider,
 // and paints it straight onto the real background — nothing is written to DB until Save is clicked.
@@ -7055,10 +7056,10 @@ function saveAuthBackground(silent){
   const opEl = document.getElementById('authBgOpacity');
   if(opEl) DB.setup.authBackgroundOpacity = +opEl.value;
   const file = document.getElementById('authBgInput').files[0];
-  if(!file){ authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB(); applyAuthBackground(); if(!silent) toast('Sign-in background saved'); return; }
+  if(!file){ authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB('Sign-in background updated'); applyAuthBackground(); if(!silent) toast('Sign-in background saved'); return; }
   if(file.size > 1.5*1024*1024){ toast('Please choose an image under 1.5MB'); return; }
   const reader = new FileReader();
-  reader.onload = ()=>{ DB.setup.authBackgroundImage = reader.result; authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB(); applyAuthBackground(); if(!silent){ render(); toast('Sign-in background saved'); } };
+  reader.onload = ()=>{ DB.setup.authBackgroundImage = reader.result; authBackgroundDraftImage=null; authBackgroundPreviewDirty=false; saveDB('Sign-in background updated'); applyAuthBackground(); if(!silent){ render(); toast('Sign-in background saved'); } };
   reader.readAsDataURL(file);
 }
 // Live preview: paints straight onto the real (currently hidden, since we're logged in) sign-in
@@ -7119,7 +7120,7 @@ function saveLockscreenAppearance(silent){
   saveAuthBackground(silent);
 }
 function clearAuthBackground(){
-  DB.setup.authBackgroundImage = null; saveDB(); applyAuthBackground(); render(); toast('Sign-in background removed');
+  DB.setup.authBackgroundImage = null; saveDB('Sign-in background removed'); applyAuthBackground(); render(); toast('Sign-in background removed');
 }
 function saveAuthBoxOpacity(){
   PREFS.authBoxOpacity = +document.getElementById('setAuthBoxOpacity')?.value || 90;
@@ -9071,7 +9072,7 @@ function openReportModal(){
       label = `${from?fmtDate(from):'earliest'} to ${to?fmtDate(to):'latest'}`;
     } else if(p==='TERM' || p==='SESSION'){
       const startKey = p==='TERM' ? 'currentTermStart':'currentSessionStart', endKey = p==='TERM'?'currentTermEnd':'currentSessionEnd';
-      DB.setup[startKey] = $('#repRangeStart').value; DB.setup[endKey] = $('#repRangeEnd').value; saveDB();
+      DB.setup[startKey] = $('#repRangeStart').value; DB.setup[endKey] = $('#repRangeEnd').value; saveDB(`Report ${p} range updated`);
       const b = periodBounds(p); from=b.from; to=b.to;
       label = (p==='TERM'?DB.setup.currentTerm:DB.setup.currentSession) + (from&&to? ` (${fmtDate(from)} – ${fmtDate(to)})`:'');
     } else {
@@ -9456,7 +9457,7 @@ function openImportModal(cfg){
   $('#mConfirm').onclick = ()=>{
     if(!parsedRows.length) return;
     const result = cfg.onConfirm(parsedRows);
-    saveDB(); render(); close();
+    saveDB(`Imported: ${result.added} added${result.skipped? ', '+result.skipped+' skipped':''}`); render(); close();
     toast(`Import complete: ${result.added} added${result.skipped? ', '+result.skipped+' skipped':''}`);
   };
 }
@@ -10475,7 +10476,7 @@ function openBookForm(acc){
         DB.catalogue.push(vals); toast('Title added to catalogue');
       }
       logActivity('catalogue', existing?'edit':'add', `${existing?'Updated':'Added'} "${vals.title}" (${vals.acc})`);
-      saveDB(); render();
+      saveDB(`${existing?'Title updated':'Title added'}: ${vals.title}`); render();
     },
     postRender: ()=>{
       bindIsbnAutoLookup();
@@ -10525,7 +10526,7 @@ function duplicateBook(acc){
       vals.history = [{date:vals.dateAdded, condition:vals.condition, shelf:vals.shelf, available:vals.available, note:`Added to catalogue (copied from "${src.title}")`}];
       DB.catalogue.push(vals);
       logActivity('catalogue', 'add', `Added "${vals.title}" (${vals.acc}) — copied from "${src.title}"`);
-      saveDB(); render(); toast('Title added to catalogue');
+      saveDB('Title added to catalogue'); render(); toast('Title added to catalogue');
     },
     postRender: ()=> bindIsbnAutoLookup()
   });
@@ -10535,7 +10536,7 @@ function purgeOldTrash(){
   const cutoff = Date.now() - 30*24*60*60*1000;
   const before = DB.trash.length;
   DB.trash = DB.trash.filter(x=> new Date(x.deletedAt).getTime() > cutoff);
-  if(DB.trash.length !== before) saveDB();
+  if(DB.trash.length !== before) saveDB(`${before - DB.trash.length} trash item(s) expired`);
 }
 function restoreFromTrash(id){
   if(!isAdmin()) return requireAdmin('restore from trash');
@@ -10548,18 +10549,18 @@ function restoreFromTrash(id){
     DB.users.push(item.data);
   }
   DB.trash = DB.trash.filter(x=>x.id!==id);
-  saveDB(); render(); toast('Restored: '+item.label);
+  saveDB('Restored: '+item.label); render(); toast('Restored: '+item.label);
 }
 function permanentlyDeleteFromTrash(id){
   if(!isAdmin()) return requireAdmin('permanently delete');
   confirmDelete('Delete this forever? It cannot be undone.', ()=>{
-    DB.trash = DB.trash.filter(x=>x.id!==id); saveDB(); render(); toast('Deleted permanently');
+    DB.trash = DB.trash.filter(x=>x.id!==id); saveDB('Deleted permanently'); render(); toast('Deleted permanently');
   });
 }
 function emptyTrash(){
   if(!isAdmin()) return requireAdmin('empty the trash');
   confirmDelete(`Permanently delete all ${DB.trash.length} item(s) in Trash? This cannot be undone.`, ()=>{
-    DB.trash = []; saveDB(); render(); toast('Trash emptied');
+    DB.trash = []; saveDB('Trash emptied'); render(); toast('Trash emptied');
   });
 }
 function withdrawBook(acc){
@@ -10568,7 +10569,7 @@ function withdrawBook(acc){
   confirmModal(`Withdraw "${esc(b.title)}" from circulation? It stays in the catalogue (greyed out, searchable) but can no longer be issued or reserved — unlike Delete, nothing is lost and there's no 30-day expiry. Use this for weeding; use Delete for entries that shouldn't exist at all.`, ()=>{
     b.available = 'WITHDRAWN';
     logActivity('catalogue', 'withdraw', `Withdrew "${b.title}" (${b.acc}) from circulation`);
-    saveDB(); render(); toast('Title withdrawn — still in the catalogue, greyed out');
+    saveDB('Title withdrawn'); render(); toast('Title withdrawn — still in the catalogue, greyed out');
   }, {confirmLabel:'Withdraw', danger:false});
 }
 function reinstateBook(acc){
@@ -10576,7 +10577,7 @@ function reinstateBook(acc){
   const b = DB.catalogue.find(x=>x.acc===acc); if(!b) return;
   b.available = 'AVAILABLE';
   logActivity('catalogue', 'reinstate', `Reinstated "${b.title}" (${b.acc}) to circulation`);
-  saveDB(); render(); toast('Title reinstated — available again');
+  saveDB('Title reinstated'); render(); toast('Title reinstated — available again');
 }
 function deleteBook(acc){
   if(!isAdmin()) return requireAdmin('delete titles');
@@ -10601,7 +10602,7 @@ function bulkDeleteCatalogue(){
     DB.catalogue = DB.catalogue.filter(x=>!accs.includes(x.acc));
     catalogueModuleState.selected.clear();
     logActivity('catalogue', 'delete', `Deleted ${accs.length} title(s) in bulk`);
-    saveDB(); render(); toast(`${accs.length} title(s) moved to Trash — restorable for 30 days`);
+    saveDB(`${accs.length} title(s) moved to Trash`); render(); toast(`${accs.length} title(s) moved to Trash — restorable for 30 days`);
   });
 }
 /* "Reserved" here means a physical copy the library is deliberately keeping back — e.g. pulled
@@ -10615,14 +10616,14 @@ function reserveBook(acc){
   const b = DB.catalogue.find(x=>x.acc===acc); if(!b) return;
   b.available = 'RESERVED';
   logActivity('catalogue', 'reserve', `Reserved "${b.title}" (${b.acc}) — kept back from circulation`);
-  saveDB(); render(); toast('Title reserved — kept back, can\'t be issued until released');
+  saveDB('Title reserved'); render(); toast('Title reserved — kept back, can\'t be issued until released');
 }
 function releaseBook(acc){
   if(!isAdmin()) return requireAdmin('release titles');
   const b = DB.catalogue.find(x=>x.acc===acc); if(!b) return;
   b.available = 'AVAILABLE';
   logActivity('catalogue', 'release', `Released "${b.title}" (${b.acc}) back to circulation`);
-  saveDB(); render(); toast('Title released — available to issue again');
+  saveDB('Title released'); render(); toast('Title released — available to issue again');
 }
 function bulkReserveCatalogue(){
   if(!isAdmin()) return requireAdmin('reserve titles');
@@ -10637,7 +10638,7 @@ function bulkReserveCatalogue(){
     eligible.forEach(b=> b.available = 'RESERVED');
     catalogueModuleState.selected.clear();
     logActivity('catalogue', 'reserve', `Reserved ${eligible.length} title(s) in bulk — kept back from circulation`);
-    saveDB(); render(); toast(`${eligible.length} title(s) reserved — kept back from circulation`);
+    saveDB(`${eligible.length} title(s) reserved`); render(); toast(`${eligible.length} title(s) reserved — kept back from circulation`);
   }, {confirmLabel:'Reserve', danger:false});
 }
 function bulkWithdrawCatalogue(){
@@ -10654,7 +10655,7 @@ function bulkWithdrawCatalogue(){
     eligible.forEach(b=> b.available = 'WITHDRAWN');
     catalogueModuleState.selected.clear();
     logActivity('catalogue', 'withdraw', `Withdrew ${eligible.length} title(s) in bulk`);
-    saveDB(); render(); toast(`${eligible.length} title(s) withdrawn — still in the catalogue, greyed out`);
+    saveDB(`${eligible.length} title(s) withdrawn`); render(); toast(`${eligible.length} title(s) withdrawn — still in the catalogue, greyed out`);
   }, {confirmLabel:'Withdraw', danger:false});
 }
 function bulkReinstateCatalogue(){
@@ -10670,7 +10671,7 @@ function bulkReinstateCatalogue(){
     eligible.forEach(b=> b.available = 'AVAILABLE');
     catalogueModuleState.selected.clear();
     logActivity('catalogue', 'reinstate', `Reinstated ${eligible.length} title(s) in bulk`);
-    saveDB(); render(); toast(`${eligible.length} title(s) reinstated — available again`);
+    saveDB(`${eligible.length} title(s) reinstated`); render(); toast(`${eligible.length} title(s) reinstated — available again`);
   }, {confirmLabel:'Reinstate', danger:false});
 }
 function bulkReassignShelf(){
@@ -10683,7 +10684,7 @@ function bulkReassignShelf(){
     onSave:(vals)=>{
       DB.catalogue.forEach(b=>{ if(accs.includes(b.acc)) b.shelf = vals.shelf; });
       catalogueModuleState.selected.clear();
-      saveDB(); render(); toast(`${accs.length} title(s) moved to "${vals.shelf}"`);
+      saveDB(`${accs.length} title(s) moved to "${vals.shelf}"`); render(); toast(`${accs.length} title(s) moved to "${vals.shelf}"`);
     }
   });
 }
@@ -10876,7 +10877,7 @@ function openUserForm(id){
         logActivity('members', 'add', `Registered member "${vals.name}" (${vals.id})`);
         toast('Member registered');
       }
-      saveDB(); render();
+      saveDB(`${existing?'Member updated':'Member registered'}: ${vals.name}`); render();
     }
   });
   const nameEl = document.getElementById('f_name'), genderSel = document.getElementById('f_gender');
@@ -10915,7 +10916,7 @@ function deleteUser(id){
     DB.trash.push({id:'TRSH-'+Date.now()+'-'+Math.random().toString(36).slice(2,6), type:'member', label:u.name+' — '+u.id, data:u, deletedAt:new Date().toISOString(), deletedBy:(SESSION&&SESSION.fullName)||''});
     DB.users = DB.users.filter(x=>x.id!==id);
     logActivity('members', 'delete', `Deleted member "${u.name}" (${u.id})`);
-    saveDB(); render(); toast('Member moved to Trash — restorable for 30 days');
+    saveDB('Member moved to Trash'); render(); toast('Member moved to Trash — restorable for 30 days');
   });
 }
 function bulkDeleteUsers(){
@@ -10930,7 +10931,7 @@ function bulkDeleteUsers(){
     DB.users = DB.users.filter(x=>!ids.includes(x.id));
     usersModuleState.selected.clear();
     logActivity('members', 'delete', `Deleted ${ids.length} member(s) in bulk`);
-    saveDB(); render(); toast(`${ids.length} member(s) moved to Trash — restorable for 30 days`);
+    saveDB(`${ids.length} member(s) moved to Trash`); render(); toast(`${ids.length} member(s) moved to Trash — restorable for 30 days`);
   });
 }
 function bulkReassignClass(){
@@ -10948,7 +10949,7 @@ function bulkReassignClass(){
     onSave:(vals)=>{
       DB.users.forEach(u=>{ if(ids.includes(u.id)) u.cls = vals.cls; });
       usersModuleState.selected.clear();
-      saveDB(); render(); toast(`${ids.length} member(s) reassigned to "${vals.cls}"`);
+      saveDB(`${ids.length} member(s) reassigned to "${vals.cls}"`); render(); toast(`${ids.length} member(s) reassigned to "${vals.cls}"`);
     }
   });
 }
@@ -10996,10 +10997,10 @@ function viewSubjects(userId){
   if(saveBtn) saveBtn.onclick = ()=>{
     const chosen = $$('.subjChk').filter(c=>c.checked).map(c=>c.value);
     u.subjects = chosen;
-    saveDB(); close(); render(); toast('Subjects updated for '+u.name);
+    saveDB('Subjects updated for '+u.name); close(); render(); toast('Subjects updated for '+u.name);
   };
   const resetBtn = $('#mResetDefault');
-  if(resetBtn) resetBtn.onclick = ()=>{ delete u.subjects; saveDB(); close(); render(); toast('Reset to class default'); };
+  if(resetBtn) resetBtn.onclick = ()=>{ delete u.subjects; saveDB('Subjects reset to class default'); close(); render(); toast('Reset to class default'); };
 }
 
 /* ================= PAGE: CIRCULATION ================= */
@@ -11012,11 +11013,11 @@ function setMemberProfileTab(tab){ memberProfileTab = tab; render(); }
 function saveMemberSubjectsTab(id){
   const u = DB.users.find(x=>x.id===id); if(!u) return;
   const chosen = $$('.subjChkProfile').filter(c=>c.checked).map(c=>c.value);
-  u.subjects = chosen; saveDB(); render(); toast('Subjects updated for '+u.name);
+  u.subjects = chosen; saveDB('Subjects updated for '+u.name); render(); toast('Subjects updated for '+u.name);
 }
 function resetMemberSubjectsTab(id){
   const u = DB.users.find(x=>x.id===id); if(!u) return;
-  delete u.subjects; saveDB(); render(); toast('Reset to class default');
+  delete u.subjects; saveDB('Subjects reset to class default'); render(); toast('Reset to class default');
 }
 function printMemberSubjectsTab(id){
   const u = DB.users.find(x=>x.id===id); if(!u) return;
@@ -11227,7 +11228,7 @@ async function migrateMemberDocumentsToGithub(memberId){
       ok++;
     }catch(e){ fail++; console.warn('Migrate to GitHub failed for', doc.name, e); }
   }
-  await saveDB();
+  await saveDB(`${ok} document(s) migrated to GitHub`);
   toast(`Moved ${ok} document(s) to GitHub${fail?`, ${fail} failed — try again later`:''}`);
   render();
 }
@@ -11428,7 +11429,7 @@ function saveMemberDocument(memberId, close){
     }
 
     u.documents.push(doc);
-    const ok = await saveDB();
+    const ok = await saveDB(`Document uploaded: ${name} for ${u.name}`);
     if(!ok){ toast('⚠ Save failed — your browser storage is likely full'); if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='Upload'; } return; }
     toast(`Document "${name}" uploaded${doc.storage==='github'?' to GitHub':''}`);
     if(close) close();
@@ -11467,7 +11468,7 @@ function deleteMemberDocument(memberId, docId){
     : Promise.resolve();
   if(MEMBER_DOC_BLOB_CACHE[doc.id]){ URL.revokeObjectURL(MEMBER_DOC_BLOB_CACHE[doc.id]); delete MEMBER_DOC_BLOB_CACHE[doc.id]; }
   u.documents.splice(idx,1);
-  cleanupCloud.finally(()=>{ saveDB().then(()=>{ toast(`Deleted: ${docName}`); render(); }); });
+  cleanupCloud.finally(()=>{ saveDB(`Document deleted: ${docName}`).then(()=>{ toast(`Deleted: ${docName}`); render(); }); });
   });
 }
 
@@ -11668,7 +11669,7 @@ function bulkReturnCirculation(){
     targets.forEach(trx=>{ const {wasOverdue} = doReturnOne(trx, 'GOOD', {quiet:true}); if(wasOverdue) overdueCount++; });
     circulationModuleState.selected.clear();
     logActivity('circulation', 'return', `Returned ${targets.length} loan(s) in bulk`);
-    saveDB(); render();
+    saveDB(`${targets.length} loan(s) returned`); render();
     toast(`${targets.length} loan(s) returned${overdueCount? ` — ${overdueCount} were overdue, strikes added`:''}`);
   });
 }
@@ -11689,7 +11690,7 @@ function bulkDeleteCirculation(){
     DB.circulation = DB.circulation.filter(x=>!ids.includes(x.trxId));
     circulationModuleState.selected.clear();
     logActivity('circulation', 'delete', `Deleted ${ids.length} transaction(s) in bulk`);
-    saveDB(); render(); toast(`${ids.length} transaction(s) deleted`);
+    saveDB(`${ids.length} transaction(s) deleted`); render(); toast(`${ids.length} transaction(s) deleted`);
   });
 }
 /* Queue position for a WAITING/READY reservation: 1-based rank among all active (non-fulfilled,
@@ -11941,7 +11942,7 @@ function deleteTransaction(trxId){
     }
     DB.circulation = DB.circulation.filter(x=>x.trxId!==trxId);
     logActivity('circulation', 'delete', `Deleted transaction — "${trx.title}" (${trx.name})`);
-    saveDB(); render(); toast('Transaction deleted');
+    saveDB('Transaction deleted'); render(); toast('Transaction deleted');
   });
 }
 /* Shared eligibility gate for circulation & register check-in. SUSPENDED/INACTIVE status, or
@@ -11996,7 +11997,7 @@ function issueBook(){
   if(user.borrowed >= user.maxAllowed){ toast(`${user.name} has reached their borrowing limit`); return; }
   warnIfStrikes(user, ()=>{
     const trx = doIssueOne(user, book);
-    saveDB(); render(); toast(`${book.title} issued to ${user.name} — due ${fmtDate(trx.dueDate)}`);
+    saveDB(`${book.title} issued to ${user.name}`); render(); toast(`${book.title} issued to ${user.name} — due ${fmtDate(trx.dueDate)}`);
   });
 }
 /* ---- batch borrow: stage several titles for one member, capped at their max allowed ---- */
@@ -12049,7 +12050,7 @@ function issueStagedBooks(){
     if(book && book.available==='AVAILABLE' && user.borrowed < user.maxAllowed){ doIssueOne(user, book, {quiet:true}); issued++; }
   });
   issueStaging = [];
-  saveDB(); render(); toast(`${issued} item(s) issued to ${user.name}`);
+  saveDB(`${issued} item(s) issued to ${user.name}`); render(); toast(`${issued} item(s) issued to ${user.name}`);
 }
 /* Evaluates the school's configured discipline policy (Setup → Discipline & consequences)
    after a return, and — if a rule is triggered — updates the member's discipline status,
@@ -12112,7 +12113,7 @@ function returnBook(){
   const trx = DB.circulation.find(x=>x.trxId===pick.id);
   if(!trx) return;
   const {wasOverdue, isMissing, book, consequences} = doReturnOne(trx, condition);
-  saveDB(); render();
+  saveDB(`Item returned: ${book?book.title:'Title'}`); render();
   if(consequences && consequences.length){
     toast(`⚠ Consequence triggered: ${consequences.map(c=>c.rule.consequence).join(' · ')}`);
   } else {
@@ -12153,7 +12154,7 @@ function returnStagedBooks(){
     if(trx && !trx.returnDate){ const r = doReturnOne(trx, condition, {quiet:true}); count++; csqCount += (r.consequences||[]).length; }
   });
   returnStaging = [];
-  saveDB(); render();
+  saveDB(`${count} item(s) returned`); render();
   toast(`${count} item(s) returned${csqCount? ` — ⚠ ${csqCount} consequence(s) triggered, see Register`:''}`);
 }
 /* ================= FINES ================= */
@@ -12223,7 +12224,7 @@ function openFinePaymentModal(trxId){
     if(!Array.isArray(t.history)) t.history = [];
     t.history.unshift({date:todayISO(), event:'FINE PAYMENT', detail:`${fmtCurrency(amt)} received — ${t.finePaidAmount>=st.amount?'fully paid':fmtCurrency(st.amount-t.finePaidAmount)+' still outstanding'}`});
     logActivity('circulation', 'fine_payment', `${fmtCurrency(amt)} fine payment recorded — "${t.title}" (${t.name})`);
-    saveDB(); render(); close();
+    saveDB(`Fine payment recorded: ${fmtCurrency(amt)} for ${t.name}`); render(); close();
     toast(t.finePaidAmount >= st.amount ? 'Fine paid in full' : `Payment of ${fmtCurrency(amt)} recorded — ${fmtCurrency(st.amount-t.finePaidAmount)} still outstanding`);
   };
   const waiveBtn = wrap.querySelector('#fineWaiveBtn');
@@ -12242,7 +12243,7 @@ function openFinePaymentModal(trxId){
       conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:(typeof SESSION!=='undefined' && SESSION.fullName)||'',
       note:`Fine of ${fmtCurrency(st.outstanding)} waived — "${reason}"`, offense:'FINE WAIVED', offenseOther:'', consequence:reason, consequenceOther:''
     });
-    saveDB(); render(); close(); toast('Remaining fine waived');
+    saveDB(`Fine waived: ${fmtCurrency(st.outstanding)} for ${t.name}`); render(); close(); toast('Remaining fine waived');
   };
 }
 
@@ -12253,7 +12254,7 @@ function pushNotification({type, title, body, route: toRoute}){
   if(!DB.notifications) DB.notifications = [];
   DB.notifications.unshift({id:'N-'+Date.now()+'-'+Math.random().toString(36).slice(2,6), type:type||'info', title, body:body||'', route:toRoute||'', ts:new Date().toISOString(), read:false});
   if(DB.notifications.length > 150) DB.notifications.length = 150;
-  saveDB();
+  saveDB(`Notification pushed: ${title}`);
   renderNotificationBell();
 }
 function unreadNotificationCount(){ return (DB && DB.notifications) ? DB.notifications.filter(n=>!n.read).length : 0; }
@@ -12266,62 +12267,153 @@ function renderNotificationBell(){
 }
 function markAllNotificationsRead(){
   (DB.notifications||[]).forEach(n=> n.read = true);
-  saveDB(); renderNotificationBell();
+  saveDB('All notifications marked as read'); renderNotificationBell();
 }
 function clearAllNotifications(){
   if(!(DB.notifications||[]).length) return;
   DB.notifications = [];
-  saveDB(); renderNotificationBell(); openNotificationCenter(true);
+  saveDB('All notifications cleared'); renderNotificationBell(); openNotificationCenter(true);
 }
 function dismissNotification(id){
   DB.notifications = (DB.notifications||[]).filter(n=>n.id!==id);
-  saveDB(); openNotificationCenter(true);
+  saveDB('Notification dismissed'); openNotificationCenter(true);
 }
 function openNotification(id){
   const n = (DB.notifications||[]).find(x=>x.id===id);
   if(!n) return;
-  n.read = true; saveDB(); renderNotificationBell();
+  n.read = true; saveDB('Notification opened'); renderNotificationBell();
   closeNotificationCenter();
   if(n.route){ route = n.route; render(); }
 }
 function openNotificationCenter(refreshOnly){
-  let wrap = document.getElementById('notifCenter');
+  const dropdown = document.getElementById('notifDropdown');
   const list = (DB.notifications||[]);
-  const bodyHtml = list.length ? list.map(n=>`
-    <div class="notif-row ${n.read?'':'unread'}">
-      <div class="notif-row-main" onclick="openNotification('${n.id}')">
-        <div class="notif-row-title">${esc(n.title)}</div>
-        <div class="notif-row-body">${esc(n.body)}</div>
-        <div class="notif-row-time">${timeAgo(n.ts)}</div>
-      </div>
-      <button class="notif-row-close" onclick="event.stopPropagation();dismissNotification('${n.id}')" title="Dismiss" aria-label="Dismiss notification">✕</button>
-    </div>`).join('') : `<div class="empty" style="padding:26px 10px"><div class="big">🔔</div>Nothing yet — alerts you get will show up here</div>`;
-  if(refreshOnly && wrap){ wrap.querySelector('.notif-list').innerHTML = bodyHtml; return; }
-  if(wrap) wrap.remove();
-  wrap = document.createElement('div');
-  wrap.id = 'notifCenter';
-  wrap.className = 'notif-center';
-  wrap.innerHTML = `
-    <div class="notif-center-head">
-      <strong>Notifications</strong>
-      <div style="display:flex;gap:8px">
-        <a href="#" onclick="event.stopPropagation();markAllNotificationsRead();openNotificationCenter(true);return false;">Mark all as read</a>
-        <a href="#" onclick="clearAllNotifications();return false;">Clear all</a>
-        <a href="#" onclick="closeNotificationCenter();return false;">Close</a>
-      </div>
-    </div>
-    <div class="notif-list">${bodyHtml}</div>`;
-  document.body.appendChild(wrap);
-  markAllNotificationsRead();
-  setTimeout(()=>{ document.addEventListener('click', notifOutsideClickHandler); }, 0);
+  
+  if(refreshOnly && dropdown && dropdown.style.display !== 'none'){
+    // Just refresh the content
+    renderNotificationList(list, dropdown);
+    return;
+  }
+  
+  if(dropdown.style.display === 'none'){
+    renderNotificationList(list, dropdown);
+    dropdown.style.display = 'block';
+    document.addEventListener('click', notifOutsideClickHandler);
+  } else {
+    dropdown.style.display = 'none';
+    document.removeEventListener('click', notifOutsideClickHandler);
+  }
+}
+
+function renderNotificationList(list, dropdown){
+  dropdown.innerHTML = '';
+  
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);gap:8px';
+  const title = document.createElement('strong');
+  title.textContent = 'Notifications';
+  title.style.cssText = 'flex:1;font-size:13px';
+  header.appendChild(title);
+  
+  const headerActions = document.createElement('div');
+  headerActions.style.cssText = 'display:flex;gap:8px;font-size:11px';
+  
+  if(list.length > 0){
+    const markRead = document.createElement('a');
+    markRead.href = '#';
+    markRead.textContent = 'Mark read';
+    markRead.style.cssText = 'color:var(--forest);font-weight:600;text-decoration:none;cursor:pointer';
+    markRead.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); markAllNotificationsRead(); renderNotificationList(list, dropdown); };
+    headerActions.appendChild(markRead);
+    
+    const clearAll = document.createElement('a');
+    clearAll.href = '#';
+    clearAll.textContent = 'Clear all';
+    clearAll.style.cssText = 'color:var(--forest);font-weight:600;text-decoration:none;cursor:pointer';
+    clearAll.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); clearAllNotifications(); renderNotificationList([], dropdown); };
+    headerActions.appendChild(clearAll);
+  }
+  
+  const closeBtn = document.createElement('a');
+  closeBtn.href = '#';
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'color:var(--forest);font-weight:600;text-decoration:none;cursor:pointer;width:20px;text-align:center';
+  closeBtn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); closeNotificationCenter(); };
+  headerActions.appendChild(closeBtn);
+  
+  header.appendChild(headerActions);
+  dropdown.appendChild(header);
+  
+  // Content
+  const contentDiv = document.createElement('div');
+  contentDiv.style.cssText = 'max-height:calc(70vh - 50px);overflow-y:auto';
+  
+  if(list.length === 0){
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:26px 10px;text-align:center;color:rgba(239,232,211,.5)';
+    const emoji = document.createElement('div');
+    emoji.style.cssText = 'font-size:28px;margin-bottom:8px';
+    emoji.textContent = '🔔';
+    const text = document.createElement('div');
+    text.style.cssText = 'font-size:12px';
+    text.textContent = 'Nothing yet — alerts will show up here';
+    empty.appendChild(emoji);
+    empty.appendChild(text);
+    contentDiv.appendChild(empty);
+  } else {
+    list.forEach(n => {
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:4px;margin:2px 6px;cursor:pointer;transition:background 0.2s;${!n.read ? 'background:rgba(31,58,46,.08);border-left:3px solid var(--accent)' : ''}`;
+      row.onmouseover = function(){ this.style.background = 'rgba(255,255,255,.05)'; };
+      row.onmouseout = function(){ this.style.background = !n.read ? 'rgba(31,58,46,.08)' : 'transparent'; };
+      
+      const mainContent = document.createElement('div');
+      mainContent.style.cssText = 'flex:1;min-width:0';
+      mainContent.onclick = ()=> openNotification(n.id);
+      
+      const titleEl = document.createElement('div');
+      titleEl.style.cssText = 'font-size:12px;font-weight:700;color:var(--ink);margin-bottom:3px';
+      titleEl.textContent = n.title;
+      
+      const bodyEl = document.createElement('div');
+      bodyEl.style.cssText = 'font-size:11px;color:rgba(239,232,211,.7);margin-bottom:4px;line-height:1.4;word-break:break-word';
+      bodyEl.textContent = n.body;
+      
+      const timeEl = document.createElement('div');
+      timeEl.style.cssText = 'font-size:10px;color:rgba(239,232,211,.5)';
+      timeEl.textContent = timeAgo(n.ts);
+      
+      mainContent.appendChild(titleEl);
+      mainContent.appendChild(bodyEl);
+      mainContent.appendChild(timeEl);
+      
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText = 'border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:11px;padding:2px 4px;flex-shrink:0;opacity:0.6;transition:opacity 0.2s';
+      closeBtn.onmouseover = function(){ this.style.opacity = '1'; this.style.color = 'var(--terracotta)'; };
+      closeBtn.onmouseout = function(){ this.style.opacity = '0.6'; this.style.color = 'var(--muted)'; };
+      closeBtn.onclick = (e)=>{ e.stopPropagation(); dismissNotification(n.id); renderNotificationList(DB.notifications||[], dropdown); };
+      
+      row.appendChild(mainContent);
+      row.appendChild(closeBtn);
+      contentDiv.appendChild(row);
+    });
+  }
+  
+  dropdown.appendChild(contentDiv);
 }
 function notifOutsideClickHandler(e){
-  const wrap = document.getElementById('notifCenter');
+  const dropdown = document.getElementById('notifDropdown');
   const bell = document.getElementById('notifBellBtn');
-  if(wrap && !wrap.contains(e.target) && !(bell && bell.contains(e.target))) closeNotificationCenter();
+  if(dropdown && dropdown.style.display !== 'none' && !dropdown.contains(e.target) && !(bell && bell.contains(e.target))){
+    dropdown.style.display = 'none';
+    document.removeEventListener('click', notifOutsideClickHandler);
+  }
 }
 function closeNotificationCenter(){
-  const wrap = document.getElementById('notifCenter'); if(wrap) wrap.remove();
+  const dropdown = document.getElementById('notifDropdown');
+  if(dropdown) dropdown.style.display = 'none';
   document.removeEventListener('click', notifOutsideClickHandler);
 }
 function timeAgo(iso){
@@ -12595,21 +12687,21 @@ function requestReservation(acc, userId){
   DB.reservations.push({id:'RSV-'+Date.now(), acc, title:book.title, userId:user.id, name:user.name, cls:user.cls,
     dateRequested:todayISO(), status:'WAITING', notifiedAt:null});
   logActivity('reservations', 'add', `Reservation placed for ${user.name} — "${book.title}" (${acc})`);
-  saveDB(); render(); toast(`Reservation placed for ${user.name} — they'll be notified when it's returned`);
+  saveDB(`Reservation placed for ${user.name}`); render(); toast(`Reservation placed for ${user.name} — they'll be notified when it's returned`);
 }
 function cancelReservation(id){
   if(!isStaff()) return requireStaff('cancel a reservation');
   const r = DB.reservations.find(x=>x.id===id);
   DB.reservations = DB.reservations.filter(r=>r.id!==id);
   if(r) logActivity('reservations', 'delete', `Reservation cancelled — "${r.title}" for ${r.name}`);
-  saveDB(); render(); toast('Reservation cancelled');
+  saveDB('Reservation cancelled'); render(); toast('Reservation cancelled');
 }
 function fulfillReservation(id){
   if(!isStaff()) return requireStaff('fulfil a reservation');
   const r = DB.reservations.find(x=>x.id===id); if(!r) return;
   r.status = 'FULFILLED';
   logActivity('reservations', 'edit', `Reservation fulfilled — "${r.title}" for ${r.name}`);
-  saveDB(); render(); toast('Reservation marked fulfilled');
+  saveDB('Reservation fulfilled'); render(); toast('Reservation marked fulfilled');
 }
 /* Called right after a book is marked AVAILABLE again — if someone's waiting for this exact
    title, promote their reservation to READY and try to notify them via WhatsApp. */
@@ -12643,7 +12735,7 @@ function renewLoan(trxId){
   if(!Array.isArray(t.history)) t.history = [];
   t.history.unshift({date:todayISO(), event:'RENEWED', detail:`Due date extended to ${fmtDate(t.dueDate)} (${t.renewCount}/${max} renewals used)`});
   logActivity('circulation', 'renew', `Renewed "${t.title}" (${t.acc}) for ${t.name} — new due date ${fmtDate(t.dueDate)}`);
-  saveDB(); render(); toast(`Renewed — new due date ${fmtDate(t.dueDate)} (${t.renewCount}/${max} renewals used)`);
+  saveDB(`${t.title} renewed for ${t.name}`); render(); toast(`Renewed — new due date ${fmtDate(t.dueDate)} (${t.renewCount}/${max} renewals used)`);
 }
 
 /* ================= GLOBAL SEARCH (Ctrl/Cmd+K) ================= */
@@ -13540,7 +13632,7 @@ function openScanModal(mode){
       }
       if(mode==='return' && book.available==='ISSUED'){
         const trx = DB.circulation.find(t=>t.acc===book.acc && !t.returnDate);
-        if(trx){ doReturnOne(trx,'GOOD'); saveDB(); render(); toast(`Returned: ${book.title}`); close(); return; }
+        if(trx){ doReturnOne(trx,'GOOD'); saveDB(`Item returned: ${book.title}`); render(); toast(`Returned: ${book.title}`); close(); return; }
       }
     } else if(user){
       resEl.innerHTML = `<p style="margin:8px 0"><strong>${esc(user.name)}</strong> — ${esc(user.id)} <span class="badge grey">${esc(user.cls||user.category||'')}</span></p>` + status;
@@ -13591,7 +13683,7 @@ function clearAllCirculation(){
     DB.users.forEach(u=>{ u.borrowed = 0; });
     DB.circulation = [];
     DB.reminders = [];
-    saveDB(); render(); toast('All circulation transactions cleared — ready for a new session');
+    saveDB('All circulation transactions cleared'); render(); toast('All circulation transactions cleared — ready for a new session');
   }, {confirmLabel:'Clear all', danger:true});
 }
 
@@ -14055,8 +14147,9 @@ function logReminderEntry(trxId, opts={}){
 }
 function sendReminder(trxId, opts={}){
   if(!isStaff()) return requireStaff('log reminders');
+  const trx = DB.circulation.find(x=>x.trxId===trxId);
   logReminderEntry(trxId, opts);
-  saveDB(); render(); toast('Reminder logged');
+  saveDB(`Reminder logged: ${trx?trx.title:'Transaction'} for ${trx?trx.name:''}`); render(); toast('Reminder logged');
 }
 function sendReminderViaWhatsApp(trxId, kind){
   if(!isStaff()) return requireStaff('log reminders');
@@ -14091,7 +14184,7 @@ function sendBulkReminderViaWhatsApp(userId){
   const html = waBulkReminderCardHtml({name:u.name, loans, accountName:SESSION?.fullName});
   openWaCardModal({html, filenameBase:`reminders-${u.id}`, phone:recipient.phone});
   active.forEach(t=> logReminderEntry(t.trxId, {channel:'WHATSAPP'}));
-  saveDB(); render(); toast(`Reminder logged for ${active.length} loan(s)`);
+  saveDB(`Reminders logged for ${active.length} loan(s)`); render(); toast(`Reminder logged for ${active.length} loan(s)`);
 }
 
 /* ================= PAGE: REGISTER (desk + class visits, consolidated) ================= */
@@ -14164,7 +14257,7 @@ function openRegisterEdit(entryId){
     ],
     onSave:(vals)=>{
       if(!admin) return;
-      Object.assign(r, vals); saveDB(); render(); toast('Entry updated');
+      Object.assign(r, vals); saveDB('Register entry updated'); render(); toast('Entry updated');
     }
   });
   if(!admin){
@@ -14198,7 +14291,7 @@ function clearAllRegister(){
   if(!isAdmin()) return requireAdmin('clear the register');
   confirmModal('Clear ALL register entries (desk sign-ins and class visits)? This cannot be undone — consider a checkpoint first.', ()=>{
     DB.registerLog = [];
-    saveDB(); render(); toast('Register cleared — ready for a new session');
+    saveDB('All register entries cleared'); render(); toast('Register cleared — ready for a new session');
   }, {confirmLabel:'Clear all', danger:true});
 }
 function bulkClearRegister(){
@@ -14209,7 +14302,7 @@ function bulkClearRegister(){
     DB.registerLog = DB.registerLog.filter(x=>!ids.includes(x.entryId));
     registerModuleState.selected.clear();
     logActivity('register', 'delete', `Cleared ${ids.length} register entry(ies) in bulk`);
-    saveDB(); render(); toast(`${ids.length} entry(ies) cleared`);
+    saveDB(`${ids.length} register entry(ies) cleared`); render(); toast(`${ids.length} entry(ies) cleared`);
   });
 }
 /* Batch edit: every field here is optional and only touches selected entries whose value you
@@ -14253,7 +14346,7 @@ function bulkEditRegister(){
       });
       registerModuleState.selected.clear();
       logActivity('register', 'edit', `Batch-edited ${changed} register entry(ies)`);
-      saveDB(); render(); toast(`${changed} entry(ies) updated`);
+      saveDB(`${changed} register entry(ies) updated`); render(); toast(`${changed} entry(ies) updated`);
     }
   });
 }
@@ -14368,7 +14461,7 @@ function submitBatch(){
   });
   batchStaging = batchStaging.filter(s=>!batchChecked[s.id] || blockedIds.has(s.id));
   batchChecked = {};
-  saveDB(); render();
+  saveDB(`${eligible.length} student(s) checked in`); render();
   if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive): ${blockedNames.join(', ')}. ${eligible.length} checked in.`);
   else toast(`${eligible.length} student(s) checked in`);
 }
@@ -14415,7 +14508,7 @@ function submitCheckout(){
   const selected = currentlyInLibrary().filter(r=>checkoutChecked[r.entryId]);
   if(!selected.length){ toast('Select at least one person to check out'); return; }
   selected.forEach(r=>{ r.timeOut = now; checkoutChecked[r.entryId]=false; });
-  saveDB(); render(); toast(`${selected.length} checked out`);
+  saveDB(`${selected.length} people checked out`); render(); toast(`${selected.length} checked out`);
 }
 
 function mountBatchStaging(){
@@ -14552,19 +14645,19 @@ function openScheduleForm(index){
     const notes = [...codes, ...(custom?[custom]:[])].join(', ');
     const row = [day, period, time, classes.join(', '), notes];
     if(existing) DB.scheduleDays[index] = row; else DB.scheduleDays.push(row);
-    saveDB(); render(); toast(existing? 'Period updated':'Period added');
+    saveDB(`Schedule period ${existing?'updated':'added'}: ${period}`); render(); toast(existing? 'Period updated':'Period added');
     $('#modalRoot').innerHTML='';
   };
 }
 function deleteScheduleEntry(index){
   confirmDelete('Remove this schedule entry?', ()=>{
-    DB.scheduleDays.splice(index,1); saveDB(); render(); toast('Period removed');
+    DB.scheduleDays.splice(index,1); saveDB('Schedule period removed'); render(); toast('Period removed');
   });
 }
 function clearAllSchedule(){
   if(!isAdmin()) return requireAdmin('clear the schedule');
   confirmModal(`This removes all ${DB.scheduleDays.length} weekly schedule period(s). Continue?`, ()=>{
-    DB.scheduleDays = []; saveDB(); render(); toast('Schedule cleared');
+    DB.scheduleDays = []; saveDB('All schedule periods cleared'); render(); toast('Schedule cleared');
   }, {confirmLabel:'Clear all', danger:true});
 }
 function clearAllStrikes(){
@@ -14572,7 +14665,7 @@ function clearAllStrikes(){
   confirmModal(`Reset strikes to 0 for all ${DB.users.length} member(s)? This cannot be undone.`, ()=>{
     verifyAdminKeyAsync('Enter the admin key to clear all strikes:', ()=>{
       DB.users.forEach(u=> u.strike = 0);
-      saveDB(); render(); toast('All strikes cleared');
+      saveDB('All strikes cleared'); render(); toast('All strikes cleared');
     });
   }, {confirmLabel:'Reset all', danger:true});
 }
@@ -14580,7 +14673,7 @@ function clearAllMembers(){
   if(!isAdmin()) return requireAdmin('clear all members');
   confirmModal(`Remove all ${DB.users.length} member record(s)? This cannot be undone.`, ()=>{
     verifyAdminKeyAsync('Enter the admin key to clear all members:', ()=>{
-      DB.users = []; saveDB(); render(); toast('All members cleared');
+      DB.users = []; saveDB('All members cleared'); render(); toast('All members cleared');
     });
   }, {confirmLabel:'Remove all', danger:true});
 }
@@ -14588,7 +14681,7 @@ function clearAllCatalogue(){
   if(!isAdmin()) return requireAdmin('clear the catalogue');
   confirmModal(`Remove all ${DB.catalogue.length} title(s) from the catalogue? This cannot be undone.`, ()=>{
     verifyAdminKeyAsync('Enter the admin key to clear the catalogue:', ()=>{
-      DB.catalogue = []; saveDB(); render(); toast('Catalogue cleared');
+      DB.catalogue = []; saveDB('All catalogue titles cleared'); render(); toast('Catalogue cleared');
     });
   }, {confirmLabel:'Remove all', danger:true});
 }
@@ -14673,7 +14766,7 @@ function deleteFeedback(entryId){
   if(!isAdmin()) return requireAdmin('delete feedback');
   confirmDelete('Delete this feedback entry?', ()=>{
     DB.feedback = DB.feedback.filter(x=>x.entryId!==entryId);
-    saveDB(); render(); toast('Feedback deleted');
+    saveDB('Feedback entry deleted'); render(); toast('Feedback deleted');
   });
 }
 function deleteSelectedFeedback(){
@@ -14684,14 +14777,14 @@ function deleteSelectedFeedback(){
     const idSet = new Set(ids);
     DB.feedback = DB.feedback.filter(x=>!idSet.has(x.entryId));
     feedbackModuleState.selected.clear();
-    saveDB(); render(); toast('Selected feedback deleted');
+    saveDB(`${ids.length} feedback entry(ies) deleted`); render(); toast('Selected feedback deleted');
   }, {confirmLabel:'Delete', danger:true});
 }
 function clearAllFeedback(){
   if(!isAdmin()) return requireAdmin('clear feedback');
   confirmModal('Clear ALL feedback entries? This cannot be undone — consider a checkpoint first.', ()=>{
     DB.feedback = [];
-    saveDB(); render(); toast('Feedback cleared');
+    saveDB('All feedback cleared'); render(); toast('Feedback cleared');
   }, {confirmLabel:'Clear all', danger:true});
 }
 function openFeedbackForm(entryId){
@@ -14706,17 +14799,17 @@ function openFeedbackForm(entryId){
     ],
     onSave:(vals)=>{
       if(existing){
-        Object.assign(existing, vals); saveDB(); render(); toast('Feedback updated');
+        Object.assign(existing, vals); saveDB('Feedback updated'); render(); toast('Feedback updated');
       } else {
         vals.entryId=uid('FB'); vals.date=new Date().toISOString(); vals.status='NEW';
-        DB.feedback.unshift(vals); saveDB(); render(); toast('Feedback submitted — thank you');
+        DB.feedback.unshift(vals); saveDB('Feedback submitted'); render(); toast('Feedback submitted — thank you');
       }
     }
   });
 }
 function setFeedbackStatus(entryId, status){
   if(!isStaff()) return requireStaff('update feedback status');
-  const f = DB.feedback.find(x=>x.entryId===entryId); if(f){ f.status=status; saveDB(); }
+  const f = DB.feedback.find(x=>x.entryId===entryId); if(f){ f.status=status; saveDB(`Feedback status updated to ${status}`); }
   toast('Status updated to '+status);
 }
 
@@ -15065,13 +15158,13 @@ function openEquipmentForm(id){
           if(!Array.isArray(existing.history)) existing.history = [];
           existing.history.unshift({date:todayISO(), condition:vals.condition, conditionCounts:counts, location:vals.location, assignedTo:vals.assignedTo, note:'Updated via edit'});
         }
-        saveDB(); render(); toast('Asset updated');
+        saveDB(`Asset updated: ${vals.name}`); render(); toast('Asset updated');
         logActivity('equipment', 'edit', `Updated asset "${existing.name}" (${existing.tag})`);
       } else {
         vals.id = uid('EQP');
         vals.tag = (vals.tag||'').trim() || vals.id;
         vals.history = [{date: vals.dateAdded||todayISO(), condition:vals.condition, conditionCounts:counts, location:vals.location, assignedTo:vals.assignedTo, note:'Added to inventory'}];
-        DB.equipment.unshift(vals); saveDB(); render(); toast('Asset added to inventory');
+        DB.equipment.unshift(vals); saveDB(`Asset added: ${vals.name}`); render(); toast('Asset added to inventory');
         logActivity('equipment', 'add', `Added asset "${vals.name}" (${vals.tag})`);
       }
     }
@@ -15172,7 +15265,7 @@ function openEquipmentAIDescSettingsModal(){
         model: (vals.model||'').trim() || 'gpt-4o-mini',
         apiKey: (vals.apiKey||'').trim(),
       };
-      saveDB(); toast('AI description settings saved');
+      saveDB('AI description settings updated'); toast('AI description settings saved');
     }
   });
 }
@@ -15213,7 +15306,7 @@ function openEquipmentLogUpdateForm(id){
         if(!Array.isArray(item.history)) item.history = [];
         item.history.unshift({date:todayISO(), condition, conditionCounts:counts, location:vals.location, assignedTo:vals.assignedTo, note:vals.note||''});
       }
-      saveDB(); render(); toast('Update logged');
+      saveDB(`Equipment update logged: ${item.name}`); render(); toast('Update logged');
     }
   });
 }
@@ -15245,7 +15338,7 @@ function deleteEquipmentItem(id){
     const item = DB.equipment.find(x=>x.id===id);
     DB.equipment = DB.equipment.filter(x=>x.id!==id);
     if(item) logActivity('equipment', 'delete', `Deleted asset "${item.name}" (${item.tag})`);
-    saveDB(); render(); toast('Equipment deleted');
+    saveDB(`Equipment deleted: ${item?item.name:'item'}`); render(); toast('Equipment deleted');
   });
 }
 function deleteSelectedEquipment(){
@@ -15256,7 +15349,7 @@ function deleteSelectedEquipment(){
     const idSet = new Set(ids);
     DB.equipment = DB.equipment.filter(x=>!idSet.has(x.id));
     equipmentModuleState.selected.clear();
-    saveDB(); render(); toast('Selected equipment deleted');
+    saveDB(`${ids.length} equipment record(s) deleted`); render(); toast('Selected equipment deleted');
   }, {confirmLabel:'Delete', danger:true});
 }
 /* Codes-only labels (barcode or QR, per Setup → same engine as catalogue/member codes) —
@@ -15291,7 +15384,7 @@ function openEquipmentCategoriesModal(){
       const list = String(vals.categories||'').split('\n').map(s=>s.trim()).filter(Boolean);
       const deduped = [...new Set(list)];
       DB.setup.equipmentCategories = deduped.length ? deduped : DEFAULT_EQUIPMENT_CATEGORIES.slice();
-      saveDB(); render(); toast('Categories updated');
+      saveDB(`Equipment categories updated: ${deduped.length} categories`); render(); toast('Categories updated');
     }
   });
 }
@@ -16342,7 +16435,7 @@ function importCategoryJSON(key, file){
     confirmModal(`Overwrite "${label}" with this file's ${expectArray? parsed.length+' record(s)' : 'settings'}? This replaces that category only — everything else is untouched. This can't be undone unless you exported a copy first.`, ()=>{
       DB[key] = parsed;
       if(key==='setup') migrateNewFeatureData(DB); // re-apply defaults for any settings the imported file omits
-      saveDB(); render(); toast(label+' imported');
+      saveDB(`${label} imported`); render(); toast(label+' imported');
     }, {confirmLabel:'Overwrite', danger:true});
   };
   reader.readAsText(file);
@@ -16365,7 +16458,7 @@ function refreshLogoPreviewDOM(){
       rmBtn = document.createElement('button');
       rmBtn.className='btn danger small'; rmBtn.id='logoRemove'; rmBtn.style.marginLeft='6px'; rmBtn.textContent='Remove';
       rmBtn.onclick = ()=>{
-        DB.setup.institutionLogo=null; DB.setup.institutionLogoPos=null; saveDB(); refreshLogoPreviewDOM(); applyAuthBranding(); renderNav(); toast('Logo removed');
+        DB.setup.institutionLogo=null; DB.setup.institutionLogoPos=null; saveDB('Institution logo removed'); refreshLogoPreviewDOM(); applyAuthBranding(); renderNav(); toast('Logo removed');
         if(PREFS.palette==='from_logo'){ PREFS.palette='forest'; PREFS.paletteAuto=true; applyPalette('forest'); savePrefs(); render(); }
       };
       const uploadLabel = uploadRow.querySelector('label.btn'); if(uploadLabel) uploadLabel.after(rmBtn);
@@ -16379,7 +16472,7 @@ function bindSettingsUploaders(){
     if(file.size > 800*1024){ toast('Please choose an image under 800KB'); return; }
     const reader = new FileReader();
     reader.onload = ()=>{
-      DB.setup.institutionLogo = reader.result; DB.setup.institutionLogoPos = {x:50,y:50}; saveDB(); refreshLogoPreviewDOM(); applyAuthBranding(); toast('Logo updated');
+      DB.setup.institutionLogo = reader.result; DB.setup.institutionLogoPos = {x:50,y:50}; saveDB('Institution logo updated'); refreshLogoPreviewDOM(); applyAuthBranding(); toast('Logo updated');
       generatePaletteFromLogo(reader.result);
     };
     reader.readAsDataURL(file);
@@ -16392,7 +16485,7 @@ function bindSettingsUploaders(){
   if(logoPreviewEl) logoPreviewEl.onclick = ()=>{ if(DB.setup.institutionLogo) openImageLightbox(DB.setup.institutionLogo); };
   const logoRemove = document.getElementById('logoRemove');
   if(logoRemove) logoRemove.onclick = ()=>{
-    DB.setup.institutionLogo = null; DB.setup.institutionLogoPos = null; saveDB(); refreshLogoPreviewDOM(); applyAuthBranding(); toast('Logo removed');
+    DB.setup.institutionLogo = null; DB.setup.institutionLogoPos = null; saveDB('Institution logo removed'); refreshLogoPreviewDOM(); applyAuthBranding(); toast('Logo removed');
     if(PREFS.palette==='from_logo'){ PREFS.palette='forest'; PREFS.paletteAuto=true; applyPalette('forest'); savePrefs(); render(); }
   };
   const posX = document.getElementById('logoPosX'), posY = document.getElementById('logoPosY');
@@ -16402,8 +16495,8 @@ function bindSettingsUploaders(){
   };
   if(posX) posX.oninput = e=>{ DB.setup.institutionLogoPos = DB.setup.institutionLogoPos||{x:50,y:50}; DB.setup.institutionLogoPos.x = +e.target.value; updateLogoPreview(); };
   if(posY) posY.oninput = e=>{ DB.setup.institutionLogoPos = DB.setup.institutionLogoPos||{x:50,y:50}; DB.setup.institutionLogoPos.y = +e.target.value; updateLogoPreview(); };
-  if(posX) posX.onchange = ()=> saveDB();
-  if(posY) posY.onchange = ()=> saveDB();
+  if(posX) posX.onchange = ()=> saveDB('Logo position X adjusted');
+  if(posY) posY.onchange = ()=> saveDB('Logo position Y adjusted');
 }
 
 /* ================= PAGE: ABOUT ================= */
@@ -17000,7 +17093,7 @@ function openEditClass(oldName){
         DB.setup.classTeachers[newName] = {staffId:su.id, name:su.name};
       }
       DB.setup.userClasses = sortClassesChrono(DB.setup.userClasses);
-      saveDB(); render(); toast('Class updated everywhere it appears');
+      saveDB(`Class updated: ${newName}`); render(); toast('Class updated everywhere it appears');
     }
   });
   // show the select with staff names instead of raw IDs
@@ -17077,7 +17170,7 @@ function commitPromotion(){
     });
     const n = promoteBatch.length;
     promoteBatch = []; promoteSourceChecked = {};
-    saveDB(); render(); toast(`${n} student(s) promoted to ${to}`);
+    saveDB(`${n} student(s) promoted to ${to}`); render(); toast(`${n} student(s) promoted to ${to}`);
   }, {confirmLabel:'Move', danger:false});
 }
 function renderClassListRowsHtml(){
@@ -17175,7 +17268,7 @@ function saveShelfMap(){
     map[cb.dataset.cls].push(cb.value);
   });
   DB.setup.shelfMap = map;
-  saveDB();
+  saveDB('Shelf mapping updated');
   toast('Shelf mapping saved');
 }
 /* The shelf with the fewest items currently assigned, among the shelves mapped to this main
@@ -17207,7 +17300,7 @@ function autoGroupCatalogueIntoShelves(){
     const unmapped = DB.catalogue.filter(b=> !b.mainClass || !DB.setup.mainClasses.includes(b.mainClass));
     unmapped.forEach(b=>{ if(b.shelf!=='UNASSIGNED'){ b.shelf='UNASSIGNED'; moved++; } });
     logActivity('catalogue', 'edit', `Auto-grouped ${moved} title(s) into shelves by main class`);
-    saveDB(); render();
+    saveDB(`Re-shelved ${moved} title(s)`); render();
     toast(`Re-shelved ${moved} title${moved===1?'':'s'}`);
   }, {confirmLabel:'Re-shelve', danger:false});
 }
@@ -17232,11 +17325,11 @@ function addDesignation(){
   const el = $('#newDesignation'); const s = el.value.trim().toUpperCase();
   if(!s){ toast('Enter a designation'); return; }
   if(!DB.setup.staffDesignations.includes(s)) DB.setup.staffDesignations.push(s);
-  saveDB(); refreshSetupSection('designationList', renderDesignationsHtml); el.value=''; toast('Designation added');
+  saveDB(`Designation added: ${s}`); refreshSetupSection('designationList', renderDesignationsHtml); el.value=''; toast('Designation added');
 }
 function removeDesignation(s){
   DB.setup.staffDesignations = DB.setup.staffDesignations.filter(x=>x!==s);
-  saveDB(); refreshSetupSection('designationList', renderDesignationsHtml);
+  saveDB(`Designation removed: ${s}`); refreshSetupSection('designationList', renderDesignationsHtml);
 }
 function addSubject(){
   const el = $('#newSubject'); const s = el.value.trim().toUpperCase();
@@ -17245,13 +17338,13 @@ function addSubject(){
   if(!DB.setup.subjects.includes(s)) DB.setup.subjects.push(s);
   if(!DB.setup.subjectNames) DB.setup.subjectNames = {};
   if(fullName) DB.setup.subjectNames[s] = fullName;
-  saveDB(); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml); el.value=''; if(nameEl) nameEl.value=''; toast('Subject added');
+  saveDB(`Subject added: ${s}`); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml); el.value=''; if(nameEl) nameEl.value=''; toast('Subject added');
 }
 function removeSubject(s){
   DB.setup.subjects = DB.setup.subjects.filter(x=>x!==s);
   if(DB.setup.subjectNames) delete DB.setup.subjectNames[s];
   Object.keys(DB.setup.classSubjects).forEach(c=> DB.setup.classSubjects[c] = (DB.setup.classSubjects[c]||[]).filter(x=>x!==s));
-  saveDB(); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
+  saveDB(`Subject removed: ${s}`); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
 }
 function saveClassSubjects(){
   const map = {};
@@ -17260,7 +17353,7 @@ function saveClassSubjects(){
     if(cb.checked) map[cb.dataset.cls].push(cb.value);
   });
   DB.setup.classSubjects = Object.assign(DB.setup.classSubjects, map);
-  saveDB(); render(); toast('Class subject distribution saved');
+  saveDB('Class subject distribution updated'); render(); toast('Class subject distribution saved');
 }
 function saveClockPrefs(silent){
   if($('#setClockFormat')) DB.setup.clockFormat = $('#setClockFormat').value;
@@ -17276,12 +17369,12 @@ function saveClockPrefs(silent){
   document.documentElement.style.setProperty('--date-font', (DATE_FONTS[PREFS.dateFont]||DATE_FONTS.default).stack);
   appearancePreviewDirty = false;
   clockPrefsPreviewOriginal = null;
-  savePrefs(); saveDB();
+  savePrefs(); saveDB('Appearance preferences updated');
   if(!silent){ render(); toast('Preferences saved'); }
 }
 function saveInstitution(){
   DB.setup.institutionName = $('#setInstitution').value.trim();
-  saveDB(); render(); renderNav(); applyAuthBranding(); toast('Institution name saved');
+  saveDB(`Institution name updated: ${DB.setup.institutionName}`); render(); renderNav(); applyAuthBranding(); toast('Institution name saved');
 }
 /* ================= write current data back into a downloadable copy of the app itself ================= */
 function catalogueToRows(){ return DB.catalogue.map(b=>[b.acc,b.title,b.info,b.edition,b.vol,b.cls,b.author,b.publisher,b.year,b.category,b.division,b.mainClass,b.shelf,b.dateAdded,b.condition,b.available]); }
@@ -17366,7 +17459,7 @@ async function downloadUpdatedApp(){
 async function applyDataPayload(payload){
   if(!payload || !payload.db || !Array.isArray(payload.db.catalogue)) throw new Error("This doesn't look like an alcms data backup");
   DB = payload.db;
-  await saveDB();
+  await saveDB('Data restored from backup');
 }
 async function applyAccountPayload(payload){
   if(!payload || !Array.isArray(payload.accounts) || !payload.accounts.length) throw new Error("This doesn't look like an alcms account backup");
@@ -17766,7 +17859,7 @@ function clearActivityLog(){
   if(!isAdmin()) return requireAdmin('clear the activity log');
   confirmDelete('Clear the entire activity log? This cannot be undone.', ()=>{
     DB.activityLog = [];
-    saveDB(); render(); toast('Activity log cleared');
+    saveDB('Activity log cleared'); render(); toast('Activity log cleared');
   });
 }
 function pageSecurity(){
@@ -17835,13 +17928,13 @@ function bindSecurityPage(){
 }
 function saveSignupSecurity(){
   DB.setup.requireKeyForAllSignups = document.getElementById('setRequireKeyForAllSignups')?.checked ?? false;
-  saveDB(); toast('Account creation settings saved');
+  saveDB('Account creation settings updated'); toast('Account creation settings saved');
 }
 function saveLoginLockoutSettings(){
   const el = document.getElementById('setLoginAttemptLimit');
   const val = el ? Math.max(1, Math.min(10, +el.value||3)) : 3;
   DB.setup.loginAttemptLimit = val;
-  saveDB(); toast('Login lockout settings saved');
+  saveDB('Login lockout settings updated'); toast('Login lockout settings saved');
 }
 function saveFineSettings(){
   DB.setup.fineEnabled = document.getElementById('setFineEnabled')?.checked || false;
@@ -17849,43 +17942,43 @@ function saveFineSettings(){
   DB.setup.fineCurrency = document.getElementById('setFineCurrency')?.value || '₦';
   DB.setup.maxRenewals = +document.getElementById('setMaxRenewals')?.value ?? 2;
   DB.setup.renewalDays = +document.getElementById('setRenewalDays')?.value || 7;
-  saveDB(); render(); toast('Fines & renewals settings saved');
+  saveDB('Fines & renewals settings updated'); render(); toast('Fines & renewals settings saved');
 }
 /* ---- Integrations (Setup) ---- */
 function saveIntegrationSettings(){
   DB.setup.scanWebhookUrl = (document.getElementById('setScanWebhookUrl')?.value||'').trim();
   DB.setup.stationId = (document.getElementById('setStationId')?.value||'').trim();
-  saveDB(); render(); toast('Integration settings saved');
+  saveDB('Integration settings updated'); render(); toast('Integration settings saved');
 }
 /* ---- Discipline & consequences (Setup) ---- */
 function addOverdueConsequence(){
   if(!Array.isArray(DB.setup.overdueConsequences)) DB.setup.overdueConsequences = [];
   DB.setup.overdueConsequences.push({count:1, consequence:'', suspend:false});
-  saveDB(); render();
+  saveDB('Overdue consequence added'); render();
 }
 function removeOverdueConsequence(i){
-  DB.setup.overdueConsequences.splice(i,1); saveDB(); render(); toast('Threshold removed');
+  DB.setup.overdueConsequences.splice(i,1); saveDB('Overdue consequence removed'); render(); toast('Threshold removed');
 }
 function saveOverdueConsequences(){
   $$('.ocCount').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.count = Math.max(1, +el.value||1); });
   $$('.ocText').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.consequence = el.value.trim(); });
   $$('.ocSuspend').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.suspend = el.checked; });
   DB.setup.overdueConsequences.sort((a,b)=>a.count-b.count);
-  saveDB(); render(); toast('Overdue thresholds saved');
+  saveDB('Overdue thresholds updated'); render(); toast('Overdue thresholds saved');
 }
 function addItemConsequence(){
   if(!Array.isArray(DB.setup.itemConsequences)) DB.setup.itemConsequences = [];
   DB.setup.itemConsequences.push({condition: (DB.setup.conditions||['DAMAGED'])[0], consequence:'', suspend:false});
-  saveDB(); render();
+  saveDB('Item consequence added'); render();
 }
 function removeItemConsequence(i){
-  DB.setup.itemConsequences.splice(i,1); saveDB(); render(); toast('Rule removed');
+  DB.setup.itemConsequences.splice(i,1); saveDB('Item consequence removed'); render(); toast('Rule removed');
 }
 function saveItemConsequences(){
   $$('.icCondition').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.condition = el.value; });
   $$('.icText').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.consequence = el.value.trim(); });
   $$('.icSuspend').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.suspend = el.checked; });
-  saveDB(); render(); toast('Item condition rules saved');
+  saveDB('Item condition rules updated'); render(); toast('Item condition rules saved');
 }
 let pendingCodeType = null;
 function setCodeTypeOption(type){
@@ -17897,12 +17990,12 @@ function setCodeTypeOption(type){
 function saveCodeTypeSetting(){
   DB.setup.codeType = pendingCodeType || DB.setup.codeType || 'barcode';
   pendingCodeType = null;
-  saveDB(); render(); toast('Code type saved — new cards will use '+(DB.setup.codeType==='qr'?'QR codes':'barcodes'));
+  saveDB(`Code type set to ${DB.setup.codeType}`); render(); toast('Code type saved — new cards will use '+(DB.setup.codeType==='qr'?'QR codes':'barcodes'));
 }
 function saveAlertFrequencySettings(){
   DB.setup.alertFrequencyMinutes = +document.getElementById('setAlertFrequency')?.value || 15;
   DB.setup.alertReshowMinutes = +document.getElementById('setAlertReshow')?.value || 2;
-  saveDB();
+  saveDB('Alert frequency settings updated');
   restartOutstandingSummaryTimer();
   toast('Alert settings saved');
 }
@@ -17910,7 +18003,7 @@ function saveIdleLockSettings(){
   DB.setup.idleLockEnabled = document.getElementById('setIdleLockEnabled')?.checked ?? true;
   const minsEl = document.getElementById('setIdleLockMinutes');
   DB.setup.idleLockMinutes = minsEl ? Math.max(2, Math.min(120, +minsEl.value||5)) : 5;
-  saveDB(); resetIdleTimer();
+  saveDB('Inactivity auto-lock settings updated'); resetIdleTimer();
   toast('Inactivity auto-lock settings saved');
 }
 function previewTermScheme(){
@@ -17928,12 +18021,12 @@ function saveWeatherAmbiencePrefs(silent){
   if(!silent){ render(); toast('Preferences saved'); }
 }
 function toggleWhatsAppReceipts(on){
-  DB.setup.whatsappReceipts = on; saveDB();
+  DB.setup.whatsappReceipts = on; saveDB(`WhatsApp receipts ${on?'enabled':'disabled'}`);
   toast(on? 'WhatsApp transaction receipts turned on' : 'WhatsApp transaction receipts turned off');
 }
 function saveNotifTypeSetting(key, on){
   if(!DB.setup.notifTypes) DB.setup.notifTypes = {};
-  DB.setup.notifTypes[key] = on; saveDB();
+  DB.setup.notifTypes[key] = on; saveDB(`Notification type "${key}" ${on?'enabled':'disabled'}`);
 }
 function sendTransactionReceiptIfEnabled(trx, kind){
   // kind: 'BORROWED' | 'RETURNED' — optional, off by default (Setup → Notifications)
@@ -17954,7 +18047,7 @@ function saveAcademicPeriod(){
   DB.setup.currentTerm = TERM_LABEL_SCHEMES[scheme].terms[idx];
   DB.setup.currentSession = document.getElementById('setSession').value;
   DB.setup.sessionLabel = document.getElementById('setSessionLabel')?.value || 'Academic Session';
-  saveDB(); render(); toast('Term & session saved');
+  saveDB(`Term & session updated: ${DB.setup.currentTerm || 'N/A'}`); render(); toast('Term & session saved');
 }
 function addClass(){
   const el = $('#newClassName'); const name = el.value.trim().toUpperCase();
@@ -17963,23 +18056,23 @@ function addClass(){
   if(!DB.setup.userClasses.includes(name)) DB.setup.userClasses.push(name);
   if(!DB.setup.classSubjects[name]) DB.setup.classSubjects[name] = [];
   DB.setup.userClasses = sortClassesChrono(DB.setup.userClasses);
-  saveDB(); refreshSetupSection('classList', renderClassListRowsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml); el.value=''; toast('Class added');
+  saveDB(`Class added: ${name}`); refreshSetupSection('classList', renderClassListRowsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml); el.value=''; toast('Class added');
 }
 function removeClass(c){
   DB.setup.userClasses = DB.setup.userClasses.filter(x=>x!==c);
   delete DB.setup.classTeachers[c]; delete DB.setup.classSubjects[c];
-  saveDB(); refreshSetupSection('classList', renderClassListRowsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
+  saveDB(`Class removed: ${c}`); refreshSetupSection('classList', renderClassListRowsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
 }
 function addShelf(){
   const el = $('#newShelf'); const s = el.value.trim().toUpperCase();
   if(!s){ toast('Enter a shelf code'); return; }
   if(!DB.setup.shelves.includes(s)) DB.setup.shelves.push(s);
-  saveDB(); refreshSetupSection('shelfList', renderShelvesHtml); el.value=''; toast('Shelf added');
+  saveDB(`Shelf added: ${s}`); refreshSetupSection('shelfList', renderShelvesHtml); el.value=''; toast('Shelf added');
 }
-function removeShelf(s){ DB.setup.shelves = DB.setup.shelves.filter(x=>x!==s); saveDB(); refreshSetupSection('shelfList', renderShelvesHtml); }
+function removeShelf(s){ DB.setup.shelves = DB.setup.shelves.filter(x=>x!==s); saveDB(`Shelf removed: ${s}`); refreshSetupSection('shelfList', renderShelvesHtml); }
 async function resetAllData(){
   confirmModal('This will erase all changes and reload the original workbook data. Continue?', async ()=>{
-    DB = buildSeedDB(); await saveDB(); render(); toast('Data reset');
+    DB = buildSeedDB(); await saveDB('All data reset to original'); render(); toast('Data reset');
   }, {confirmLabel:'Reset', danger:true});
 }
 async function clearAllData(){
@@ -17988,7 +18081,7 @@ async function clearAllData(){
     if(typed !== 'CLEAR'){ toast('Not cleared — you must type CLEAR exactly'); return; }
     DB.catalogue = []; DB.users = []; DB.circulation = []; DB.registerLog = [];
     DB.feedback = []; DB.reminders = []; DB.versions = [];
-    await saveDB(); render(); toast('All data cleared — configuration was kept');
+    await saveDB('All user data cleared — configuration retained'); render(); toast('All data cleared — configuration was kept');
   }, {confirmLabel:'Clear', placeholder:'Type CLEAR'});
 }
 
@@ -18006,10 +18099,10 @@ async function createCheckpoint(label){
   DB.versions = DB.versions || [];
   DB.versions.unshift({ id: uid('VER'), at: new Date().toISOString(), by: (SESSION&&SESSION.fullName)||'—', label: label||'Manual save', snapshot });
   if(DB.versions.length > MAX_VERSIONS) DB.versions.length = MAX_VERSIONS;
-  let ok = await saveDB();
+  let ok = await saveDB(`Checkpoint saved: ${label||'Manual save'}`);
   while(!ok && DB.versions.length > 1){
     DB.versions.pop(); // drop the oldest checkpoint and try again
-    ok = await saveDB();
+    ok = await saveDB(`Checkpoint saved (retry): ${label||'Manual save'}`);
   }
   if(!ok){
     DB.versions.shift(); // couldn't fit even one checkpoint — remove it so the UI doesn't show a phantom entry
@@ -18025,14 +18118,14 @@ async function restoreVersionById(id){
     const restored = JSON.parse(v.snapshot);
     restored.versions = DB.versions; // keep history intact
     DB = restored;
-    await saveDB(); render(); toast('Checkpoint restored');
+    await saveDB(`Checkpoint restored: ${v.label}`); render(); toast('Checkpoint restored');
   }, {confirmLabel:'Restore', danger:true});
 }
 async function deleteVersionById(id){
   if(!isAdmin()) return requireAdmin('delete a checkpoint');
   if(!DB || !Array.isArray(DB.versions)) return;
   DB.versions = DB.versions.filter(v=>v.id!==id);
-  await saveDB(); render(); toast('Checkpoint deleted');
+  await saveDB('Checkpoint deleted'); render(); toast('Checkpoint deleted');
 }
 function openVersionPanel(){
   const versions = (DB && DB.versions) || [];
