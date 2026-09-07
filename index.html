@@ -4208,6 +4208,12 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
   }
 }
 
+/* Inactive member styling */
+.member-inactive, .member-inactive strong, .member-inactive span {
+  color: var(--muted) !important;
+  opacity: 0.6;
+}
+
 </style>
 </head>
 <body>
@@ -4573,6 +4579,34 @@ async function pickContactForField(fieldId){
 
 /* ================= preferences (clock/date format — available even before login) ================= */
 const APP_BUILD_VERSION = 'v1.2.1';
+
+// Member status helper functions
+function getMemberById(id){
+  return DB.users && DB.users.find(u=>u.id===id);
+}
+
+function getMemberByName(name){
+  return DB.users && DB.users.find(u=>u.name===name);
+}
+
+function isMemberInactive(memberIdOrName){
+  let member;
+  if(!memberIdOrName) return false;
+  // Try finding by ID first, then by name
+  member = getMemberById(memberIdOrName);
+  if(!member) member = getMemberByName(memberIdOrName);
+  return member && member.status === 'INACTIVE';
+}
+
+function getMemberStatusClass(memberIdOrName){
+  return isMemberInactive(memberIdOrName) ? 'member-inactive' : '';
+}
+
+function memberNameHtml(name, memberId){
+  const cls = getMemberStatusClass(memberId || name);
+  return `<span class="${cls}">${esc(name)}</span>`;
+}
+
 const PREFS_KEY = 'prefs_v1';
 // Initialize sidebar footer
 function initSidebarFooter() {
@@ -9826,7 +9860,10 @@ function pageAnalytics(){
   const topT = Object.entries(byTitle).sort((a,b)=>b[1]-a[1]).slice(0,5);
   // Cache the full loan list behind each row so hover/double-click can look it up by index
   // without re-scanning DB.circulation or fiddling with escaped names in inline handlers.
-  ANALYTICS_TOP_BORROWERS = topB.map(e=>({name:e[0], cls:e[1].cls, count:e[1].count, loans:t.filter(x=>x.name===e[0])}));
+  ANALYTICS_TOP_BORROWERS = topB.map(e=>{
+    const loans = t.filter(x=>x.name===e[0]);
+    return {name:e[0], userId:loans[0]?.userId, cls:e[1].cls, count:e[1].count, loans:loans};
+  });
   ANALYTICS_TOP_TITLES = topT.map(e=>({title:e[0], count:e[1], loans:t.filter(x=>x.title===e[0])}));
   return `
   <div class="panel-head" style="margin-bottom:14px">
@@ -9902,7 +9939,8 @@ function showBorrowerHoverTip(evt, idx){
   const b = ANALYTICS_TOP_BORROWERS[idx];
   if(!b) return;
   const titles = b.loans.map(l=>l.title||'Untitled');
-  showAnalyticsHoverTip(evt, `<div style="font-weight:600;margin-bottom:2px">${esc(b.name)} — books borrowed</div>${analyticsHoverListHtml(titles)}`);
+  const borrowerName = isMemberInactive(b.userId) ? `<span class="${getMemberStatusClass(b.userId)}">${esc(b.name)}</span>` : esc(b.name);
+  showAnalyticsHoverTip(evt, `<div style="font-weight:600;margin-bottom:2px">${borrowerName} — books borrowed</div>${analyticsHoverListHtml(titles)}`);
 }
 function showTitleHoverTip(evt, idx){
   const tt = ANALYTICS_TOP_TITLES[idx];
@@ -9937,8 +9975,9 @@ function openBorrowerLoansModal(idx){
     const status = txnStatus(l);
     return `<tr><td>${esc(l.title||'—')}</td><td>${esc(l.acc||'—')}</td><td>${fmtDate(l.dateBorrowed)}</td><td>${fmtDate(l.dueDate)}</td><td>${l.returnDate?fmtDate(l.returnDate):'—'}</td><td><span class="badge ${status==='RETURNED'?'green':status==='OVERDUE'||status==='MISSING'?'red':'gold'}">${status}</span></td></tr>`;
   });
+  const borrowerName = isMemberInactive(b.userId) ? `<span class="${getMemberStatusClass(b.userId)}">${esc(b.name)}</span>` : esc(b.name);
   analyticsLoanDetailModal(
-    `${esc(b.name)} — books borrowed`,
+    `${borrowerName} — books borrowed`,
     `${esc(b.cls||'')} · ${b.loans.length} loan(s) total`,
     ['Title','Acc. No','Date borrowed','Due date','Return date','Status'],
     rows
@@ -11123,7 +11162,7 @@ function pageMemberProfile(){
   <button class="btn secondary" style="margin-bottom:14px" onclick="route='users';render();">← Back to Members</button>
   <div class="card panel">
     <div class="panel-head">
-      <h3>${esc(u.name)} <span class="badge ${u.status==='ACTIVE'?'green':'grey'}">${esc(u.status)}</span></h3>
+      <h3><span class="${getMemberStatusClass(u.id)}">${esc(u.name)}</span> <span class="badge ${u.status==='ACTIVE'?'green':'grey'}">${esc(u.status)}</span></h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary small" onclick="openMemberCardModal('${esc(u.id)}')">🪪 ID Card</button>
         <button class="btn secondary small" onclick="printMemberFullProfile('${esc(u.id)}')">🖶 Print full profile</button>
@@ -12524,7 +12563,7 @@ function renderLockLoanSuggest(){
   const m = collectSearchMatches(q);
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="scan-suggest-row" data-kind="book" data-id="${esc(b.acc)}"><span class="ss-ic">📘</span><span class="ss-main"><strong>${esc(b.title)}</strong><span class="ss-sub">${esc(b.acc)} · ${esc(b.available)}</span></span></div>`).join(''); }
-  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="scan-suggest-row" data-kind="member" data-id="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong>${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`).join(''); }
+  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="scan-suggest-row" data-kind="member" data-id="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong class="${getMemberStatusClass(u.id)}">${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`).join(''); }
   if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${esc(t.name)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
   if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · ${esc(r.status)}</span></span></div>`).join(''); }
   if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
@@ -12818,8 +12857,8 @@ function buildGlobalSearchHTML(q){
   }
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="gsearch-row" onclick="globalSearchGoto('book','${esc(b.acc)}')"><span class="gs-ic">📘</span><div class="gs-main"><div class="ttl">${esc(b.title)}</div><div class="sub">${esc(b.acc)} · ${esc(b.available)}</div></div></div>`).join(''); }
-  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="gsearch-row" onclick="globalSearchGoto('member','${esc(u.id)}')"><span class="gs-ic">👤</span><div class="gs-main"><div class="ttl">${esc(u.name)}</div><div class="sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</div></div></div>`).join(''); }
-  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub">${esc(t.name)} · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
+  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="gsearch-row ${getMemberStatusClass(u.id)}" onclick="globalSearchGoto('member','${esc(u.id)}')"><span class="gs-ic">👤</span><div class="gs-main"><div class="ttl">${esc(u.name)}</div><div class="sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</div></div></div>`).join(''); }
+  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub"><span class="${getMemberStatusClass(t.userId)}">${esc(t.name)}</span> · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
   if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · ${esc(r.status)}</div></div></div>`).join(''); }
   if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
   return html || `<div class="empty" style="padding:20px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`;
@@ -13590,7 +13629,7 @@ function openScanModal(mode){
     if(!bookMatches.length && !userMatches.length){ closeSuggest(); return; }
     suggestEl.innerHTML = [
       ...bookMatches.map(b=>`<div class="scan-suggest-row" data-code="${esc(b.acc)}"><span class="ss-ic">📖</span><span class="ss-main"><strong>${esc(b.title)}</strong><span class="ss-sub">${esc(b.acc)} · ${esc(b.available)}</span></span></div>`),
-      ...userMatches.map(u=>`<div class="scan-suggest-row" data-code="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong>${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`)
+      ...userMatches.map(u=>`<div class="scan-suggest-row" data-code="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong class="${getMemberStatusClass(u.id)}">${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`)
     ].join('');
     suggestEl.classList.add('open');
     positionFloatingPanel(suggestEl, input, {matchWidth:true});
