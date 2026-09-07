@@ -4297,7 +4297,8 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
     </div>
     <nav class="navlist" id="navlist"></nav>
     <div class="sidebar-foot">
-      Automated Library &amp; Circulation Management System · July 2026
+      <div style="font-weight:600;margin-bottom:4px">alcms ${APP_BUILD_VERSION}</div>
+      © ${new Date().getFullYear()} VersaX CS. All rights reserved.
     </div>
   </aside>
   <div class="main">
@@ -4571,6 +4572,7 @@ async function pickContactForField(fieldId){
 }
 
 /* ================= preferences (clock/date format — available even before login) ================= */
+const APP_BUILD_VERSION = 'v1.2.1';
 const PREFS_KEY = 'prefs_v1';
 let PREFS = {clockFormat:'24h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
@@ -16545,7 +16547,7 @@ function pageAbout(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Version</h3></div>
-    <p style="font-size:12.5px;color:var(--muted)">alcms · July 2026 build · ${DB.catalogue.length} titles · ${DB.users.length} members on record.</p>
+    <p style="font-size:12.5px;color:var(--muted)">alcms · ${APP_BUILD_VERSION} · ${DB.catalogue.length} titles · ${DB.users.length} members on record.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Support</h3></div>
