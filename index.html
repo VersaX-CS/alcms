@@ -4337,7 +4337,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
-          <div id="notifDropdown" style="display:none;position:absolute;left:0;top:100%;width:300px;max-width:min(88vw,320px);max-height:360px;overflow:auto;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:6px;margin-top:4px;text-align:left"></div>
+          <div id="notifDropdown" style="display:none;position:absolute;left:0;top:100%;width:300px;max-width:min(88vw,320px);max-height:360px;overflow:hidden;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:6px;margin-top:4px;text-align:left"></div>
         </button>
         <button class="icon-btn" id="themeToggleMobile" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
         <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online"><span id="connectivityIcon">🌐</span><span id="connectivityText">Online</span></div>
@@ -12443,7 +12443,7 @@ function renderNotificationList(list, dropdown){
   
   // Content
   const contentDiv = document.createElement('div');
-  contentDiv.style.cssText = 'max-height:calc(70vh - 50px);overflow-y:auto';
+  contentDiv.style.cssText = 'max-height:calc(360px - 50px);overflow-y:auto';
   
   if(list.length === 0){
     const empty = document.createElement('div');
@@ -12541,6 +12541,7 @@ function toggleAuthNotifPreview(){
     </div>`).join('') : `<div class="empty" style="padding:20px 10px"><div class="big">🔔</div>Nothing yet</div>`;
   box.innerHTML = rows + `<div class="auth-notif-signin-hint">Sign in to open, dismiss or manage these</div>`;
   box.classList.add('open');
+  box.style.display = 'block'; // clear/override any stale inline "display:none" left from a previous close
   repositionAuthNotifPreview();
   window.addEventListener('resize', repositionAuthNotifPreview);
   setTimeout(()=> document.addEventListener('click', authNotifOutsideClickHandler), 0);
@@ -16703,6 +16704,8 @@ const GUIDE_TIPS = [
   'Analytics\' Print and Export buttons both cover the entire page — summary tables, every chart\'s data, and the overdue detail — so you never need to stitch together several exports.',
   'Fingerprint/Face ID sign-in needs the page to be opened over https:// (or http://localhost) and a device with a fingerprint reader or face sensor — it\'s hidden or shows a note if either is missing. It\'s always an extra option on top of your username and password, never a replacement.',
   'On mobile, tap the page title in the topbar to open a scrollable list of every destination — no need to open the full sidebar drawer first.',
+  'Keyboard shortcuts work from anywhere in the app, not just one page: Ctrl/Cmd+S saves instantly (same as clicking the save icon), and Ctrl/Cmd+Z undoes your most recent change.',
+  'A handheld or USB barcode/QR scanner works from any page, not just Circulation — scan a book or member code and it jumps straight to that title\'s or member\'s page.',
 ];
 /* ================= comprehensive PDF user guide ================= */
 function stripHtmlTags(s){
