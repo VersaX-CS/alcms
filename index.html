@@ -4333,6 +4333,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <button class="icon-btn" id="undoBtn" onclick="event.stopPropagation();toggleUndoMenu();" title="Undo history (Ctrl+Z)" aria-label="Undo history" style="position:relative;background:none;border:none" aria-haspopup="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span id="undoCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
         <div class="dropdown-menu" id="undoMenu" style="display:none;position:absolute;left:0;top:100%;width:300px;max-height:300px;overflow-y:auto;z-index:1200;background:var(--bg);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
         </button>
+        <button class="icon-btn" id="exitAppBtn" onclick="exitApp()" title="Exit app" aria-label="Exit app" style="background:none;border:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="12"/><path d="M6.5 5.5a8 8 0 1 0 11 0"/></svg></button>
         <button class="icon-btn" id="installAppBtn" onclick="promptInstallApp()" title="Install app" aria-label="Install app" style="display:none">⬇️<span class="note-btn-label">Install</span></button>
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
@@ -6122,6 +6123,13 @@ let navStack = ['home'];       // our own logical page stack, bottom is always H
 let __navFromPopstate = false; // true while render() is reacting to a back/forward press, so it
                                 // doesn't re-push a browser history entry for a page we're leaving
 let backExitArmed = false;
+// Exit-app topbar button: closes the tab/window when the browser permits it (installed
+// PWA or a wrapped WebView shell). Browsers block window.close() on tabs the page didn't
+// open itself, so on an ordinary tab this is a no-op and we let the user know instead.
+function exitApp(){
+  try{ window.close(); }catch(err){}
+  setTimeout(()=>{ toast('Close this tab or window to exit'); }, 50);
+}
 let backExitTimer = null;
 window.addEventListener('popstate', (e)=>{
   if(navStack.length > 1){
