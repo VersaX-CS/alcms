@@ -4580,7 +4580,7 @@ function initSidebarFooter() {
   if (footer) {
     const versionLine = footer.querySelector('div:first-child');
     const copyrightLine = footer.querySelector('div:last-child');
-    if (versionLine) versionLine.textContent = `alcms ${APP_BUILD_VERSION}`;
+    if (versionLine) versionLine.textContent = `alcms - ${APP_BUILD_VERSION}`;
     if (copyrightLine) copyrightLine.textContent = `© ${new Date().getFullYear()} VersaX CS. All rights reserved.`;
   }
 }
