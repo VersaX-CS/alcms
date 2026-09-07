@@ -4333,7 +4333,6 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <button class="icon-btn" id="undoBtn" onclick="event.stopPropagation();toggleUndoMenu();" title="Undo history (Ctrl+Z)" aria-label="Undo history" style="position:relative;background:none;border:none" aria-haspopup="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span id="undoCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
         <div class="dropdown-menu" id="undoMenu" style="display:none;position:absolute;left:0;top:100%;width:300px;max-height:300px;overflow-y:auto;z-index:1200;background:var(--bg);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
         </button>
-        <button class="icon-btn" id="exitAppBtn" onclick="exitApp()" title="Exit app" aria-label="Exit app" style="background:none;border:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="12"/><path d="M6.5 5.5a8 8 0 1 0 11 0"/></svg></button>
         <button class="icon-btn" id="installAppBtn" onclick="promptInstallApp()" title="Install app" aria-label="Install app" style="display:none">⬇️<span class="note-btn-label">Install</span></button>
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
@@ -6123,13 +6122,6 @@ let navStack = ['home'];       // our own logical page stack, bottom is always H
 let __navFromPopstate = false; // true while render() is reacting to a back/forward press, so it
                                 // doesn't re-push a browser history entry for a page we're leaving
 let backExitArmed = false;
-// Exit-app topbar button: closes the tab/window when the browser permits it (installed
-// PWA or a wrapped WebView shell). Browsers block window.close() on tabs the page didn't
-// open itself, so on an ordinary tab this is a no-op and we let the user know instead.
-function exitApp(){
-  try{ window.close(); }catch(err){}
-  setTimeout(()=>{ toast('Close this tab or window to exit'); }, 50);
-}
 let backExitTimer = null;
 window.addEventListener('popstate', (e)=>{
   if(navStack.length > 1){
@@ -6326,6 +6318,7 @@ function renderUndoMenu(){
 }
 
 function undoToAction(index){
+  if(!isAdmin()) return requireAdmin('revert to a previous action');
   if(index < 0 || index >= actionHistory.length) return;
   
   const action = actionHistory[index];
@@ -11542,6 +11535,7 @@ async function downloadMemberDocument(memberId, docId){
 }
 
 function deleteMemberDocument(memberId, docId){
+  if(!isAdmin()) return requireAdmin('delete member documents');
   confirmDelete('Delete this document? This cannot be undone.', ()=>{
   const u = DB.users.find(x=>x.id===memberId);
   if(!u) return;
@@ -17568,21 +17562,30 @@ async function downloadUpdatedApp(){
    - Checkpoints    → combined snapshot saved locally (no download), for a fast
                      in-app "undo to a known-good point". */
 async function applyDataPayload(payload){
+  // Guarded here too (not just in the callers like restoreDataBackup/githubLoadNow) since this
+  // function replaces the entire database and is reachable directly by name — a caller-only
+  // check would be trivial to route around.
+  if(!isAdmin()) throw new Error('Only admins can restore data');
   if(!payload || !payload.db || !Array.isArray(payload.db.catalogue)) throw new Error("This doesn't look like an alcms data backup");
   DB = payload.db;
   await saveDB('Data restored from backup');
 }
 async function applyAccountPayload(payload){
+  // Same reasoning as applyDataPayload — this overwrites every account (passwords included)
+  // and can also overwrite the admin key, so it must not trust its callers alone.
+  if(!isAdmin()) throw new Error('Only admins can restore accounts');
   if(!payload || !Array.isArray(payload.accounts) || !payload.accounts.length) throw new Error("This doesn't look like an alcms account backup");
   ACCOUNTS = payload.accounts; await saveAccounts(ACCOUNTS);
   if(payload.prefs){ PREFS = Object.assign(PREFS, payload.prefs); await savePrefs(); applyTheme(); applyPalette(PREFS.palette); applyIconPack(); }
   if(payload.adminKey) await saveAdminKey(payload.adminKey);
 }
 async function applyFullPayload(payload){
+  if(!isAdmin()) throw new Error('Only admins can load a full backup');
   await applyDataPayload(payload);
   if(Array.isArray(payload.accounts) && payload.accounts.length) await applyAccountPayload(payload);
 }
 function downloadDataBackup(){
+  if(!isAdmin()) return requireAdmin('download a data backup');
   const payload = { type:'alcms-data-backup', exportedAt:new Date().toISOString(), db:DB };
   downloadBlob('alcms_data_backup_'+todayISO()+'.json', new Blob([JSON.stringify(payload)], {type:'application/json'}));
   toast('Data backup downloaded (catalogue, members, circulation, schedule, institution branding)');
@@ -17603,9 +17606,14 @@ function restoreDataBackup(file){
   reader.readAsText(file);
 }
 function downloadAccountBackup(){
-  const payload = { type:'alcms-account-backup', exportedAt:new Date().toISOString(), accounts:ACCOUNTS, prefs:PREFS, adminKey:ADMIN_KEY };
-  downloadBlob('alcms_account_backup_'+todayISO()+'.json', new Blob([JSON.stringify(payload)], {type:'application/json'}));
-  toast('Account backup downloaded (accounts, profile pictures, theme & preferences)');
+  if(!isAdmin()) return requireAdmin('download an account backup');
+  // This export includes every account's password and the admin key itself in plain text —
+  // require proof of the current admin key, not just the ADMIN role, before it can be pulled.
+  verifyAdminKeyAsync('Enter the admin key to export account data:', ()=>{
+    const payload = { type:'alcms-account-backup', exportedAt:new Date().toISOString(), accounts:ACCOUNTS, prefs:PREFS, adminKey:ADMIN_KEY };
+    downloadBlob('alcms_account_backup_'+todayISO()+'.json', new Blob([JSON.stringify(payload)], {type:'application/json'}));
+    toast('Account backup downloaded (accounts, profile pictures, theme & preferences)');
+  });
 }
 function restoreAccountBackup(file){
   if(!file) return;
@@ -17871,11 +17879,17 @@ async function lockDueToInactivity(){
   document.addEventListener(evt, resetIdleTimer, {passive:true});
 });
 function changeAdminKey(){
+  if(!isAdmin()) return requireAdmin('change the admin key');
   const el = document.getElementById('setAdminKey');
   const val = el ? el.value.trim() : '';
   if(val.length < 6){ toast('Choose an admin key at least 6 characters long'); return; }
-  saveAdminKey(val);
-  toast('Admin key updated');
+  // Require proof of the CURRENT admin key before overwriting it — otherwise any account that
+  // merely holds the ADMIN role (e.g. a second admin created later) could silently lock out
+  // everyone else who still relies on the old key.
+  verifyAdminKeyAsync('Enter the CURRENT admin key to confirm this change:', ()=>{
+    saveAdminKey(val);
+    toast('Admin key updated');
+  });
 }
 /* ================= PAGE: ACTIVITY LOG ================= */
 let activityLogModule;
@@ -18182,6 +18196,7 @@ function addShelf(){
 }
 function removeShelf(s){ DB.setup.shelves = DB.setup.shelves.filter(x=>x!==s); saveDB(`Shelf removed: ${s}`); refreshSetupSection('shelfList', renderShelvesHtml); }
 async function resetAllData(){
+  if(!isAdmin()) return requireAdmin('reset all data');
   confirmModal('This will erase all changes and reload the original workbook data. Continue?', async ()=>{
     DB = buildSeedDB(); await saveDB('All data reset to original'); render(); toast('Data reset');
   }, {confirmLabel:'Reset', danger:true});
@@ -18222,6 +18237,7 @@ async function createCheckpoint(label){
   return ok;
 }
 async function restoreVersionById(id){
+  if(!isAdmin()) return requireAdmin('restore a checkpoint');
   confirmModal('Restore this checkpoint? Current unsaved-in-checkpoint changes will be replaced.', async ()=>{
     const versions = (DB && DB.versions) || [];
     const v = versions.find(x=>x.id===id);
