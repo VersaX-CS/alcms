@@ -17208,7 +17208,7 @@ function renderPromoteSourceList(){
     <thead><tr><th><input type="checkbox" id="promoteSelectAll"></th><th>ID</th><th>Name</th></tr></thead>
     <tbody>${students.map(u=>`<tr>
       <td><input type="checkbox" class="promoteSrcCheck" data-id="${esc(u.id)}" ${promoteSourceChecked[u.id]?'checked':''}></td>
-      <td>${esc(u.id)}</td><td>${esc(u.name)}</td>
+      <td>${esc(u.id)}</td><td><span class="${getMemberStatusClass(u.id)}">${esc(u.name)}</span></td>
     </tr>`).join('')}</tbody>
   </table>`;
   const selAll = document.getElementById('promoteSelectAll');
@@ -17243,7 +17243,7 @@ function renderPromoteStaging(){
   el.innerHTML = `
   <table class="stage-table">
     <thead><tr><th>ID</th><th>Name</th><th>Current class</th><th></th></tr></thead>
-    <tbody>${promoteBatch.map(s=>`<tr><td>${esc(s.id)}</td><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
+    <tbody>${promoteBatch.map(s=>`<tr><td>${esc(s.id)}</td><td><span class="${getMemberStatusClass(s.id)}">${esc(s.name)}</span></td><td>${esc(s.cls)}</td>
       <td><button class="btn danger small" onclick="removeFromPromoteBatch('${esc(s.id)}')">Remove</button></td></tr>`).join('')}</tbody>
   </table>`;
 }
@@ -17265,8 +17265,22 @@ function commitPromotion(){
 function renderClassListRowsHtml(){
   return sortedClasses().map(c=>{
     const ct = DB.setup.classTeachers[c];
-    const label = ct ? (ct.staffId ? (DB.users.find(u=>u.id===ct.staffId)||{}).name || ct.name : ct.name) : 'no teacher set';
-    return `<div class="list-editor-row"><span><strong>${esc(c)}</strong> — ${esc(label)}</span>
+    let label = 'no teacher set';
+    let labelHtml = label;
+    if(ct){
+      const teacher = ct.staffId ? DB.users.find(u=>u.id===ct.staffId) : null;
+      if(teacher){
+        label = teacher.name;
+        const isInactive = isMemberInactive(teacher.id);
+        const inactiveMarker = isInactive ? ' (inactive)' : '';
+        const statusCls = getMemberStatusClass(teacher.id);
+        labelHtml = statusCls ? `<span class="${statusCls}">${esc(label)}</span>${inactiveMarker}` : `${esc(label)}${inactiveMarker}`;
+      } else {
+        label = ct.name;
+        labelHtml = esc(label);
+      }
+    }
+    return `<div class="list-editor-row"><span><strong>${esc(c)}</strong> — ${labelHtml}</span>
     <button class="btn secondary small" onclick="openEditClass('${esc(c)}')">Edit</button>
     <button class="btn danger small" onclick="removeClass('${esc(c)}')">Remove</button></div>`;
   }).join('');
