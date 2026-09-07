@@ -4296,7 +4296,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       </div>
     </div>
     <div class="sidebar-icon-row">
-      <button class="icon-btn" id="sidebarSaveBtn" onclick="saveNow()" title="Save changes" aria-label="Save changes">💾</button>
+      <button class="icon-btn" id="sidebarSaveBtn" onclick="saveNow()" title="Save changes" aria-label="Save changes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v11.5"/><path d="M7 10.5l5 5 5-5"/><path d="M4 19h16"/></svg></button>
       <button class="icon-btn" id="navLockBtn" onclick="lockSession()" title="Lock (sign out)" aria-label="Lock and sign out">🔒</button>
       <button class="icon-btn" id="themeToggle" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
       <button class="icon-btn sidebar-pin-toggle" id="sidebarPinBtn" onclick="toggleSidebarPersist()" title="Keep menu open — click to pin" aria-label="Keep menu open" aria-pressed="false">📌</button>
@@ -4331,13 +4331,13 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
           <div class="topbar-search-results" id="topbarSearchResults"></div>
         </div>
         <button class="icon-btn" id="undoBtn" onclick="event.stopPropagation();toggleUndoMenu();" title="Undo history (Ctrl+Z)" aria-label="Undo history" style="position:relative;background:none;border:none" aria-haspopup="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span id="undoCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
-        <div class="dropdown-menu" id="undoMenu" style="display:none;position:absolute;left:0;top:100%;width:300px;max-height:300px;overflow-y:auto;z-index:1200;background:var(--bg);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
+        <div class="dropdown-menu" id="undoMenu" style="display:none;position:absolute;left:0;top:100%;width:300px;max-height:300px;overflow-y:auto;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
         </button>
         <button class="icon-btn" id="installAppBtn" onclick="promptInstallApp()" title="Install app" aria-label="Install app" style="display:none">⬇️<span class="note-btn-label">Install</span></button>
         <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
-          <div id="notifDropdown" style="display:none;position:absolute;left:0;top:100%;width:380px;max-width:90vw;max-height:70vh;overflow-y:auto;z-index:1200;background:var(--bg);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
+          <div id="notifDropdown" style="display:none;position:absolute;left:0;top:100%;width:380px;max-width:90vw;max-height:70vh;overflow-y:auto;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin-top:4px"></div>
         </button>
         <button class="icon-btn" id="themeToggleMobile" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
         <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online"><span id="connectivityIcon">🌐</span><span id="connectivityText">Online</span></div>
@@ -6343,9 +6343,11 @@ async function saveDB(actionDescription = 'Data change'){
 }
 async function saveNow(){
   const btn = document.getElementById('sidebarSaveBtn');
-  if(btn){ btn.textContent = '⏳'; btn.disabled = true; }
+  // Just disable the button while saving — never swap its icon out for a
+  // temporary emoji glyph, so it always keeps the line-style save icon.
+  if(btn){ btn.disabled = true; }
   const ok = await saveDB('Manual save');
-  if(btn){ btn.textContent = ok ? '✓' : '⚠'; setTimeout(()=>{ btn.textContent='💾'; btn.disabled=false; }, 1200); }
+  if(btn){ btn.disabled = false; }
   if(!ok){
     toast('⚠ Save failed — your browser storage is likely full. This change will be lost on refresh. Delete some checkpoints (Backup &amp; Restore) or download a backup now.');
     return;
@@ -6892,6 +6894,12 @@ function svgIco(inner, vb){
    line icon instead of being a fixed-colour raster image. */
 const MICROSOFT_SEARCH_ICON = `<svg viewBox="0 0 20 20" width="16" height="16" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="display:inline-block; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg>`;
 
+/* Sized/inline variant of the save line-icon for use inline with text (buttons, labels, prose) —
+   SVG_ICONS.save below has no explicit width/height since it relies on the .ico/.icon-btn CSS
+   sizing rules for the icon-only sidebar button; this version carries its own size so it also
+   looks right sitting next to a text label. */
+const SAVE_ICON_INLINE = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" style="vertical-align:-2px;display:inline-block" aria-hidden="true"><path d="M12 3v11.5"/><path d="M7 10.5l5 5 5-5"/><path d="M4 19h16"/></svg>`;
+
 const SVG_ICONS = {
   home: svgIco(`<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-6h4v6h3a1 1 0 0 0 1-1v-9"/>`),
   dashboard: svgIco(`<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>`),
@@ -7037,6 +7045,7 @@ function removeCustomQuote(i){
   saveDB('Quote removed'); render(); toast('Quote removed');
 }
 function saveAppBackground(silent){
+  if(!isAdmin()) return requireAdmin('change the app background');
   const opacity = +document.getElementById('appBgOpacity').value || 0;
   DB.setup.appBackgroundOpacity = opacity;
   const file = document.getElementById('appBgInput').files[0];
@@ -7051,6 +7060,7 @@ function saveAppBackground(silent){
   }
 }
 function clearAppBackground(){
+  if(!isAdmin()) return requireAdmin('change the app background');
   appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; DB.setup.appBackgroundImage = null; saveDB('App background removed'); applyAppBackground(); render(); toast('Background removed');
 }
 // Live preview: reads the picked file (if any) into a draft data-URL and/or the opacity slider,
@@ -7103,6 +7113,7 @@ function applyAppBackground(){
   }
 }
 function saveAuthBackground(silent){
+  if(!isAdmin()) return requireAdmin('change the sign-in background');
   const opEl = document.getElementById('authBgOpacity');
   if(opEl) DB.setup.authBackgroundOpacity = +opEl.value;
   const file = document.getElementById('authBgInput').files[0];
@@ -7170,6 +7181,7 @@ function saveLockscreenAppearance(silent){
   saveAuthBackground(silent);
 }
 function clearAuthBackground(){
+  if(!isAdmin()) return requireAdmin('change the sign-in background');
   DB.setup.authBackgroundImage = null; saveDB('Sign-in background removed'); applyAuthBackground(); render(); toast('Sign-in background removed');
 }
 function saveAuthBoxOpacity(){
@@ -7860,7 +7872,7 @@ function openTipsCarouselModal(title, tips){
     const t = tips[tipsCarouselIdx];
     return `
       <div class="tips-card">
-        <div class="tips-card-ico">${esc(t.ico||'💡')}</div>
+        <div class="tips-card-ico">${t.ico||'💡'}</div>
         <h4>${esc(t.heading)}</h4>
         <p>${esc(t.body)}</p>
       </div>`;
@@ -7905,7 +7917,7 @@ function openTipsCarouselModal(title, tips){
 const QUICK_TIPS = [
   {ico:'<svg viewBox="0 0 20 20" width="24" height="24" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg>', heading:'Find anything fast', body:'Use the search bar at the top of Catalogue, Members or any list — results filter as you type, and the ✕ clears it.'},
   {ico:'⇄', heading:'Issue & return', body:'Circulation lets you issue a title to a member in a few keystrokes, and batch several titles together with "+ Add to batch".'},
-  {ico:'💾', heading:'Save often', body:'Use the save icon in the sidebar, or a checkpoint in Backup & Restore, so nothing is lost if the browser closes.'},
+  {ico:SVG_ICONS.save, heading:'Save often', body:'Use the save icon in the sidebar, or a checkpoint in Backup & Restore, so nothing is lost if the browser closes.'},
   {ico:'🔔', heading:'Stay on top of overdue loans', body:'The Reminder Log flags overdue titles, and can message the borrower (or their class teacher) on WhatsApp directly.'},
   {ico:'🗓️', heading:'Schedule alerts', body:'When a class period starts, a popup with sound lets you know — it snoozes and comes back every 2 minutes until you close it.'},
   {ico:'📊', heading:'See the bigger picture', body:'Dashboard and Analytics summarise borrowing trends, overdue rates and your busiest categories at a glance.'},
@@ -11090,11 +11102,13 @@ let memberProfileTab = 'loans';
 function openMemberProfile(id){ currentProfileMemberId = id; memberProfileTab = 'loans'; route = 'memberProfile'; render(); }
 function setMemberProfileTab(tab){ memberProfileTab = tab; render(); }
 function saveMemberSubjectsTab(id){
+  if(!isAdmin()) return requireAdmin('edit member subjects');
   const u = DB.users.find(x=>x.id===id); if(!u) return;
   const chosen = $$('.subjChkProfile').filter(c=>c.checked).map(c=>c.value);
   u.subjects = chosen; saveDB('Subjects updated for '+u.name); render(); toast('Subjects updated for '+u.name);
 }
 function resetMemberSubjectsTab(id){
+  if(!isAdmin()) return requireAdmin('edit member subjects');
   const u = DB.users.find(x=>x.id===id); if(!u) return;
   delete u.subjects; saveDB('Subjects reset to class default'); render(); toast('Reset to class default');
 }
@@ -11292,6 +11306,7 @@ async function resolveMemberDocUrl(doc){
   return url;
 }
 async function migrateMemberDocumentsToGithub(memberId){
+  if(!isAdmin()) return requireAdmin('move member documents');
   const cfg = await loadGithubConfig();
   if(!cfg || !cfg.owner || !cfg.repo || !cfg.token){ toast('Set up GitHub sync first (Backup & Restore)'); openGithubConfigForm(); return; }
   const u = DB.users.find(x=>x.id===memberId);
@@ -11345,7 +11360,7 @@ function renderMemberDocumentsTab(memberId, documents){
         ${doc.summary ? `<div style="font-size:12px;line-height:1.4;color:var(--muted)">${esc(doc.summary)}</div>` : ''}
         <div style="border-top:1px solid var(--line);padding-top:6px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
           <span>${fmtDate(doc.dateUploaded)}</span>
-          <span title="${onGithub?'Stored on GitHub':'Stored locally in this database'}">${onGithub?'☁️ GitHub':'💾 Local'} · ${esc(doc.fileSize||'—')}</span>
+          <span title="${onGithub?'Stored on GitHub':'Stored locally in this database'}">${onGithub?'☁️ GitHub':SAVE_ICON_INLINE+' Local'} · ${esc(doc.fileSize||'—')}</span>
         </div>
         ${doc.tags && doc.tags.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${doc.tags.map(t=>`<span class="badge grey">${esc(t)}</span>`).join('')}</div>` : ''}
       </div>`;
@@ -11392,7 +11407,7 @@ async function previewMemberDocument(memberId, docId){
         ${doc.summary? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${esc(doc.summary)}</p>`:''}
         ${body}
         <div style="margin-top:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-          <span>${info.label} · ${fmtDate(doc.dateUploaded)}</span><span>${doc.storage==='github'?'☁️ GitHub':'💾 Local'} · ${esc(doc.fileSize||'—')}</span>
+          <span>${info.label} · ${fmtDate(doc.dateUploaded)}</span><span>${doc.storage==='github'?'☁️ GitHub':SAVE_ICON_INLINE+' Local'} · ${esc(doc.fileSize||'—')}</span>
         </div>
       </div>
       <div class="modal-foot">
@@ -11458,6 +11473,7 @@ function openMemberDocumentUploadModal(memberId){
 }
 
 function saveMemberDocument(memberId, close){
+  if(!isAdmin()){ toast('Only admins can upload documents'); return; }
   const name = $('#docNameInput')?.value?.trim();
   const type = $('#docTypeSelect')?.value || 'other';
   const summary = $('#docSummaryInput')?.value?.trim() || '';
@@ -12390,7 +12406,7 @@ function renderNotificationList(list, dropdown){
   
   // Header
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);gap:8px';
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);gap:8px';
   const title = document.createElement('strong');
   title.textContent = 'Notifications';
   title.style.cssText = 'flex:1;font-size:13px';
@@ -13719,6 +13735,11 @@ function openScanModal(mode){
         } else if(window.__issueBookPicker) window.__issueBookPicker.pick({id:book.acc, label:book.title});
       }
       if(mode==='return' && book.available==='ISSUED'){
+        // Scanning a book by ACCESSION NUMBER (not member ID) returns it immediately — unlike the
+        // "loans out for this member" branch below, there's no follow-up confirm step, so this is
+        // the one place in the whole scan flow that actually commits a return. It must carry the
+        // same isStaff() gate as returnBook()/bulkReturnCirculation()/returnStagedBooks().
+        if(!isStaff()){ resEl.innerHTML += statusLineHtml(false, "Only staff or admin accounts can process returns"); return; }
         const trx = DB.circulation.find(t=>t.acc===book.acc && !t.returnDate);
         if(trx){ doReturnOne(trx,'GOOD'); saveDB(`Item returned: ${book.title}`); render(); toast(`Returned: ${book.title}`); close(); return; }
       }
@@ -14684,6 +14705,7 @@ function scheduleFields(r){
   ];
 }
 function openScheduleForm(index){
+  if(!isAdmin()) return requireAdmin('edit the schedule');
   const existing = index!==undefined ? DB.scheduleDays[index] : null;
   // "Expected class" and "Notes" are stored as comma-joined strings so a period can list several
   // classes together and several subject codes together, while staying compatible with the plain
@@ -14738,6 +14760,7 @@ function openScheduleForm(index){
   };
 }
 function deleteScheduleEntry(index){
+  if(!isAdmin()) return requireAdmin('delete schedule entries');
   confirmDelete('Remove this schedule entry?', ()=>{
     DB.scheduleDays.splice(index,1); saveDB('Schedule period removed'); render(); toast('Period removed');
   });
@@ -14877,6 +14900,7 @@ function clearAllFeedback(){
 }
 function openFeedbackForm(entryId){
   const existing = entryId ? DB.feedback.find(x=>x.entryId===entryId) : null;
+  if(existing && !isAdmin()) return requireAdmin('edit feedback entries');
   openModal({
     title: existing ? 'Edit feedback' : 'Submit feedback',
     fields:[
@@ -15978,7 +16002,7 @@ function pageSettings(){
   }
   return `
   <div class="settings-toolbar">
-    <button class="btn" onclick="saveAllPersonalization()">💾 Save changes</button>
+    <button class="btn" onclick="saveAllPersonalization()">${SAVE_ICON_INLINE} Save changes</button>
     <button class="btn danger" onclick="resetPersonalization()">↺ Reset personalization to default</button>
     <div class="hint">Every section below previews live as you edit it — nothing is kept until you click Save.</div>
   </div>
@@ -15987,7 +16011,7 @@ function pageSettings(){
     ${editingThemeSetKey ? `<div class="field-hint" style="background:rgba(184,134,62,.12);border:1px solid var(--brass);border-radius:8px;padding:8px 10px;margin-bottom:10px">
       Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page, click the Save button at the bottom to apply them, then come back here.
       <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn secondary small" onclick="updateThemeSet()">💾 Update this theme</button>
+        <button class="btn secondary small" onclick="updateThemeSet()">${SAVE_ICON_INLINE} Update this theme</button>
         <button class="btn secondary small" onclick="stopEditingThemeSet()">Done editing</button>
       </div>
     </div>` : ''}
@@ -16004,7 +16028,7 @@ function pageSettings(){
       }).join('')}</div>
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Save the current look as a new theme</label><input type="text" id="newThemeSetName" placeholder="e.g. Reading Room"></div>
-      <button class="btn secondary" onclick="saveCurrentAsThemeSet()">💾 Save as new theme</button>
+      <button class="btn secondary" onclick="saveCurrentAsThemeSet()">${SAVE_ICON_INLINE} Save as new theme</button>
     </div>
     <p class="field-hint" style="margin-top:8px">Applying a theme instantly sets its colour palette, fonts, icon pack, modal transition, section/modal/title-bar style &amp; colours, and lockscreen clock/decoration — then saves right away, no extra "Save" click needed. Uploaded background images themselves aren't swapped by a theme (they're separate files) — only the style and opacity around them.</p>
   </div>
@@ -16042,7 +16066,7 @@ function pageSettings(){
     </div>
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Preset name</label><input type="text" id="cpName" placeholder="e.g. School Colours" value="${esc(customPaletteDraft.label||'')}"></div>
-      <button class="btn secondary" onclick="saveCustomPalette()">💾 Save as preset</button>
+      <button class="btn secondary" onclick="saveCustomPalette()">${SAVE_ICON_INLINE} Save as preset</button>
       <button class="btn secondary" onclick="cancelCustomPaletteDraft()">Cancel / revert preview</button>
     </div>
   </div>
@@ -16502,6 +16526,7 @@ const DATA_PORTAL_CATEGORIES = [
   {key:'setup', label:'Setup & settings', hint:'Single settings object (Dewey lists, classes, fines, codes, etc.)'},
 ];
 function downloadCategoryJSON(key){
+  if(!isAdmin()) return requireAdmin('export data');
   const cat = DATA_PORTAL_CATEGORIES.find(c=>c.key===key);
   const val = DB[key];
   downloadBlob('alcms_'+key+'_'+todayISO()+'.json', new Blob([JSON.stringify(val, null, 2)], {type:'application/json'}));
@@ -16555,6 +16580,7 @@ function refreshLogoPreviewDOM(){
   renderNav();
 }
 function bindSettingsUploaders(){
+  if(!isAdmin()) return; // institution branding — mirrors the isAdmin() gate at the call site, kept here too since these are DOM event handlers that persist until the page re-renders
   const handleLogoFile = (e)=>{
     const file = e.target.files[0]; if(!file) return;
     if(file.size > 800*1024){ toast('Please choose an image under 800KB'); return; }
@@ -16615,7 +16641,7 @@ function pageAbout(){
     </div>
     <div class="card panel">
       <div class="panel-head"><h3>How your data is stored</h3></div>
-      <p style="font-size:13px;line-height:1.7;color:var(--muted)">Everything you add or change is saved automatically to this app's storage, and reloads the next time you open it. Use the <strong>💾 Save changes</strong> button any time for peace of mind, <strong>🕐 Checkpoints</strong> for named restore points, and Backup &amp; Restore to download a full copy for your own Drive.</p>
+      <p style="font-size:13px;line-height:1.7;color:var(--muted)">Everything you add or change is saved automatically to this app's storage, and reloads the next time you open it. Use the <strong>${SAVE_ICON_INLINE} Save changes</strong> button any time for peace of mind, <strong>🕐 Checkpoints</strong> for named restore points, and Backup &amp; Restore to download a full copy for your own Drive.</p>
     </div>
   </div>
   <div class="card panel">
@@ -17147,12 +17173,13 @@ function pageGuide(){
 const GUIDE_FAQ = [
   {q:'I forgot my password — what do I do?', a:'On the sign-in screen, use "Forgot password?" and answer your security question to reset it. If you never set one, ask an admin to reset your account.'},
   {q:'Why can\'t I edit or delete anything?', a:'Guest accounts can browse and search but can\'t change data. Sign in with an admin account, or ask an admin to change your role in Personalization.'},
-  {q:'My changes disappeared after I refreshed the page — why?', a:'Make sure you pressed "💾 Save changes" (or a Checkpoint) before closing the tab. If your browser storage is full, saves can fail — Backup &amp; Restore will show a warning when that happens.'},
+  {q:'My changes disappeared after I refreshed the page — why?', a:'Make sure you pressed "Save changes" (or a Checkpoint) before closing the tab. If your browser storage is full, saves can fail — Backup &amp; Restore will show a warning when that happens.'},
   {q:'How do I move my data to another device or browser?', a:'Use Backup &amp; Restore: either download a full backup file and restore it on the other device, or set up GitHub sync to push/pull the same data from anywhere.'},
   {q:'How do I get in touch about a bug or request?', a:'Use the "Send a query / complaint" button on the About page, or reach the developer directly by email or WhatsApp — both are listed there.'},
   {q:'The fingerprint/Face ID button isn\'t showing up — why?', a:'It only appears once at least one account has registered a device, and it needs a secure connection (https://, or http://localhost) plus a device with a fingerprint reader or face sensor. It won\'t work if this file is opened directly from disk (file://) — hosting it (e.g. on GitHub Pages) or running it through a local server fixes that. Your username and password always work regardless.'},
 ];
 function openEditClass(oldName){
+  if(!isAdmin()) return requireAdmin('edit classes');
   const staff = DB.users.filter(u=>u.category==='STAFF');
   const ct = DB.setup.classTeachers[oldName];
   openModal({
@@ -17251,6 +17278,7 @@ function renderPromoteStaging(){
 }
 function clearPromoteStaging(){ promoteBatch=[]; promoteSourceChecked={}; renderPromoteSourceList(); renderPromoteStaging(); }
 function commitPromotion(){
+  if(!isAdmin()) return requireAdmin('promote students');
   if(!promoteBatch.length){ toast('Stage at least one student first'); return; }
   const to = $('#promoteTo').value;
   if(!to){ toast('Select a "Move to" class first'); return; }
@@ -17331,6 +17359,7 @@ function enforceShelfMapUnique(cb){
    a home for future titles), then fills the checkboxes for review — nothing is saved until
    "Save shelf mapping" is clicked. */
 function proposeShelfMap(){
+  if(!isAdmin()) return requireAdmin('edit the shelf mapping');
   const classes = DB.setup.mainClasses;
   const shelves = DB.setup.shelves.filter(s=>s!=='UNASSIGNED');
   if(!classes.length || !shelves.length){ toast('Set up main classes and shelves first'); return; }
@@ -17366,6 +17395,7 @@ function proposeShelfMap(){
   toast('Proposed a split based on current collection sizes — review below, then Save');
 }
 function saveShelfMap(){
+  if(!isAdmin()) return requireAdmin('save the shelf mapping');
   const map = {};
   $$('.shelfMapChk').forEach(cb=>{
     if(!cb.checked) return;
@@ -17427,16 +17457,19 @@ function renderClassSubjectGridHtml(){
 }
 function refreshSetupSection(id, htmlFn){ const el=document.getElementById(id); if(el) el.innerHTML = htmlFn(); }
 function addDesignation(){
+  if(!isAdmin()) return requireAdmin('add designations');
   const el = $('#newDesignation'); const s = el.value.trim().toUpperCase();
   if(!s){ toast('Enter a designation'); return; }
   if(!DB.setup.staffDesignations.includes(s)) DB.setup.staffDesignations.push(s);
   saveDB(`Designation added: ${s}`); refreshSetupSection('designationList', renderDesignationsHtml); el.value=''; toast('Designation added');
 }
 function removeDesignation(s){
+  if(!isAdmin()) return requireAdmin('remove designations');
   DB.setup.staffDesignations = DB.setup.staffDesignations.filter(x=>x!==s);
   saveDB(`Designation removed: ${s}`); refreshSetupSection('designationList', renderDesignationsHtml);
 }
 function addSubject(){
+  if(!isAdmin()) return requireAdmin('add subjects');
   const el = $('#newSubject'); const s = el.value.trim().toUpperCase();
   const nameEl = $('#newSubjectName'); const fullName = nameEl ? nameEl.value.trim().toUpperCase() : '';
   if(!s){ toast('Enter a subject code'); return; }
@@ -17446,12 +17479,14 @@ function addSubject(){
   saveDB(`Subject added: ${s}`); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml); el.value=''; if(nameEl) nameEl.value=''; toast('Subject added');
 }
 function removeSubject(s){
+  if(!isAdmin()) return requireAdmin('remove subjects');
   DB.setup.subjects = DB.setup.subjects.filter(x=>x!==s);
   if(DB.setup.subjectNames) delete DB.setup.subjectNames[s];
   Object.keys(DB.setup.classSubjects).forEach(c=> DB.setup.classSubjects[c] = (DB.setup.classSubjects[c]||[]).filter(x=>x!==s));
   saveDB(`Subject removed: ${s}`); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
 }
 function saveClassSubjects(){
+  if(!isAdmin()) return requireAdmin('edit class subjects');
   const map = {};
   $$('.classSubjChk').forEach(cb=>{
     if(!map[cb.dataset.cls]) map[cb.dataset.cls]=[];
@@ -17478,6 +17513,7 @@ function saveClockPrefs(silent){
   if(!silent){ render(); toast('Preferences saved'); }
 }
 function saveInstitution(){
+  if(!isAdmin()) return requireAdmin('edit institution settings');
   DB.setup.institutionName = $('#setInstitution').value.trim();
   saveDB(`Institution name updated: ${DB.setup.institutionName}`); render(); renderNav(); applyAuthBranding(); toast('Institution name saved');
 }
@@ -17801,6 +17837,7 @@ async function loadAutoBackupCfg(){
 }
 async function saveAutoBackupCfg(){ await storeSet(AUTO_BACKUP_KEY, JSON.stringify(AUTO_BACKUP)); }
 function saveAutoBackupForm(){
+  if(!isAdmin()) return requireAdmin('change auto-backup settings');
   AUTO_BACKUP.enabled = !!document.getElementById('abEnabled')?.checked;
   AUTO_BACKUP.frequency = document.getElementById('abFrequency')?.value || 'daily';
   AUTO_BACKUP.time = document.getElementById('abTime')?.value || '20:00';
@@ -18052,16 +18089,19 @@ function bindSecurityPage(){
   bindDeleteButtons();
 }
 function saveSignupSecurity(){
+  if(!isAdmin()) return requireAdmin('change account creation security');
   DB.setup.requireKeyForAllSignups = document.getElementById('setRequireKeyForAllSignups')?.checked ?? false;
   saveDB('Account creation settings updated'); toast('Account creation settings saved');
 }
 function saveLoginLockoutSettings(){
+  if(!isAdmin()) return requireAdmin('change login lockout settings');
   const el = document.getElementById('setLoginAttemptLimit');
   const val = el ? Math.max(1, Math.min(10, +el.value||3)) : 3;
   DB.setup.loginAttemptLimit = val;
   saveDB('Login lockout settings updated'); toast('Login lockout settings saved');
 }
 function saveFineSettings(){
+  if(!isAdmin()) return requireAdmin('change fines & renewal settings');
   DB.setup.fineEnabled = document.getElementById('setFineEnabled')?.checked || false;
   DB.setup.fineRatePerDay = +document.getElementById('setFineRate')?.value || 0;
   DB.setup.fineCurrency = document.getElementById('setFineCurrency')?.value || '₦';
@@ -18071,20 +18111,24 @@ function saveFineSettings(){
 }
 /* ---- Integrations (Setup) ---- */
 function saveIntegrationSettings(){
+  if(!isAdmin()) return requireAdmin('change integration settings');
   DB.setup.scanWebhookUrl = (document.getElementById('setScanWebhookUrl')?.value||'').trim();
   DB.setup.stationId = (document.getElementById('setStationId')?.value||'').trim();
   saveDB('Integration settings updated'); render(); toast('Integration settings saved');
 }
 /* ---- Discipline & consequences (Setup) ---- */
 function addOverdueConsequence(){
+  if(!isAdmin()) return requireAdmin('edit discipline settings');
   if(!Array.isArray(DB.setup.overdueConsequences)) DB.setup.overdueConsequences = [];
   DB.setup.overdueConsequences.push({count:1, consequence:'', suspend:false});
   saveDB('Overdue consequence added'); render();
 }
 function removeOverdueConsequence(i){
+  if(!isAdmin()) return requireAdmin('edit discipline settings');
   DB.setup.overdueConsequences.splice(i,1); saveDB('Overdue consequence removed'); render(); toast('Threshold removed');
 }
 function saveOverdueConsequences(){
+  if(!isAdmin()) return requireAdmin('edit discipline settings');
   $$('.ocCount').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.count = Math.max(1, +el.value||1); });
   $$('.ocText').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.consequence = el.value.trim(); });
   $$('.ocSuspend').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.suspend = el.checked; });
@@ -18092,14 +18136,17 @@ function saveOverdueConsequences(){
   saveDB('Overdue thresholds updated'); render(); toast('Overdue thresholds saved');
 }
 function addItemConsequence(){
+  if(!isAdmin()) return requireAdmin('edit discipline settings');
   if(!Array.isArray(DB.setup.itemConsequences)) DB.setup.itemConsequences = [];
   DB.setup.itemConsequences.push({condition: (DB.setup.conditions||['DAMAGED'])[0], consequence:'', suspend:false});
   saveDB('Item consequence added'); render();
 }
 function removeItemConsequence(i){
+  if(!isAdmin()) return requireAdmin('edit discipline settings');
   DB.setup.itemConsequences.splice(i,1); saveDB('Item consequence removed'); render(); toast('Rule removed');
 }
 function saveItemConsequences(){
+  if(!isAdmin()) return requireAdmin('edit discipline settings');
   $$('.icCondition').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.condition = el.value; });
   $$('.icText').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.consequence = el.value.trim(); });
   $$('.icSuspend').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.suspend = el.checked; });
@@ -18113,11 +18160,13 @@ function setCodeTypeOption(type){
   if(qrOpt) qrOpt.classList.toggle('selected', type==='qr');
 }
 function saveCodeTypeSetting(){
+  if(!isAdmin()) return requireAdmin('change the code type');
   DB.setup.codeType = pendingCodeType || DB.setup.codeType || 'barcode';
   pendingCodeType = null;
   saveDB(`Code type set to ${DB.setup.codeType}`); render(); toast('Code type saved — new cards will use '+(DB.setup.codeType==='qr'?'QR codes':'barcodes'));
 }
 function saveAlertFrequencySettings(){
+  if(!isAdmin()) return requireAdmin('change alert frequency settings');
   DB.setup.alertFrequencyMinutes = +document.getElementById('setAlertFrequency')?.value || 15;
   DB.setup.alertReshowMinutes = +document.getElementById('setAlertReshow')?.value || 2;
   saveDB('Alert frequency settings updated');
@@ -18125,6 +18174,7 @@ function saveAlertFrequencySettings(){
   toast('Alert settings saved');
 }
 function saveIdleLockSettings(){
+  if(!isAdmin()) return requireAdmin('change inactivity auto-lock settings');
   DB.setup.idleLockEnabled = document.getElementById('setIdleLockEnabled')?.checked ?? true;
   const minsEl = document.getElementById('setIdleLockMinutes');
   DB.setup.idleLockMinutes = minsEl ? Math.max(2, Math.min(120, +minsEl.value||5)) : 5;
@@ -18146,10 +18196,12 @@ function saveWeatherAmbiencePrefs(silent){
   if(!silent){ render(); toast('Preferences saved'); }
 }
 function toggleWhatsAppReceipts(on){
+  if(!isAdmin()) return requireAdmin('change WhatsApp receipt settings');
   DB.setup.whatsappReceipts = on; saveDB(`WhatsApp receipts ${on?'enabled':'disabled'}`);
   toast(on? 'WhatsApp transaction receipts turned on' : 'WhatsApp transaction receipts turned off');
 }
 function saveNotifTypeSetting(key, on){
+  if(!isAdmin()) return requireAdmin('change notification settings');
   if(!DB.setup.notifTypes) DB.setup.notifTypes = {};
   DB.setup.notifTypes[key] = on; saveDB(`Notification type "${key}" ${on?'enabled':'disabled'}`);
 }
@@ -18165,6 +18217,7 @@ function sendTransactionReceiptIfEnabled(trx, kind){
   openWaCardModal({html, filenameBase:`${isReturn?'return':'borrow'}-receipt-${trx.acc||''}`, phone:recipient.phone});
 }
 function saveAcademicPeriod(){
+  if(!isAdmin()) return requireAdmin('edit the academic term & session');
   const scheme = document.getElementById('setTermScheme').value;
   const idx = +document.getElementById('setTermIndex').value;
   DB.setup.termScheme = scheme;
@@ -18175,6 +18228,7 @@ function saveAcademicPeriod(){
   saveDB(`Term & session updated: ${DB.setup.currentTerm || 'N/A'}`); render(); toast('Term & session saved');
 }
 function addClass(){
+  if(!isAdmin()) return requireAdmin('add classes');
   const el = $('#newClassName'); const name = el.value.trim().toUpperCase();
   if(!name){ toast('Enter a class name'); return; }
   if(!name.startsWith('YEAR')){ toast('Student classes should start with "YEAR"'); return; }
@@ -18184,17 +18238,22 @@ function addClass(){
   saveDB(`Class added: ${name}`); refreshSetupSection('classList', renderClassListRowsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml); el.value=''; toast('Class added');
 }
 function removeClass(c){
+  if(!isAdmin()) return requireAdmin('remove classes');
   DB.setup.userClasses = DB.setup.userClasses.filter(x=>x!==c);
   delete DB.setup.classTeachers[c]; delete DB.setup.classSubjects[c];
   saveDB(`Class removed: ${c}`); refreshSetupSection('classList', renderClassListRowsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
 }
 function addShelf(){
+  if(!isAdmin()) return requireAdmin('add shelves');
   const el = $('#newShelf'); const s = el.value.trim().toUpperCase();
   if(!s){ toast('Enter a shelf code'); return; }
   if(!DB.setup.shelves.includes(s)) DB.setup.shelves.push(s);
   saveDB(`Shelf added: ${s}`); refreshSetupSection('shelfList', renderShelvesHtml); el.value=''; toast('Shelf added');
 }
-function removeShelf(s){ DB.setup.shelves = DB.setup.shelves.filter(x=>x!==s); saveDB(`Shelf removed: ${s}`); refreshSetupSection('shelfList', renderShelvesHtml); }
+function removeShelf(s){
+  if(!isAdmin()) return requireAdmin('remove shelves');
+  DB.setup.shelves = DB.setup.shelves.filter(x=>x!==s); saveDB(`Shelf removed: ${s}`); refreshSetupSection('shelfList', renderShelvesHtml);
+}
 async function resetAllData(){
   if(!isAdmin()) return requireAdmin('reset all data');
   confirmModal('This will erase all changes and reload the original workbook data. Continue?', async ()=>{
@@ -18261,11 +18320,11 @@ function openVersionPanel(){
     <div class="modal" style="max-width:640px">
       <div class="modal-head"><h3>Checkpoints &amp; restore</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
-        <p class="field-hint" style="margin-bottom:10px">The "💾 Save changes" button in the sidebar saves everything instantly. A checkpoint is a separate, named snapshot you can come back to later — use it before a big change, like end-of-term promotion.</p>
+        <p class="field-hint" style="margin-bottom:10px">The "${SAVE_ICON_INLINE} Save changes" button in the sidebar saves everything instantly. A checkpoint is a separate, named snapshot you can come back to later — use it before a big change, like end-of-term promotion.</p>
         <div class="field-row">
           <div class="field" style="grid-column:1/3"><label>Checkpoint label</label><input id="checkpointLabel" placeholder="e.g. End of term 3 review"></div>
         </div>
-        <button class="btn" id="btnCheckpoint">💾 Save checkpoint now</button>
+        <button class="btn" id="btnCheckpoint">${SAVE_ICON_INLINE} Save checkpoint now</button>
         <p class="field-hint" style="margin:16px 0 6px">Restore points (${versions.length}/${MAX_VERSIONS})</p>
         <div class="table-wrap" style="max-height:280px">
           <table class="datatable"><thead><tr><th>When</th><th>Label</th><th>By</th><th></th></tr></thead>
@@ -18645,6 +18704,12 @@ async function openNoteModal(){
   textarea.value = savedNote || '';
   noteHasChanges = false;
   
+  // Reset the Save button label in case the modal is reopened while a previous
+  // "✓ Saved" revert timer was still pending (e.g. closed right after saving).
+  if(noteSaveRevertTimer){ clearTimeout(noteSaveRevertTimer); noteSaveRevertTimer = null; }
+  const saveBtn = document.querySelector('.note-modal-footer .btn-primary');
+  if(saveBtn) saveBtn.textContent = 'Save';
+  
   // Show modal
   overlay.classList.add('show');
   modal.classList.add('show');
@@ -18669,6 +18734,8 @@ function hideNoteModal(){
   modal.classList.remove('show');
 }
 
+let noteSaveRevertTimer = null;
+
 async function saveNote(){
   const textarea = document.getElementById('noteTextarea');
   const text = textarea.value;
@@ -18677,9 +18744,9 @@ async function saveNote(){
   
   // Visual feedback
   const saveBtn = document.querySelector('.note-modal-footer .btn-primary');
-  const originalText = saveBtn.textContent;
+  if(noteSaveRevertTimer){ clearTimeout(noteSaveRevertTimer); noteSaveRevertTimer = null; }
   saveBtn.textContent = '✓ Saved';
-  setTimeout(()=>{ saveBtn.textContent = originalText; }, 1500);
+  noteSaveRevertTimer = setTimeout(()=>{ saveBtn.textContent = 'Save'; noteSaveRevertTimer = null; }, 1500);
 }
 
 function clearNoteConfirm(){
@@ -18695,7 +18762,17 @@ function clearNoteConfirm(){
 document.addEventListener('DOMContentLoaded', ()=>{
   const textarea = document.getElementById('noteTextarea');
   if(textarea){
-    textarea.addEventListener('input', ()=>{ noteHasChanges = true; });
+    textarea.addEventListener('input', ()=>{
+      noteHasChanges = true;
+      // If the "✓ Saved" label is still showing from a previous save, revert it
+      // as soon as the user starts a new entry, instead of waiting on the timer.
+      if(noteSaveRevertTimer){
+        clearTimeout(noteSaveRevertTimer);
+        noteSaveRevertTimer = null;
+        const saveBtn = document.querySelector('.note-modal-footer .btn-primary');
+        if(saveBtn) saveBtn.textContent = 'Save';
+      }
+    });
   }
   
   // Prevent closing without saving
