@@ -5357,13 +5357,14 @@ const LIBRARY_QUOTES = [
 function getAuthSlides(){
   const ready = DB && Array.isArray(DB.catalogue) && Array.isArray(DB.users);
   const orgWord = (DB && DB.setup && DB.setup.institutionName) ? DB.setup.institutionName : 'the library';
+  const activeMembers = DB.users.filter(u=>u.status==='ACTIVE').length;
   const stats = ready ? [
     {big: DB.catalogue.filter(b=>b.available!=='WITHDRAWN').length.toLocaleString(), lbl:'Titles catalogued', text:`Every accessioned book in ${orgWord}'s collection, organised by Dewey main class and shelf location.`},
-    {big: DB.users.length.toLocaleString(), lbl:'Registered members', text:'Students and staff who can borrow, with per-category limits and discipline tracking.'},
+    {big: activeMembers.toLocaleString(), lbl:'Active members', text:'Students and staff who are currently eligible to borrow, with per-category limits and discipline tracking.'},
     {big: LOAN_PERIOD_DAYS+' days', lbl:'Standard loan period', text:`Every title issued is due back in ${LOAN_PERIOD_DAYS} days — the desk will flag it automatically if it runs late.`},
   ] : [
     {big:'···', lbl:'Titles catalogued', text:'Loading the catalogue…'},
-    {big:'···', lbl:'Registered members', text:'Loading members…'},
+    {big:'···', lbl:'Active members', text:'Loading member data…'},
   ];
   const customQuotes = (DB && DB.setup && Array.isArray(DB.setup.customQuotes)) ? DB.setup.customQuotes : [];
   const quotes = [...LIBRARY_QUOTES, ...customQuotes].map(x=>({big:'“', lbl:'A library quote', text:x.q, author:x.author, info:x.info}));
@@ -9715,7 +9716,15 @@ function pageDashboard(){
     ${kpi('Overdue right now', overdue, overdue? 'needs action':'all clear')}
     
     <!-- Key Metrics -->
-    ${kpi('Registered members', u.length, u.filter(x=>x.category==='STAFF').length+' staff')}
+    ${(() => {
+      const totalMembers = u.length;
+      const activeCount = u.filter(x=>x.status==='ACTIVE').length;
+      const suspendedCount = u.filter(x=>x.status==='SUSPENDED').length;
+      const inactiveCount = u.filter(x=>x.status==='INACTIVE').length;
+      const staffCount = u.filter(x=>x.category==='STAFF').length;
+      const breakdown = `Active: ${activeCount} · Suspended: ${suspendedCount} · Inactive: ${inactiveCount}`;
+      return kpi('Registered members', totalMembers, breakdown);
+    })()}
     ${kpi('Ready for pickup', getReservationsReadyForPickup(), 'reserved items')}
     ${kpi('New this month', getNewRegistrationsThisMonth(), 'new members')}
     ${kpi('Collection health', getBooksInGoodConditionPercent()+'%', 'books in good condition')}
