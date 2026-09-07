@@ -4296,9 +4296,9 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
       <button class="icon-btn sidebar-pin-toggle" id="sidebarPinBtn" onclick="toggleSidebarPersist()" title="Keep menu open — click to pin" aria-label="Keep menu open" aria-pressed="false">📌</button>
     </div>
     <nav class="navlist" id="navlist"></nav>
-    <div class="sidebar-foot">
-      <div style="font-weight:600;margin-bottom:4px">alcms ${APP_BUILD_VERSION}</div>
-      © ${new Date().getFullYear()} VersaX CS. All rights reserved.
+    <div class="sidebar-foot" id="sidebarFooter">
+      <div style="font-weight:600;margin-bottom:4px"></div>
+      <div></div>
     </div>
   </aside>
   <div class="main">
@@ -4574,6 +4574,18 @@ async function pickContactForField(fieldId){
 /* ================= preferences (clock/date format — available even before login) ================= */
 const APP_BUILD_VERSION = 'v1.2.1';
 const PREFS_KEY = 'prefs_v1';
+// Initialize sidebar footer
+function initSidebarFooter() {
+  const footer = document.getElementById('sidebarFooter');
+  if (footer) {
+    const versionLine = footer.querySelector('div:first-child');
+    const copyrightLine = footer.querySelector('div:last-child');
+    if (versionLine) versionLine.textContent = `alcms ${APP_BUILD_VERSION}`;
+    if (copyrightLine) copyrightLine.textContent = `© ${new Date().getFullYear()} VersaX CS. All rights reserved.`;
+  }
+}
+document.addEventListener('DOMContentLoaded', initSidebarFooter);
+initSidebarFooter(); // Also call immediately in case DOM is already loaded
 let PREFS = {clockFormat:'24h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
