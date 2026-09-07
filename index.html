@@ -10758,7 +10758,23 @@ function classTeacherLabel(cls){
   const ct = DB.setup.classTeachers[cls];
   if(!ct) return '';
   const staff = ct.staffId ? DB.users.find(u=>u.id===ct.staffId) : null;
-  return staff ? staff.name : (ct.name||'');
+  if(staff){
+    const cls_str = getMemberStatusClass(staff.id);
+    return cls_str ? `<span class="${cls_str}">${esc(staff.name)}</span>` : staff.name;
+  }
+  return ct.name||'';
+}
+
+function classTeacherLabelPlain(cls){
+  // Plain text version for exports and text-only contexts
+  const ct = DB.setup.classTeachers[cls];
+  if(!ct) return '';
+  const staff = ct.staffId ? DB.users.find(u=>u.id===ct.staffId) : null;
+  if(staff){
+    const statusMarker = isMemberInactive(staff.id) ? ' (inactive)' : '';
+    return staff.name + statusMarker;
+  }
+  return ct.name||'';
 }
 function pageUsers(){
   const currentUsers = getCurrentUsersInLibrary();
@@ -10786,7 +10802,7 @@ function pageUsers(){
       {label:'ID', get:r=>r.id},{label:'Full name', get:r=>r.name},{label:'Gender', get:r=>r.gender},
       {label:'Category', get:r=>r.category},{label:'Class/Designation', get:r=>r.cls},
       {label:'Phone', get:r=>r.category==='STAFF'? (r.teacher||'') : ''},
-      {label:'Class Teacher', get:r=>r.category==='STUDENT'? classTeacherLabel(r.cls) : ''},
+      {label:'Class Teacher', get:r=>r.category==='STUDENT'? classTeacherLabelPlain(r.cls) : ''},
       {label:'Max Allowed', get:r=>r.maxAllowed},{label:'Currently Borrowed', get:r=>r.borrowed},{label:'Total Borrowed', get:r=>r.totalBorrowed},
       {label:'Strikes', get:r=>r.strike},{label:'Eligibility', get:r=>r.eligibility},{label:'Status', get:r=>r.status},
     ],
@@ -11173,7 +11189,7 @@ function pageMemberProfile(){
       <tr><td style="font-weight:600">Gender</td><td>${esc(u.gender||'—')}</td></tr>
       <tr><td style="font-weight:600">Category</td><td>${esc(u.category||'—')}</td></tr>
       <tr><td style="font-weight:600">Class / Designation</td><td>${esc(u.cls||'—')}</td></tr>
-      <tr><td style="font-weight:600">${esc(memberContactRow(u).label)}</td><td>${esc(memberContactRow(u).value)}</td></tr>
+      <tr><td style="font-weight:600">${esc(memberContactRow(u).label)}</td><td>${memberContactRow(u).value}</td></tr>
       <tr><td style="font-weight:600">Currently borrowed</td><td>${u.borrowed||0} / ${u.maxAllowed||0}</td></tr>
       <tr><td style="font-weight:600">Total borrowed (all time)</td><td>${u.totalBorrowed||0}</td></tr>
       <tr><td style="font-weight:600">Strikes</td><td>${u.strike||0}</td></tr>
@@ -11682,7 +11698,7 @@ function pageCirculationTable(){
       {key:'trxId', label:'Transaction', render:r=>`<span style="font-size:10.5px">${esc(r.trxId.slice(0,22))}</span>`},
       {key:'acc', label:'Acc. No'},
       {key:'title', label:'Title'},
-      {key:'name', label:'Borrower', render:r=>`${esc(r.name)}<div style="color:var(--muted);font-size:11px">${esc(r.userId)}</div>`},
+      {key:'name', label:'Borrower', render:r=>`<span class="${getMemberStatusClass(r.userId)}">${esc(r.name)}</span><div style="color:var(--muted);font-size:11px">${esc(r.userId)}</div>`},
       {key:'dateBorrowed', label:'Borrowed', render:r=>fmtDate(r.dateBorrowed)},
       {key:'dueDate', label:'Due', render:r=>fmtDate(r.dueDate)},
       {key:'returnDate', label:'Returned', render:r=>r.returnDate?fmtDate(r.returnDate):'—'},
@@ -11797,7 +11813,7 @@ function pageReservations(){
     filters:[{key:'status', label:'Status', options:['WAITING','READY','FULFILLED']}],
     columns:[
       {key:'title', label:'Title'}, {key:'acc', label:'Acc. No'},
-      {key:'name', label:'Member', render:r=>`${esc(r.name)}<div style="color:var(--muted);font-size:11px">${esc(r.userId)}</div>`},
+      {key:'name', label:'Member', render:r=>`<span class="${getMemberStatusClass(r.userId)}">${esc(r.name)}</span><div style="color:var(--muted);font-size:11px">${esc(r.userId)}</div>`},
       {key:'dateRequested', label:'Requested', render:r=>fmtDate(r.dateRequested)},
       {key:'status', label:'Status', render:r=>`<span class="badge ${r.status==='READY'?'green':r.status==='FULFILLED'?'grey':'gold'}">${esc(r.status)}</span>`},
       {key:'queue', label:'Queue position', render:r=>{
@@ -12725,7 +12741,12 @@ function memberContactRow(u){
   if(u.category==='STAFF') return {label:'Phone number', value: u.teacher||'—'};
   const ct = DB.setup.classTeachers && DB.setup.classTeachers[u.cls];
   const teacher = ct && ct.staffId ? DB.users.find(x=>x.id===ct.staffId) : null;
-  return {label:'Class teacher', value: teacher ? teacher.name : '—'};
+  if(teacher){
+    const statusCls = getMemberStatusClass(teacher.id);
+    const teacherName = statusCls ? `<span class="${statusCls}">${esc(teacher.name)}</span>` : teacher.name;
+    return {label:'Class teacher', value: teacherName};
+  }
+  return {label:'Class teacher', value: '—'};
 }
 /* ================= RESERVATIONS / HOLDS ================= */
 function userRecipient(user){
@@ -12734,7 +12755,10 @@ function userRecipient(user){
   const ct = DB.setup.classTeachers && DB.setup.classTeachers[user.cls];
   if(ct && ct.staffId){
     const teacher = DB.users.find(u=>u.id===ct.staffId);
-    if(teacher && teacher.teacher) return {phone:teacher.teacher, label:teacher.name+' (class teacher of '+user.cls+')'};
+    if(teacher && teacher.teacher){
+      const statusMarker = isMemberInactive(teacher.id) ? ' (inactive)' : '';
+      return {phone:teacher.teacher, label:teacher.name + statusMarker + ' (class teacher of '+user.cls+')'};
+    }
   }
   return null;
 }
@@ -17161,7 +17185,10 @@ function openEditClass(oldName){
   // show the select with staff names instead of raw IDs
   const sel = document.getElementById('f_teacherId');
   if(sel){
-    sel.innerHTML = `<option value="">— none —</option>` + staff.map(s=>`<option value="${esc(s.id)}" ${ct&&ct.staffId===s.id?'selected':''}>${esc(s.id)} — ${esc(s.name)}</option>`).join('');
+    sel.innerHTML = `<option value="">— none —</option>` + staff.map(s=>{
+      const inactiveMarker = isMemberInactive(s.id) ? ' (inactive)' : '';
+      return `<option value="${esc(s.id)}" ${ct&&ct.staffId===s.id?'selected':''}>${esc(s.id)} — ${esc(s.name)}${inactiveMarker}</option>`;
+    }).join('');
   }
 }
 function sortedClasses(){ return DB.setup.userClasses; } // always kept chronological (YEAR 7 → up) by sortClassesChrono
