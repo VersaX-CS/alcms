@@ -6256,16 +6256,20 @@ function updateUndoButton(){
 // Positions a dropdown that is nested inside its trigger button so it always stays fully
 // on-screen, regardless of where that button sits in the topbar. Mirrors the clamping logic
 // already used for the lockscreen notification preview (repositionAuthNotifPreview).
+// On desktop, it opens from the button's left edge and flows right (the classic dropdown
+// feel). On mobile, buttons sit close to the right edge of the screen, so it opens from the
+// button's right edge and flows left instead — both are still clamped to the viewport.
 function repositionTopbarDropdown(dropdownEl, btnEl, opts={}){
   if(!dropdownEl || !btnEl) return;
   const r = btnEl.getBoundingClientRect();
   const vw = window.innerWidth, vh = window.innerHeight;
+  const isDesktop = vw > 900;
   const margin = 8;
   const boxWidth = Math.min(opts.width || 300, vw - margin*2);
   dropdownEl.style.position = 'fixed';
   dropdownEl.style.width = boxWidth + 'px';
   dropdownEl.style.maxWidth = 'none';
-  let left = r.right - boxWidth; // default: right edge of box aligns with right edge of button
+  let left = isDesktop ? r.left : (r.right - boxWidth);
   if(left < margin) left = margin;
   if(left + boxWidth + margin > vw) left = vw - boxWidth - margin;
   dropdownEl.style.left = left + 'px';
