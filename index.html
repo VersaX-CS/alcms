@@ -6279,16 +6279,22 @@ function toggleUndoMenu(){
   const menu = document.getElementById('undoMenu');
   const btn = document.getElementById('undoBtn');
   if(menu.style.display === 'none'){
+    closeNotificationCenter(); // only one topbar dropdown open at a time
     renderUndoMenu();
     menu.style.display = 'block';
     repositionTopbarDropdown(menu, btn, {width:300, maxHeight:300});
     window.addEventListener('resize', undoMenuResizeHandler);
     document.addEventListener('click', closeUndoMenuOnClickOutside);
   } else {
-    menu.style.display = 'none';
-    window.removeEventListener('resize', undoMenuResizeHandler);
-    document.removeEventListener('click', closeUndoMenuOnClickOutside);
+    closeUndoMenu();
   }
+}
+function closeUndoMenu(){
+  const menu = document.getElementById('undoMenu');
+  if(!menu) return;
+  menu.style.display = 'none';
+  window.removeEventListener('resize', undoMenuResizeHandler);
+  document.removeEventListener('click', closeUndoMenuOnClickOutside);
 }
 function undoMenuResizeHandler(){
   const menu = document.getElementById('undoMenu');
@@ -6300,9 +6306,7 @@ function closeUndoMenuOnClickOutside(e){
   const menu = document.getElementById('undoMenu');
   const btn = document.getElementById('undoBtn');
   if(!menu.contains(e.target) && !btn.contains(e.target)){
-    menu.style.display = 'none';
-    window.removeEventListener('resize', undoMenuResizeHandler);
-    document.removeEventListener('click', closeUndoMenuOnClickOutside);
+    closeUndoMenu();
   }
 }
 
@@ -12424,6 +12428,7 @@ function openNotificationCenter(refreshOnly){
   }
   
   if(dropdown.style.display === 'none'){
+    closeUndoMenu(); // only one topbar dropdown open at a time
     renderNotificationList(list, dropdown);
     dropdown.style.display = 'block';
     const btn = document.getElementById('notifBellBtn');
