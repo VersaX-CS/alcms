@@ -2765,6 +2765,8 @@ html[data-theme="dark"] .auth-box{ background:rgba(var(--auth-box-bg-rgb-dark,40
 .profile-tab-btn{ border:none; background:transparent; padding:8px 14px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer;}
 .profile-tab-btn.active{ background:var(--card); color:var(--forest); box-shadow:0 2px 6px rgba(0,0,0,.08);}
 .profile-tab-btn:hover:not(.active){ color:var(--ink);}
+.floating-tabs{ position:sticky; top:-1px; z-index:40; background:var(--card); border:1px solid var(--line); box-shadow:0 6px 18px rgba(0,0,0,.14); padding:6px;}
+.floating-tabs .profile-tab-btn{ padding:9px 16px; font-size:13px;}
 .auth-tabs button{ flex:1; padding:9px; border:none; background:transparent; border-radius:7px; font-size:13px; font-weight:600; color:var(--muted-label);}
 .auth-tabs button.active{ background:var(--card); color:var(--forest); box-shadow:var(--shadow);}
 .auth-box h2{ font-size:22px; margin-bottom:6px;}
@@ -14739,7 +14741,7 @@ let scheduleSubview = 'weekly';
 function setScheduleSubview(v){ scheduleSubview = v; render(); }
 function pageSchedule(){
   const tabsHtml = `
-  <div class="profile-tabs">
+  <div class="profile-tabs floating-tabs">
     <button class="profile-tab-btn ${scheduleSubview==='weekly'?'active':''}" onclick="setScheduleSubview('weekly')">Weekly schedule</button>
     <button class="profile-tab-btn ${scheduleSubview==='timetable'?'active':''}" onclick="setScheduleSubview('timetable')">Class timetable</button>
   </div>`;
