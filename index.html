@@ -14913,6 +14913,15 @@ function pageClassTimetable(){
       <div><h3>Class subject timetable</h3><div class="hint">Enter each class's weekly timetable so the library visit schedule can be built from it automatically</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
+        ${classes.length? `<div class="dropdown-wrap">
+          <button class="btn secondary small" data-dropdown-toggle="moremenu_classtt">⋯ More</button>
+          <div class="dropdown-menu" id="moremenu_classtt">
+            <a onclick="printClassTimetables()">🖶 Print</a>
+            <a onclick="downloadClassTimetablesPDF()">⭳ Download PDF</a>
+            <a onclick="exportClassTimetables()">⭳ Export</a>
+            ${isAdmin()? `<div class="divider"></div><a class="danger-text" onclick="clearAllClassTimetables()">⚠ Clear all timetable</a>`:''}
+          </div>
+        </div>`:''}
       </div>
     </div>
     ${!classes.length? '<div class="empty">No classes set up yet — add classes from Setup first.</div>' : `
@@ -14985,6 +14994,52 @@ function pageClassTimetable(){
     <p class="field-hint" style="margin-top:8px">Mark "📚 LIBRARY" on the period(s) a class visits the library. Otherwise leave periods on "— Free —" — auto-build uses free periods for any class with no Library period set.</p>
     `}
   </div>`;
+}
+/* Shared table shape for the class timetable's Print/Download PDF/Export actions — one
+   section per class, mirroring exactly what's shown on screen (period rows × day columns),
+   so the printed/exported version always matches the live table. */
+function classTimetableExportSections(){
+  const classes = sortedClasses();
+  const subjectNames = DB.setup.subjectNames || {};
+  const cellLabel = (cls, day, period)=>{
+    const tt = classTimetableFor(cls);
+    const val = (tt[day] && tt[day][period]) || '';
+    if(!val) return '—';
+    if(val==='LIBRARY') return '📚 LIBRARY';
+    return subjectNames[val] ? `${val} – ${subjectNames[val]}` : val;
+  };
+  return classes.map(cls=>({
+    heading: cls,
+    columns: [
+      {label:'Period', get:p=>p},
+      ...TIMETABLE_DAYS.map(day=>({label: day.slice(0,3), get:p=> cellLabel(cls, day, p)})),
+    ],
+    rows: timetablePeriods(),
+  }));
+}
+function printClassTimetables(){
+  const sections = classTimetableExportSections();
+  if(!sections.length) return toast('No classes set up yet');
+  printMultiSection('Class Timetables', 'Weekly subject timetable per class', sections);
+}
+function downloadClassTimetablesPDF(){
+  const sections = classTimetableExportSections();
+  if(!sections.length) return toast('No classes set up yet');
+  printMultiSection('Class Timetables', 'Weekly subject timetable per class', sections, {asPdf:true, filename: filenameWithPeriod('class_timetables')});
+}
+function exportClassTimetables(){
+  const sections = classTimetableExportSections();
+  if(!sections.length) return toast('No classes set up yet');
+  openMultiSectionExportModal('Class Timetables', 'class_timetables', sections);
+}
+function clearAllClassTimetables(){
+  if(!isAdmin()) return requireAdmin('clear the class timetable');
+  const count = Object.keys(DB.classTimetable||{}).length;
+  if(!count) return toast('There is no timetable data to clear');
+  confirmModal(`This removes the saved weekly subject timetable for all ${count} class(es). Existing library schedule entries already built are left as-is. Continue?`, ()=>{
+    DB.classTimetable = {};
+    saveDB('All class timetables cleared'); render(); toast('Class timetables cleared');
+  }, {confirmLabel:'Clear all', danger:true});
 }
 function saveClassTimetable(){
   if(!isAdmin()) return requireAdmin('edit the class timetable');
