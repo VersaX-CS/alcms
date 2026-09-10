@@ -6225,6 +6225,32 @@ function migrateNewFeatureData(db){
   if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
   if(!db.classTimings || typeof db.classTimings!=='object' || Array.isArray(db.classTimings)) db.classTimings = {};
   if(!db.scheduleActivities || !Array.isArray(db.scheduleActivities)) db.scheduleActivities = [...DEFAULT_ACTIVITIES];
+  (function normalizeActivitiesToUpperCase(){
+    const caseMap = {}; // lowercased -> canonical UPPERCASE form
+    const upper = [];
+    db.scheduleActivities.forEach(act=>{
+      const up = String(act).trim().toUpperCase();
+      const key = up.toLowerCase();
+      if(!(key in caseMap)){ caseMap[key] = up; upper.push(up); }
+      if(String(act) !== up) caseMap[String(act).toLowerCase()] = up;
+    });
+    db.scheduleActivities = upper;
+    if(db.classTimetable && typeof db.classTimetable==='object'){
+      Object.keys(db.classTimetable).forEach(cls=>{
+        const dayMap = db.classTimetable[cls];
+        if(!dayMap) return;
+        Object.keys(dayMap).forEach(day=>{
+          const periodMap = dayMap[day];
+          if(!periodMap) return;
+          Object.keys(periodMap).forEach(period=>{
+            const val = periodMap[period];
+            const mapped = caseMap[String(val).toLowerCase()];
+            if(mapped && val !== mapped) periodMap[period] = mapped;
+          });
+        });
+      });
+    }
+  })();
   (db.circulation||[]).forEach(t=>{
     if(t.renewCount===undefined) t.renewCount = 0;
     if(t.finePaid===undefined) t.finePaid = false;
@@ -14871,7 +14897,7 @@ function pageClassTimetable(){
   const classes = sortedClasses();
   if(!ttSelectedClass || !classes.includes(ttSelectedClass)) ttSelectedClass = classes[0] || '';
   const cls = ttSelectedClass;
-  const subjectCodes = (DB.setup.classSubjects && DB.setup.classSubjects[cls]) || [];
+  const subjectCodes = DB.setup.subjects || [];
   const subjectNames = DB.setup.subjectNames || {};
   const tt = classTimetableFor(cls);
   return `
