@@ -6223,6 +6223,8 @@ function migrateNewFeatureData(db){
   if(!db.setup.periodTimes || typeof db.setup.periodTimes!=='object' || Array.isArray(db.setup.periodTimes)) db.setup.periodTimes = {};
   if(db.setup.periods && !Array.isArray(db.setup.periods)) db.setup.periods = [];
   if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
+  if(!db.classTimings || typeof db.classTimings!=='object' || Array.isArray(db.classTimings)) db.classTimings = {};
+  if(!db.scheduleActivities || !Array.isArray(db.scheduleActivities)) db.scheduleActivities = [...DEFAULT_ACTIVITIES];
   (db.circulation||[]).forEach(t=>{
     if(t.renewCount===undefined) t.renewCount = 0;
     if(t.finePaid===undefined) t.finePaid = false;
@@ -6498,7 +6500,9 @@ function buildSeedDB(){
   return {
     catalogue, users, circulation, feedback, registerLog,
     scheduleDays: SEED_SCHEDULE_DAYS.map(r=>[...r]), scheduleRoster: SEED_SCHEDULE_ROSTER.map(r=>[...r]), scheduleSubjects: [...SEED_SCHEDULE_SUBJECTS],
+    scheduleActivities: [...DEFAULT_ACTIVITIES],
     classTimetable: {},
+    classTimings: {},
     setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
   };
 }
@@ -14789,11 +14793,41 @@ const PERIOD_OPTIONS = ['1ST','2ND','3RD','4TH','5TH','6TH','7TH','8TH','9TH','1
    class's timetable: if a class has any period tagged LIBRARY, those become its library
    visit slot(s); otherwise its free periods are used as candidate visit slots. */
 const TIMETABLE_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
+const DEFAULT_ACTIVITIES = ['Break', 'Assembly', 'Sports', 'Staff Meeting', 'Exam', 'Guest Lecture', 'Field Trip', 'Rehearsal'];
 function timetablePeriods(){ return (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS; }
 function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
 function periodTimeLabel(day, period){
   const pt = periodTime(day, period);
   return pt && (pt.start||pt.end) ? `${fmtTime(pt.start)}–${fmtTime(pt.end)}` : '';
+}
+function getClassPeriodTime(cls, day, period){
+  if(DB.classTimings && DB.classTimings[cls] && DB.classTimings[cls][day] && DB.classTimings[cls][day][period]){
+    return DB.classTimings[cls][day][period];
+  }
+  return periodTime(day, period);
+}
+function classHasTimeOverride(cls, day, period){
+  return !!(DB.classTimings && DB.classTimings[cls] && DB.classTimings[cls][day] && DB.classTimings[cls][day][period]);
+}
+function getClassPeriodTimeLabel(cls, day, period){
+  const pt = getClassPeriodTime(cls, day, period);
+  return pt && (pt.start||pt.end) ? `${fmtTime(pt.start)}–${fmtTime(pt.end)}` : '';
+}
+function setClassTimeOverride(cls, day, period, start, end){
+  if(!DB.classTimings) DB.classTimings = {};
+  if(!DB.classTimings[cls]) DB.classTimings[cls] = {};
+  if(!DB.classTimings[cls][day]) DB.classTimings[cls][day] = {};
+  if(start || end){
+    DB.classTimings[cls][day][period] = {start, end};
+  } else {
+    delete DB.classTimings[cls][day][period];
+    if(!Object.keys(DB.classTimings[cls][day]).length) delete DB.classTimings[cls][day];
+  }
+}
+function clearClassTimeOverride(cls, day, period){
+  if(!DB.classTimings || !DB.classTimings[cls]) return;
+  delete DB.classTimings[cls][day]?.[period];
+  if(DB.classTimings[cls][day] && !Object.keys(DB.classTimings[cls][day]).length) delete DB.classTimings[cls][day];
 }
 function periodHeaderHtml(day, period){
   const t = periodTimeLabel(day, period);
@@ -14883,13 +14917,16 @@ function pageClassTimetable(){
           <tr><td style="width:64px;white-space:nowrap">${esc(period)}</td>
           ${TIMETABLE_DAYS.map(day=>{
             const val = (tt[day] && tt[day][period]) || '';
-            const timeLbl = periodTimeLabel(day, period);
-            return `<td>${timeLbl? `<div style="font-size:10px;color:var(--muted-label);margin-bottom:2px">${esc(timeLbl)}</div>`:''}<select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'}>
+            const defaultTime = periodTime(day, period) || {};
+            const overrideTime = classHasTimeOverride(cls, day, period) ? getClassPeriodTime(cls, day, period) : null;
+            const timeLbl = overrideTime ? `<strong style="color:var(--text-accent)">${fmtTime(overrideTime.start)}–${fmtTime(overrideTime.end)}</strong>` : periodTimeLabel(day, period);
+            return `<td style="${overrideTime?'background:var(--bg-accent);border-radius:6px;':''}">${timeLbl? `<div style="font-size:10px;${overrideTime?'color:var(--text-accent)':' color:var(--muted-label)'}margin-bottom:2px">${timeLbl}</div>`:''}<select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'} style="width:100%;margin-bottom:4px">
               <option value="" ${val===''?'selected':''}>— Free —</option>
               <option value="LIBRARY" ${val==='LIBRARY'?'selected':''}>📚 LIBRARY</option>
-              <option value="BREAK" ${val==='BREAK'?'selected':''}>Break/Assembly</option>
+              ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map(act=>`<option value="${esc(act)}" ${val===act?'selected':''}>${esc(act)}</option>`).join('')}
               ${subjectCodes.map(code=>`<option value="${esc(code)}" ${val===code?'selected':''}>${esc(code)}${subjectNames[code]?' – '+esc(subjectNames[code]):''}</option>`).join('')}
-            </select></td>`;
+            </select>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${overrideTime?'✓ Edit':'Set time'}</button>`:''}
+            </td>`;
           }).join('')}
           </tr>`).join('')}
       </tbody>
@@ -14910,6 +14947,48 @@ function saveClassTimetable(){
   });
   DB.classTimetable[cls] = dayMap;
   saveDB(`Class timetable saved for ${cls}`); render(); toast('Timetable saved for '+cls);
+}
+function editClassPeriodTime(cls, day, period){
+  if(!isAdmin()) return requireAdmin('edit class period times');
+  const defaultTime = periodTime(day, period) || {};
+  const override = DB.classTimings?.[cls]?.[day]?.[period] || {};
+  const timeInVal = override.start || defaultTime.start || '';
+  const timeOutVal = override.end || defaultTime.end || '';
+  openModal({
+    title: `Time for ${cls} — ${day} ${period}`,
+    fields: [
+      {key: 'timeIn', label: 'Time in', type: 'time', default: timeInVal},
+      {key: 'timeOut', label: 'Time out', type: 'time', default: timeOutVal},
+    ],
+    values: {},
+    onSave: ()=>{}
+  });
+  const body = $('.modal-body');
+  if(body){
+    const defaultLabel = defaultTime.start && defaultTime.end ? ` (default: ${fmtTime(defaultTime.start)}–${fmtTime(defaultTime.end)})` : ' (no default set)';
+    const hasOverride = override && (override.start || override.end);
+    const infoHtml = document.createElement('p');
+    infoHtml.style.fontSize = '13px';
+    infoHtml.style.color = 'var(--text-secondary)';
+    infoHtml.style.marginBottom = '12px';
+    infoHtml.innerHTML = hasOverride ? 'Currently using custom times.' : ('No custom time set' + defaultLabel);
+    body.insertBefore(infoHtml, body.firstChild);
+  }
+  $('#mSave').textContent = 'Save time';
+  $('#mSave').onclick = ()=>{
+    const timeIn = $('#f_timeIn').value || '';
+    const timeOut = $('#f_timeOut').value || '';
+    if(!timeIn && !timeOut){
+      clearClassTimeOverride(cls, day, period);
+      toast('Time override cleared');
+    } else {
+      setClassTimeOverride(cls, day, period, timeIn, timeOut);
+      toast(`Time set for ${cls} ${period} on ${day}`);
+    }
+    saveDB(`Class time override: ${cls} ${day} ${period}`);
+    render();
+    $('#modalRoot').innerHTML = '';
+  };
 }
 function classStudents(cls){ return DB.users.filter(u=>u.category==='STUDENT' && u.cls===cls); }
 function renderIndividualFreeHtml(breakdown){
@@ -15032,27 +15111,84 @@ function openScheduleForm(index){
       </div>`;
     body.appendChild(classSection);
 
-    const notesSection = document.createElement('div');
-    notesSection.className = 'field';
-    notesSection.style.marginTop = '14px';
-    notesSection.innerHTML = `
-      <label>Notes</label>
-      <p class="field-hint" style="margin-bottom:6px">Tick subject codes not offered to this class (their students get a free period), plus anything special below.</p>
-      <div class="subject-pill-grid" id="schedNoteGrid">
-        ${knownCodes.map(code=>`<label class="subject-check"><input type="checkbox" class="schedNoteChk" value="${esc(code)}" ${existingCodes.includes(code)?'checked':''}> ${esc(code)}</label>`).join('')}
-      </div>
-      <input type="text" id="schedNoteCustom" placeholder="Special entry (e.g. Library period, Staff meeting)" value="${esc(existingCustomNote)}" style="margin-top:8px">`;
-    body.appendChild(notesSection);
+    const classTimeSection = document.createElement('div');
+    classTimeSection.className = 'field';
+    classTimeSection.style.marginTop = '14px';
+    classTimeSection.style.padding = '12px';
+    classTimeSection.style.background = 'var(--surface-1)';
+    classTimeSection.style.borderRadius = '6px';
+    classTimeSection.style.borderLeft = '3px solid var(--border-accent)';
+    classTimeSection.innerHTML = `
+      <label style="font-weight:600;font-size:13px">Class-specific time ranges (optional)</label>
+      <p class="field-hint" style="margin-bottom:8px">Leave blank to use the period time above</p>
+      <div id="classTimeGrid" style="display:grid;gap:8px;margin-top:8px"></div>`;
+    body.appendChild(classTimeSection);
+
+    const activitiesSection = document.createElement('div');
+    activitiesSection.className = 'field';
+    activitiesSection.style.marginTop = '14px';
+    activitiesSection.innerHTML = `
+      <label>Activities</label>
+      <div class="subject-pill-grid" id="schedActivityGrid">
+        ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map(act=>`<label class="subject-check"><input type="checkbox" class="schedActivityChk" value="${esc(act)}"> ${esc(act)}</label>`).join('')}
+      </div>`;
+    body.appendChild(activitiesSection);
+
+    const subjectsSection = document.createElement('div');
+    subjectsSection.className = 'field';
+    subjectsSection.style.marginTop = '14px';
+    subjectsSection.innerHTML = `
+      <label>Subject free periods</label>
+      <p class="field-hint" style="margin-bottom:6px">Tick subject codes not offered to this class (their students get a free period).</p>
+      <div class="subject-pill-grid" id="schedSubjectGrid">
+        ${knownCodes.map(code=>`<label class="subject-check"><input type="checkbox" class="schedSubjectChk" value="${esc(code)}" ${existingCodes.includes(code)?'checked':''}> ${esc(code)}</label>`).join('')}
+      </div>`;
+    body.appendChild(subjectsSection);
+
+    const customNoteSection = document.createElement('div');
+    customNoteSection.className = 'field';
+    customNoteSection.style.marginTop = '14px';
+    customNoteSection.innerHTML = `
+      <label>Additional notes</label>
+      <input type="text" id="schedNoteCustom" placeholder="Custom note or activity" value="${esc(existingCustomNote)}" style="width:100%">`;
+    body.appendChild(customNoteSection);
+
+    function updateClassTimeGrid(){
+      const grid = document.getElementById('classTimeGrid');
+      const selectedClasses = $$('.schedClsChk').filter(c=>c.checked).map(c=>c.value);
+      grid.innerHTML = selectedClasses.map(cls=>`
+        <div style="display:grid;grid-template-columns:100px 1fr 1fr;gap:8px;align-items:end">
+          <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${esc(cls)}</div>
+          <input type="time" class="class-time-in" data-class="${esc(cls)}" placeholder="Time in" style="grid-column:2">
+          <input type="time" class="class-time-out" data-class="${esc(cls)}" placeholder="Time out" style="grid-column:3">
+        </div>
+      `).join('');
+    }
+    
+    $$('.schedClsChk').forEach(chk=>chk.addEventListener('change', updateClassTimeGrid));
+    updateClassTimeGrid();
   }
   $('#mSave').onclick = ()=>{
     const day = $('#f_day').value, period = $('#f_period').value, time = $('#f_time').value;
     if(!day || !period){ toast('Day and Period are required'); return; }
     const classes = $$('.schedClsChk').filter(c=>c.checked).map(c=>c.value);
     if(!classes.length){ toast('Tick at least one expected class'); return; }
-    const codes = $$('.schedNoteChk').filter(c=>c.checked).map(c=>c.value);
+    
+    const activities = $$('.schedActivityChk').filter(c=>c.checked).map(c=>c.value);
+    const subjects = $$('.schedSubjectChk').filter(c=>c.checked).map(c=>c.value);
     const custom = ($('#schedNoteCustom').value||'').trim();
-    const notes = [...codes, ...(custom?[custom]:[])].join(', ');
+    const notes = [...activities, ...subjects, ...(custom?[custom]:[])].join(', ');
+    
+    const classTimings = {};
+    classes.forEach(cls=>{
+      const timeIn = document.querySelector(`.class-time-in[data-class="${cls}"]`)?.value || '';
+      const timeOut = document.querySelector(`.class-time-out[data-class="${cls}"]`)?.value || '';
+      if(timeIn || timeOut) classTimings[cls] = {in:timeIn||time, out:timeOut||time};
+    });
+    
     const row = [day, period, time, classes.join(', '), notes];
+    if(Object.keys(classTimings).length) row.push(JSON.stringify(classTimings));
+    
     if(existing) DB.scheduleDays[index] = row; else DB.scheduleDays.push(row);
     saveDB(`Schedule period ${existing?'updated':'added'}: ${period}`); render(); toast(existing? 'Period updated':'Period added');
     $('#modalRoot').innerHTML='';
@@ -16822,7 +16958,9 @@ const DATA_PORTAL_CATEGORIES = [
   {key:'scheduleDays', label:'Schedule — days', hint:'Array of schedule day rows'},
   {key:'scheduleRoster', label:'Schedule — roster', hint:'Array of roster rows'},
   {key:'scheduleSubjects', label:'Schedule — subjects', hint:'Array of subject codes'},
+  {key:'scheduleActivities', label:'Schedule — activities', hint:'Array of activity names (Break, Assembly, etc.)'},
   {key:'classTimetable', label:'Schedule — class timetables', hint:'Single object of per-class subject timetables'},
+  {key:'classTimings', label:'Schedule — class timings', hint:'Per-class time overrides for specific periods'},
   {key:'setup', label:'Setup & settings', hint:'Single settings object (Dewey lists, classes, fines, codes, etc.)'},
 ];
 function downloadCategoryJSON(key){
