@@ -14827,7 +14827,30 @@ const PERIOD_OPTIONS = ['1ST','2ND','3RD','4TH','5TH','6TH','7TH','8TH','9TH','1
    visit slot(s); otherwise its free periods are used as candidate visit slots. */
 const TIMETABLE_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
 const DEFAULT_ACTIVITIES = ['BREAK', 'ASSEMBLY', 'SPORTS', 'STAFF MEETING', 'EXAM', 'GUEST LECTURE', 'FIELD TRIP', 'REHEARSAL'];
-function timetablePeriods(){ return (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS; }
+function timeToMinutes(t){
+  if(!t) return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(t);
+  return m ? (+m[1])*60 + (+m[2]) : null;
+}
+// A period's sort key is the earliest start time set for it on any day — so "3RD" and "BREAK"
+// interleave correctly even though only one of them may have a time set yet on a given day.
+// Periods with no start time set anywhere fall back to Infinity, which (thanks to Array#sort
+// being stable) just leaves them at the end in their original declared order — the moment an
+// admin sets a time for a newly-added period (e.g. a later-added "ASSEMBLY"), it automatically
+// slots into its correct chronological spot everywhere the table is shown, printed, or exported.
+function periodSortKey(period){
+  let min = Infinity;
+  TIMETABLE_DAYS.forEach(day=>{
+    const pt = DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period];
+    const mins = pt && timeToMinutes(pt.start);
+    if(mins!=null && mins<min) min = mins;
+  });
+  return min;
+}
+function timetablePeriods(){
+  const base = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS;
+  return [...base].sort((a,b)=> periodSortKey(a)-periodSortKey(b));
+}
 function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
 function periodTimeLabel(day, period){
   const pt = periodTime(day, period);
@@ -14899,6 +14922,8 @@ function removeTimetablePeriod(period){
   }, {danger:true});
 }
 let ttSelectedClass = null;
+let ttManageActivitiesOpen = false;
+let ttPeriodTimesOpen = false;
 function classTimetableFor(cls){ return (DB.classTimetable && DB.classTimetable[cls]) || {}; }
 function pageClassTimetable(){
   const classes = sortedClasses();
@@ -14925,7 +14950,7 @@ function pageClassTimetable(){
       </div>
     </div>
     ${!classes.length? '<div class="empty">No classes set up yet — add classes from Setup first.</div>' : `
-    <details style="margin-bottom:12px">
+    <details style="margin-bottom:12px" ${ttManageActivitiesOpen?'open':''} ontoggle="ttManageActivitiesOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙️ Manage activities</summary>
       <div style="margin-top:12px">
         <label>Available activities</label>
@@ -14940,7 +14965,7 @@ function pageClassTimetable(){
         ${isAdmin()?`<button class="btn secondary" onclick="addScheduleActivity()" style="margin-top:8px">+ Add activity</button>`:''}
       </div>
     </details>
-    <details style="margin-bottom:12px">
+    <details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times ${isAdmin()?'(edit)':''}</summary>
       <div class="field" style="max-width:220px;margin-top:8px"><label>Day</label>
         <select onchange="ptSelectedDay=this.value;render();">
@@ -15035,10 +15060,14 @@ function exportClassTimetables(){
 function clearAllClassTimetables(){
   if(!isAdmin()) return requireAdmin('clear the class timetable');
   const count = Object.keys(DB.classTimetable||{}).length;
-  if(!count) return toast('There is no timetable data to clear');
-  confirmModal(`This removes the saved weekly subject timetable for all ${count} class(es). Existing library schedule entries already built are left as-is. Continue?`, ()=>{
+  const hasPeriodTimes = DB.setup.periodTimes && Object.keys(DB.setup.periodTimes).length;
+  const hasOverrides = DB.classTimings && Object.keys(DB.classTimings).length;
+  if(!count && !hasPeriodTimes && !hasOverrides) return toast('There is no timetable data to clear');
+  confirmModal(`This removes the saved weekly subject timetable for all ${count} class(es), along with every period's start/end times (including any per-class time overrides). Existing library schedule entries already built are left as-is. Continue?`, ()=>{
     DB.classTimetable = {};
-    saveDB('All class timetables cleared'); render(); toast('Class timetables cleared');
+    DB.setup.periodTimes = {};
+    DB.classTimings = {};
+    saveDB('All class timetables and period times cleared'); render(); toast('Class timetables and times cleared');
   }, {confirmLabel:'Clear all', danger:true});
 }
 function saveClassTimetable(){
