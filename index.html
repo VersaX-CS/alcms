@@ -3258,8 +3258,8 @@ table.datatable td{ padding:8px 10px; border-bottom:1px solid #efe8d4; vertical-
 table.datatable tr:hover td{ background:#fbf8ee;}
 .table-wrap{ overflow:auto; max-height:60vh; border:1px solid var(--line); border-radius:8px;}
 .table-count{ font-size:11.5px; color:var(--muted); margin-top:8px;}
-.datatable tr.row-muted{ opacity:.55;}
-.datatable tr.row-muted:hover{ opacity:.85;}
+.row-muted{ opacity:.55;}
+.row-muted:hover{ opacity:.85;}
 .mobile-selall{ display:none;}
 
 /* ===== Analytics hover tooltip (top borrowers / top titles) ===== */
@@ -9873,7 +9873,7 @@ function pageDashboard(){
     return dueList.length ? `
     <div class="card panel" style="margin-bottom:16px">
       <div class="panel-head"><div><h3>Due today &amp; overdue</h3><div class="hint">${dueList.length} loan(s) need attention · click one to return it</div></div></div>
-      ${dueList.slice(0,10).map(r=>`<div class="activity-row" style="cursor:pointer" onclick="viewTransaction('${esc(r.trxId)}')"><div class="dot" style="background:${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
+      ${dueList.slice(0,10).map(r=>`<div class="activity-row${isMemberInactive(r.userId)?' row-muted':''}" style="cursor:pointer" onclick="viewTransaction('${esc(r.trxId)}')"><div class="dot" style="background:${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
         <div style="flex:1"><strong>${memberNameHtml(r.name, r.userId)}</strong> — <em>${esc(r.title)}</em>
         <div class="meta">${esc(r.acc)} · due ${fmtDate(r.dueDate)}</div></div>
         <span class="badge ${r.status==='OVERDUE'?'red':'gold'}">${r.status==='OVERDUE'?'OVERDUE':'DUE TODAY'}</span></div>`).join('')}
@@ -9886,7 +9886,7 @@ function pageDashboard(){
       ${recent.length? recent.map(r=>{
         const st = txnStatus(r);
         const color = st==='RETURNED'?'#2F6B44':st==='OVERDUE'?'#A8452F':st==='MISSING'?'#6b1f1f':'#B8863E';
-        return `<div class="activity-row"><div class="dot" style="background:${color}"></div>
+        return `<div class="activity-row${isMemberInactive(r.userId)?' row-muted':''}"><div class="dot" style="background:${color}"></div>
           <div style="flex:1"><strong>${memberNameHtml(r.name, r.userId)}</strong> ${st==='RETURNED'||st==='MISSING'?'returned':'borrowed'} <em>${esc(r.title)}</em>
           <div class="meta">${esc(r.acc)} · ${fmtDate(r.dateBorrowed)}${r.returnDate? ' → returned '+fmtDate(r.returnDate):''}</div></div>
           <span class="badge ${st==='RETURNED'?'green':st==='OVERDUE'||st==='MISSING'?'red':'gold'}">${st}</span></div>`;
@@ -10368,7 +10368,7 @@ function viewBook(acc){
         </table>
         <h4 style="margin:16px 0 6px">Transaction history (${txns.length})</h4>
         ${txns.length? `<div class="table-wrap" style="max-height:220px;overflow:auto"><table class="datatable cards-on-mobile"><thead><tr><th>Member</th><th>Borrowed</th><th>Due</th><th>Returned</th><th>Status</th></tr></thead><tbody>
-          ${txns.map(t=>`<tr><td data-label="Member">${memberNameHtml(t.name, t.userId)}</td><td data-label="Borrowed">${fmtDate(t.dateBorrowed)}</td><td data-label="Due">${fmtDate(t.dueDate)}</td><td data-label="Returned">${t.returnDate?fmtDate(t.returnDate):'—'}</td><td data-label="Status">${esc(txnStatus(t))}</td></tr>`).join('')}
+          ${txns.map(t=>`<tr${isMemberInactive(t.userId)?' class="row-muted"':''}><td data-label="Member">${memberNameHtml(t.name, t.userId)}</td><td data-label="Borrowed">${fmtDate(t.dateBorrowed)}</td><td data-label="Due">${fmtDate(t.dueDate)}</td><td data-label="Returned">${t.returnDate?fmtDate(t.returnDate):'—'}</td><td data-label="Status">${esc(txnStatus(t))}</td></tr>`).join('')}
         </tbody></table></div>` : `<div class="empty" style="padding:12px"><div class="big">📚</div>No transactions on file for this item yet</div>`}
         <h4 style="margin:16px 0 6px">Item history (${log.length})</h4>
         <div class="table-wrap" style="max-height:220px;overflow:auto"><table class="datatable cards-on-mobile"><thead><tr><th>Date</th><th>Status</th><th>Condition</th><th>Shelf</th><th>Note</th></tr></thead><tbody>
@@ -10883,6 +10883,7 @@ function pageUsers(){
     data:()=>DB.users,
     searchKeys:['id','name','cls','teacher'],
     selectable:true, rowKey:r=>r.id,
+    rowClass:r=>r.status==='INACTIVE'?'row-muted':'',
     filters:[
       {key:'category', label:'Category', options:DB.setup.userCategories},
       {key:'cls', label:'Class / Designation', options:[...sortedClasses(), ...DB.setup.staffDesignations]},
@@ -11798,6 +11799,7 @@ function pageCirculationTable(){
       .sort((a,b)=> (parseAnyDate(b.dateBorrowed)||0)-(parseAnyDate(a.dateBorrowed)||0)),
     searchKeys:['trxId','acc','title','userId','name'],
     selectable:true, rowKey:r=>r.trxId,
+    rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     filters:[{key:'status', label:'Status', options:['BORROWED','OVERDUE','RETURNED','MISSING']}],
     columns:[
       {key:'trxId', label:'Transaction', render:r=>`<span style="font-size:10.5px">${esc(r.trxId.slice(0,22))}</span>`},
@@ -11915,6 +11917,7 @@ function pageReservations(){
     state:reservationsModuleState, key:'reservations', title:'Reservations', hint:'Holds placed by members on titles that are currently out — the oldest waiting reservation is promoted automatically when the title is returned',
     data:()=>[...DB.reservations].sort((a,b)=> (parseAnyDate(b.dateRequested)||0)-(parseAnyDate(a.dateRequested)||0)),
     searchKeys:['title','acc','name','userId'],
+    rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     filters:[{key:'status', label:'Status', options:['WAITING','READY','FULFILLED']}],
     columns:[
       {key:'title', label:'Title'}, {key:'acc', label:'Acc. No'},
@@ -12697,10 +12700,10 @@ function renderLockLoanSuggest(){
   const m = collectSearchMatches(q);
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="scan-suggest-row" data-kind="book" data-id="${esc(b.acc)}"><span class="ss-ic">📘</span><span class="ss-main"><strong>${esc(b.title)}</strong><span class="ss-sub">${esc(b.acc)} · ${esc(b.available)}</span></span></div>`).join(''); }
-  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="scan-suggest-row" data-kind="member" data-id="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong class="${getMemberStatusClass(u.id)}">${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`).join(''); }
-  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${memberNameHtml(t.name, t.userId)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
-  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${memberNameHtml(r.name, r.userId)} · ${esc(r.status)}</span></span></div>`).join(''); }
-  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${memberNameHtml(r.name, r.userId)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
+  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="scan-suggest-row${isMemberInactive(u.id)?' row-muted':''}" data-kind="member" data-id="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong>${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`).join(''); }
+  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row${isMemberInactive(t.userId)?' row-muted':''}" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${esc(t.name)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
+  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row${isMemberInactive(r.userId)?' row-muted':''}" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · ${esc(r.status)}</span></span></div>`).join(''); }
+  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row${isMemberInactive(r.userId)?' row-muted':''}" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
   if(!html){ box.classList.remove('open'); box.innerHTML=`<div class="empty" style="padding:16px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`; box.classList.add('open'); positionFloatingPanel(box, input); return; }
   box.innerHTML = html;
   box.classList.add('open');
@@ -12999,10 +13002,10 @@ function buildGlobalSearchHTML(q){
   }
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="gsearch-row" onclick="globalSearchGoto('book','${esc(b.acc)}')"><span class="gs-ic">📘</span><div class="gs-main"><div class="ttl">${esc(b.title)}</div><div class="sub">${esc(b.acc)} · ${esc(b.available)}</div></div></div>`).join(''); }
-  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="gsearch-row ${getMemberStatusClass(u.id)}" onclick="globalSearchGoto('member','${esc(u.id)}')"><span class="gs-ic">👤</span><div class="gs-main"><div class="ttl">${esc(u.name)}</div><div class="sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</div></div></div>`).join(''); }
-  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub"><span class="${getMemberStatusClass(t.userId)}">${esc(t.name)}</span> · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
-  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${memberNameHtml(r.name, r.userId)} · ${esc(r.status)}</div></div></div>`).join(''); }
-  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${memberNameHtml(r.name, r.userId)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
+  if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="gsearch-row${isMemberInactive(u.id)?' row-muted':''}" onclick="globalSearchGoto('member','${esc(u.id)}')"><span class="gs-ic">👤</span><div class="gs-main"><div class="ttl">${esc(u.name)}</div><div class="sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</div></div></div>`).join(''); }
+  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row${isMemberInactive(t.userId)?' row-muted':''}" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub">${esc(t.name)} · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
+  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row${isMemberInactive(r.userId)?' row-muted':''}" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · ${esc(r.status)}</div></div></div>`).join(''); }
+  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row${isMemberInactive(r.userId)?' row-muted':''}" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
   return html || `<div class="empty" style="padding:20px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`;
 }
 function renderGlobalSearchResults(q){
@@ -13771,7 +13774,7 @@ function openScanModal(mode){
     if(!bookMatches.length && !userMatches.length){ closeSuggest(); return; }
     suggestEl.innerHTML = [
       ...bookMatches.map(b=>`<div class="scan-suggest-row" data-code="${esc(b.acc)}"><span class="ss-ic">📖</span><span class="ss-main"><strong>${esc(b.title)}</strong><span class="ss-sub">${esc(b.acc)} · ${esc(b.available)}</span></span></div>`),
-      ...userMatches.map(u=>`<div class="scan-suggest-row" data-code="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong class="${getMemberStatusClass(u.id)}">${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`)
+      ...userMatches.map(u=>`<div class="scan-suggest-row${isMemberInactive(u.id)?' row-muted':''}" data-code="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong>${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`)
     ].join('');
     suggestEl.classList.add('open');
     positionFloatingPanel(suggestEl, input, {matchWidth:true});
@@ -13938,6 +13941,7 @@ function pageReminders(){
     state:remindersModuleState, key:'reminders', title:'Overdue — needs a reminder', hint:overdue.length+' loan(s) past due date',
     data:()=>overdue.map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date()), reminded: DB.reminders.some(r=>r.trxId===x.trxId)})),
     searchKeys:['acc','title','userId','name'],
+    rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     columns:[
       {key:'trxId', label:'Transaction', render:r=>`<span style="font-size:10.5px">${esc(r.trxId.slice(0,20))}</span>`},{key:'acc', label:'Acc. No'},{key:'title', label:'Title'},
       {key:'userId', label:'Member'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.userId)},{key:'cls', label:'Class'},
@@ -13959,6 +13963,7 @@ function pageReminders(){
     state:nearOverdueModuleState, key:'nearoverdue', title:'Due soon (within 2 days)', hint:nearOverdue.length+' loan(s) approaching their due date — not yet overdue',
     data:()=>nearOverdue.map(x=>({...x, daysLeft: daysBetween(new Date(), parseAnyDate(x.dueDate))})),
     searchKeys:['acc','title','userId','name'],
+    rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     columns:[
       {key:'acc', label:'Acc. No'},{key:'title', label:'Title'},{key:'userId', label:'Member'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.userId)},{key:'cls', label:'Class'},
       {key:'dueDate', label:'Due', render:r=>fmtDate(r.dueDate)},
@@ -13978,6 +13983,7 @@ function pageReminders(){
     searchKeys:['userId','name','cls','title','acc','trxId','loggedBy'],
     dateRange:true,
     selectable:true, rowKey:r=>r.trxId+'|'+r.dateSent+'|'+r.timeSent,
+    rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     columns:[
       {key:'dateSent', label:'Sent', render:r=>fmtDate(r.dateSent)+(r.timeSent?' '+r.timeSent:'')},
       {key:'name', label:'Member', render:r=>memberNameHtml(r.name, r.userId)},{key:'userId', label:'Member ID'},{key:'cls', label:'Class'},
@@ -14405,6 +14411,7 @@ function pageRegister(){
     data:()=>DB.registerLog,
     searchKeys:['id','name','purpose','cls','verifiedBy'],
     selectable:true, rowKey:r=>r.entryId,
+    rowClass:r=>isMemberInactive(r.id)?'row-muted':'',
     filters:[
       {key:'cls', label:'Class', options:sortedClasses()},
     ],
@@ -14616,7 +14623,7 @@ function renderBatchStagingHtml(){
   ${batchStaging.length? `
   <table class="stage-table">
     <thead><tr><th><input type="checkbox" id="batchSelectAll" ${batchStaging.every(s=>batchChecked[s.id])?'checked':''}></th><th>ID</th><th>Name</th><th>Class</th><th></th></tr></thead>
-    <tbody>${batchStaging.map(s=>`<tr>
+    <tbody>${batchStaging.map(s=>`<tr${isMemberInactive(s.id)?' class="row-muted"':''}>
       <td><input type="checkbox" class="batchRowCheck" data-id="${esc(s.id)}" ${batchChecked[s.id]?'checked':''}></td>
       <td>${esc(s.id)}</td><td>${memberNameHtml(s.name, s.id)}</td><td>${esc(s.cls)}</td>
       <td><button class="btn danger small" onclick="removeFromBatch('${esc(s.id)}')">Remove</button></td>
@@ -14689,7 +14696,7 @@ function renderCheckoutHtml(){
   return `
   <table class="stage-table">
     <thead><tr><th><input type="checkbox" id="checkoutSelectAll" ${inLib.every(r=>checkoutChecked[r.entryId])?'checked':''}></th><th>ID</th><th>Name</th><th>Class</th><th>Time in</th></tr></thead>
-    <tbody>${inLib.map(r=>`<tr>
+    <tbody>${inLib.map(r=>`<tr${isMemberInactive(r.id)?' class="row-muted"':''}>
       <td><input type="checkbox" class="checkoutRowCheck" data-id="${esc(r.entryId)}" ${checkoutChecked[r.entryId]?'checked':''}></td>
       <td>${esc(r.id)}</td><td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls)}</td><td>${fmtTime(r.timeIn)}</td>
     </tr>`).join('')}</tbody>
@@ -15305,6 +15312,7 @@ function pageRosterTable(){
     state:rosterModuleState, key:'roster', title:'Individual subject combinations', hint:'Search a student to see — and edit — their subject line-up',
     data:()=>DB.users.filter(u=>u.category==='STUDENT').map(u=>({id:u.id, name:u.name, cls:u.cls, subs:studentSubjects(u)})),
     searchKeys:['id','name','cls'],
+    rowClass:r=>isMemberInactive(r.id)?'row-muted':'',
     columns:[
       {key:'id', label:'ID'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.id)},{key:'cls', label:'Class'},
       {key:'subs', label:'Subjects offered', render:r=>r.subs.map(s=>`<span class="pill">${esc(s)}</span>`).join(' ')||'—'},
@@ -15330,6 +15338,7 @@ function pageFeedback(){
     filters:[{key:'status', label:'Status', options:['NEW','IN REVIEW','RESOLVED']}],
     dateRange:true,
     selectable:true, rowKey:r=>r.entryId,
+    rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     columns:[
       {key:'date', label:'Date', render:r=>fmtDate(r.date)},
       {key:'userName', label:'From', render:r=>memberNameHtml(r.userName, r.userId)},{key:'type', label:'Type'},{key:'subject', label:'Subject'},
@@ -17744,9 +17753,9 @@ function renderPromoteSourceList(){
   el.innerHTML = `
   <table class="stage-table">
     <thead><tr><th><input type="checkbox" id="promoteSelectAll"></th><th>ID</th><th>Name</th></tr></thead>
-    <tbody>${students.map(u=>`<tr>
+    <tbody>${students.map(u=>`<tr${isMemberInactive(u.id)?' class="row-muted"':''}>
       <td><input type="checkbox" class="promoteSrcCheck" data-id="${esc(u.id)}" ${promoteSourceChecked[u.id]?'checked':''}></td>
-      <td>${esc(u.id)}</td><td><span class="${getMemberStatusClass(u.id)}">${esc(u.name)}</span></td>
+      <td>${esc(u.id)}</td><td>${memberNameHtml(u.name, u.id)}</td>
     </tr>`).join('')}</tbody>
   </table>`;
   const selAll = document.getElementById('promoteSelectAll');
@@ -17781,7 +17790,7 @@ function renderPromoteStaging(){
   el.innerHTML = `
   <table class="stage-table">
     <thead><tr><th>ID</th><th>Name</th><th>Current class</th><th></th></tr></thead>
-    <tbody>${promoteBatch.map(s=>`<tr><td>${esc(s.id)}</td><td><span class="${getMemberStatusClass(s.id)}">${esc(s.name)}</span></td><td>${esc(s.cls)}</td>
+    <tbody>${promoteBatch.map(s=>`<tr${isMemberInactive(s.id)?' class="row-muted"':''}><td>${esc(s.id)}</td><td>${memberNameHtml(s.name, s.id)}</td><td>${esc(s.cls)}</td>
       <td><button class="btn danger small" onclick="removeFromPromoteBatch('${esc(s.id)}')">Remove</button></td></tr>`).join('')}</tbody>
   </table>`;
 }
