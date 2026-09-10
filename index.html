@@ -6219,6 +6219,7 @@ function migrateNewFeatureData(db){
   });
   if(!db.setup.shelfMap || typeof db.setup.shelfMap!=='object') db.setup.shelfMap = {};
   if(!db.setup.periodTimes || typeof db.setup.periodTimes!=='object' || Array.isArray(db.setup.periodTimes)) db.setup.periodTimes = {};
+  if(db.setup.periods && !Array.isArray(db.setup.periods)) db.setup.periods = [];
   if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
   (db.circulation||[]).forEach(t=>{
     if(t.renewCount===undefined) t.renewCount = 0;
@@ -9883,7 +9884,7 @@ function pageDashboard(){
     })()}</div></div>
     ${(() => {
       const classes = sortedClasses();
-      const periods = PERIOD_OPTIONS.filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
+      const periods = timetablePeriods().filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
       if(!classes.length || !periods.length) return `<div class="empty">No class timetable entered for today yet — add one from <a href="javascript:void(0)" onclick="route='schedule';scheduleSubview='timetable';render()">Schedule → Class timetable</a>.</div>`;
       const cellHtml = (val)=>{
         if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
@@ -9891,7 +9892,7 @@ function pageDashboard(){
         if(!val) return '<span style="color:var(--muted-label)">—</span>';
         return esc(val);
       };
-      return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${periodHeaderHtml(p)}</th>`).join('')}</tr></thead>
+      return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
       <tbody>${classes.map(c=>{
         const tt = classTimetableFor(c)[weekday]||{};
         return `<tr><td>${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
@@ -14786,25 +14787,47 @@ const PERIOD_OPTIONS = ['1ST','2ND','3RD','4TH','5TH','6TH','7TH','8TH','9TH','1
    class's timetable: if a class has any period tagged LIBRARY, those become its library
    visit slot(s); otherwise its free periods are used as candidate visit slots. */
 const TIMETABLE_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
-function periodTime(period){ return (DB.setup.periodTimes && DB.setup.periodTimes[period]) || null; }
-function periodTimeLabel(period){
-  const pt = periodTime(period);
+function timetablePeriods(){ return (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS; }
+function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
+function periodTimeLabel(day, period){
+  const pt = periodTime(day, period);
   return pt && (pt.start||pt.end) ? `${fmtTime(pt.start)}–${fmtTime(pt.end)}` : '';
 }
-function periodHeaderHtml(period){
-  const t = periodTimeLabel(period);
+function periodHeaderHtml(day, period){
+  const t = periodTimeLabel(day, period);
   return `${esc(period)}${t? `<div style="font-weight:400;font-size:11px;color:var(--muted-label)">${esc(t)}</div>`:''}`;
 }
+let ptSelectedDay = 'MONDAY';
 function savePeriodTimes(){
   if(!isAdmin()) return requireAdmin('edit period times');
   if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-  PERIOD_OPTIONS.forEach(period=>{
+  const day = ptSelectedDay;
+  const dayMap = DB.setup.periodTimes[day] || {};
+  timetablePeriods().forEach(period=>{
     const start = document.getElementById('ptStart_'+period)?.value || '';
     const end = document.getElementById('ptEnd_'+period)?.value || '';
-    if(start||end) DB.setup.periodTimes[period] = {start, end};
-    else delete DB.setup.periodTimes[period];
+    if(start||end) dayMap[period] = {start, end}; else delete dayMap[period];
   });
-  saveDB('Period times updated'); render(); toast('Period times saved');
+  DB.setup.periodTimes[day] = dayMap;
+  saveDB('Period times updated for '+day); render(); toast('Period times saved for '+day);
+}
+function addTimetablePeriod(){
+  if(!isAdmin()) return requireAdmin('add a period');
+  const label = (prompt('New period label (e.g. 11TH, or a name like "ASSEMBLY"):')||'').trim();
+  if(!label) return;
+  if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
+  if(DB.setup.periods.includes(label)){ toast('That period already exists'); return; }
+  DB.setup.periods.push(label);
+  saveDB('Period added: '+label); render(); toast('Period added');
+}
+function removeTimetablePeriod(period){
+  if(!isAdmin()) return requireAdmin('remove a period');
+  confirmModal(`Remove period "${esc(period)}"? Existing timetable entries using it are left as-is.`, ()=>{
+    if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
+    DB.setup.periods = DB.setup.periods.filter(p=>p!==period);
+    if(DB.setup.periodTimes){ Object.keys(DB.setup.periodTimes).forEach(d=>{ if(DB.setup.periodTimes[d]) delete DB.setup.periodTimes[d][period]; }); }
+    saveDB('Period removed: '+period); render(); toast('Period removed');
+  }, {danger:true});
 }
 let ttSelectedClass = null;
 function classTimetableFor(cls){ return (DB.classTimetable && DB.classTimetable[cls]) || {}; }
@@ -14826,16 +14849,25 @@ function pageClassTimetable(){
     ${!classes.length? '<div class="empty">No classes set up yet — add classes from Setup first.</div>' : `
     <details style="margin-bottom:12px">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times ${isAdmin()?'(edit)':''}</summary>
+      <div class="field" style="max-width:220px;margin-top:8px"><label>Day</label>
+        <select onchange="ptSelectedDay=this.value;render();">
+          ${TIMETABLE_DAYS.map(d=>`<option value="${esc(d)}" ${d===ptSelectedDay?'selected':''}>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
       <div class="table-wrap" style="margin-top:8px"><table class="datatable">
-        <thead><tr><th>Period</th><th>Start</th><th>End</th></tr></thead>
-        <tbody>${PERIOD_OPTIONS.map(period=>{
-          const pt = periodTime(period) || {};
-          return `<tr><td>${esc(period)}</td>
+        <thead><tr><th>Start</th><th>End</th><th>Period</th>${isAdmin()?'<th></th>':''}</tr></thead>
+        <tbody>${timetablePeriods().map(period=>{
+          const pt = periodTime(ptSelectedDay, period) || {};
+          return `<tr>
             <td><input type="time" id="ptStart_${esc(period)}" value="${esc(pt.start||'')}" ${isAdmin()?'':'disabled'}></td>
-            <td><input type="time" id="ptEnd_${esc(period)}" value="${esc(pt.end||'')}" ${isAdmin()?'':'disabled'}></td></tr>`;
+            <td><input type="time" id="ptEnd_${esc(period)}" value="${esc(pt.end||'')}" ${isAdmin()?'':'disabled'}></td>
+            <td>${esc(period)}</td>
+            ${isAdmin()? `<td><button class="btn danger small" onclick="removeTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Remove</button></td>`:''}
+          </tr>`;
         }).join('')}</tbody>
       </table></div>
-      ${isAdmin()? `<button class="btn secondary" style="margin-top:8px" onclick="savePeriodTimes()">Save period times</button>`:''}
+      ${isAdmin()? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" onclick="savePeriodTimes()">Save times for ${esc(ptSelectedDay)}</button><button class="btn" onclick="addTimetablePeriod()">+ Add period</button></div>`:''}
+      <p class="field-hint" style="margin-top:8px">Set separately per day — periods don't run at the same time every day.</p>
     </details>
     <div class="field" style="max-width:280px"><label>Class</label>
       <select id="ttClassSelect" onchange="ttSelectedClass=this.value;render();">
@@ -14843,13 +14875,14 @@ function pageClassTimetable(){
       </select>
     </div>
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
-      <thead><tr><th>Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
+      <thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
       <tbody>
-        ${PERIOD_OPTIONS.map(period=>`
-          <tr><td>${periodHeaderHtml(period)}</td>
+        ${timetablePeriods().map(period=>`
+          <tr><td style="width:64px;white-space:nowrap">${esc(period)}</td>
           ${TIMETABLE_DAYS.map(day=>{
             const val = (tt[day] && tt[day][period]) || '';
-            return `<td><select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'}>
+            const timeLbl = periodTimeLabel(day, period);
+            return `<td>${timeLbl? `<div style="font-size:10px;color:var(--muted-label);margin-bottom:2px">${esc(timeLbl)}</div>`:''}<select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'}>
               <option value="" ${val===''?'selected':''}>— Free —</option>
               <option value="LIBRARY" ${val==='LIBRARY'?'selected':''}>📚 LIBRARY</option>
               <option value="BREAK" ${val==='BREAK'?'selected':''}>Break/Assembly</option>
@@ -14859,7 +14892,6 @@ function pageClassTimetable(){
           </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="field-hint" style="margin-top:6px">Set each period's clock time once above — it'll show under the period name here, on today's dashboard timetable, and auto-fill the Time column when the library schedule is auto-built.</p>
     ${isAdmin()? `<button class="btn secondary" style="margin-top:10px" onclick="saveClassTimetable()">Save timetable for ${esc(cls)}</button>`:''}
     <p class="field-hint" style="margin-top:8px">Mark "📚 LIBRARY" on the period(s) a class visits the library. Otherwise leave periods on "— Free —" — auto-build uses free periods for any class with no Library period set.</p>
     `}
@@ -14895,7 +14927,7 @@ function autoBuildLibrarySchedule(){
     const librarySlots = [], freeSlots = [];
     const students = classStudents(cls);
     TIMETABLE_DAYS.forEach(day=>{
-      PERIOD_OPTIONS.forEach(period=>{
+      timetablePeriods().forEach(period=>{
         const val = (tt[day] && tt[day][period]) || '';
         if(val==='LIBRARY') librarySlots.push([day,period]);
         else if(val==='') freeSlots.push([day,period]);
@@ -14931,7 +14963,7 @@ function autoBuildLibrarySchedule(){
       const classesArr = [...p.classes];
       const note = p.reason==='library' ? 'Library period (from class timetable)' : 'Free period (from class timetable)';
       const existingIdx = DB.scheduleDays.findIndex(r=> r[0]===p.day && r[1]===p.period);
-      const pt = periodTime(p.period);
+      const pt = periodTime(p.day, p.period);
       if(existingIdx>-1){
         const row = DB.scheduleDays[existingIdx];
         const existingClasses = String(row[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -14949,7 +14981,7 @@ function autoBuildLibrarySchedule(){
       const breakdown = individualFree[k];
       let existingIdx = DB.scheduleDays.findIndex(r=> r[0]===day && r[1]===period);
       if(existingIdx===-1){
-        const pt = periodTime(period);
+        const pt = periodTime(day, period);
         DB.scheduleDays.push([day, period, (pt && pt.start) || '', '', '']);
         existingIdx = DB.scheduleDays.length-1;
         added++;
@@ -14964,7 +14996,7 @@ function scheduleFields(r){
   return [
     {row:[
       {key:'day', label:'Day', type:'select', required:true, options:['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'], default:r? r[0]:''},
-      {key:'period', label:'Period', type:'select', required:true, options:PERIOD_OPTIONS, default:r? r[1]:''},
+      {key:'period', label:'Period', type:'select', required:true, options:timetablePeriods(), default:r? r[1]:''},
     ]},
     {key:'time', label:'Time', type:'time', default:r? (r[2]||'').slice(0,5):''},
   ];
