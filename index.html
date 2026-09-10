@@ -14793,7 +14793,7 @@ const PERIOD_OPTIONS = ['1ST','2ND','3RD','4TH','5TH','6TH','7TH','8TH','9TH','1
    class's timetable: if a class has any period tagged LIBRARY, those become its library
    visit slot(s); otherwise its free periods are used as candidate visit slots. */
 const TIMETABLE_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
-const DEFAULT_ACTIVITIES = ['Break', 'Assembly', 'Sports', 'Staff Meeting', 'Exam', 'Guest Lecture', 'Field Trip', 'Rehearsal'];
+const DEFAULT_ACTIVITIES = ['BREAK', 'ASSEMBLY', 'SPORTS', 'STAFF MEETING', 'EXAM', 'GUEST LECTURE', 'FIELD TRIP', 'REHEARSAL'];
 function timetablePeriods(){ return (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS; }
 function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
 function periodTimeLabel(day, period){
@@ -14884,6 +14884,21 @@ function pageClassTimetable(){
     </div>
     ${!classes.length? '<div class="empty">No classes set up yet — add classes from Setup first.</div>' : `
     <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙️ Manage activities</summary>
+      <div style="margin-top:12px">
+        <label>Available activities</label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:8px 0">
+          ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map((act,i)=>`
+            <div style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--surface-1);border-radius:6px;font-size:13px">
+              <span style="flex:1">${esc(act)}</span>
+              ${isAdmin()?`<button class="btn danger small" style="padding:2px 6px;font-size:11px" onclick="removeScheduleActivity('${esc(act).replace(/'/g,"\\\'")}')">×</button>`:''}
+            </div>
+          `).join('')}
+        </div>
+        ${isAdmin()?`<button class="btn secondary" onclick="addScheduleActivity()" style="margin-top:8px">+ Add activity</button>`:''}
+      </div>
+    </details>
+    <details style="margin-bottom:12px">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times ${isAdmin()?'(edit)':''}</summary>
       <div class="field" style="max-width:220px;margin-top:8px"><label>Day</label>
         <select onchange="ptSelectedDay=this.value;render();">
@@ -14919,13 +14934,15 @@ function pageClassTimetable(){
             const val = (tt[day] && tt[day][period]) || '';
             const defaultTime = periodTime(day, period) || {};
             const overrideTime = classHasTimeOverride(cls, day, period) ? getClassPeriodTime(cls, day, period) : null;
+            const hasAnyTime = overrideTime || (defaultTime && (defaultTime.start || defaultTime.end));
             const timeLbl = overrideTime ? `<strong style="color:var(--text-accent)">${fmtTime(overrideTime.start)}–${fmtTime(overrideTime.end)}</strong>` : periodTimeLabel(day, period);
+            const buttonLabel = overrideTime ? '✓ Edit' : (hasAnyTime ? 'Edit' : 'Set time');
             return `<td style="${overrideTime?'background:var(--bg-accent);border-radius:6px;':''}">${timeLbl? `<div style="font-size:10px;${overrideTime?'color:var(--text-accent)':' color:var(--muted-label)'}margin-bottom:2px">${timeLbl}</div>`:''}<select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'} style="width:100%;margin-bottom:4px">
               <option value="" ${val===''?'selected':''}>— Free —</option>
               <option value="LIBRARY" ${val==='LIBRARY'?'selected':''}>📚 LIBRARY</option>
               ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map(act=>`<option value="${esc(act)}" ${val===act?'selected':''}>${esc(act)}</option>`).join('')}
               ${subjectCodes.map(code=>`<option value="${esc(code)}" ${val===code?'selected':''}>${esc(code)}${subjectNames[code]?' – '+esc(subjectNames[code]):''}</option>`).join('')}
-            </select>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${overrideTime?'✓ Edit':'Set time'}</button>`:''}
+            </select>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${buttonLabel}</button>`:''}
             </td>`;
           }).join('')}
           </tr>`).join('')}
@@ -14989,6 +15006,30 @@ function editClassPeriodTime(cls, day, period){
     render();
     $('#modalRoot').innerHTML = '';
   };
+}
+function addScheduleActivity(){
+  if(!isAdmin()) return requireAdmin('add activities');
+  const actName = (prompt('Enter new activity name (e.g., ASSEMBLY, REHEARSAL):') || '').trim().toUpperCase();
+  if(!actName) return;
+  if(!DB.scheduleActivities) DB.scheduleActivities = [...DEFAULT_ACTIVITIES];
+  if(DB.scheduleActivities.includes(actName)){
+    toast('Activity already exists');
+    return;
+  }
+  DB.scheduleActivities.push(actName);
+  saveDB(`Activity added: ${actName}`);
+  render();
+  toast(`Activity "${actName}" added`);
+}
+function removeScheduleActivity(act){
+  if(!isAdmin()) return requireAdmin('remove activities');
+  confirmDelete(`Remove activity "${act}"?`, ()=>{
+    if(!DB.scheduleActivities) return;
+    DB.scheduleActivities = DB.scheduleActivities.filter(a=>a!==act);
+    saveDB(`Activity removed: ${act}`);
+    render();
+    toast(`Activity "${act}" removed`);
+  });
 }
 function classStudents(cls){ return DB.users.filter(u=>u.category==='STUDENT' && u.cls===cls); }
 function renderIndividualFreeHtml(breakdown){
