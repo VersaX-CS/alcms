@@ -6218,6 +6218,7 @@ function migrateNewFeatureData(db){
     if(db.setup.notifTypes[k]===undefined) db.setup.notifTypes[k] = true;
   });
   if(!db.setup.shelfMap || typeof db.setup.shelfMap!=='object') db.setup.shelfMap = {};
+  if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
   (db.circulation||[]).forEach(t=>{
     if(t.renewCount===undefined) t.renewCount = 0;
     if(t.finePaid===undefined) t.finePaid = false;
@@ -6492,6 +6493,7 @@ function buildSeedDB(){
   return {
     catalogue, users, circulation, feedback, registerLog,
     scheduleDays: SEED_SCHEDULE_DAYS.map(r=>[...r]), scheduleRoster: SEED_SCHEDULE_ROSTER.map(r=>[...r]), scheduleSubjects: [...SEED_SCHEDULE_SUBJECTS],
+    classTimetable: {},
     setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
   };
 }
@@ -9873,16 +9875,26 @@ function pageDashboard(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Overdue detail</h3><div class="hint">${(() => {
-      const overdueRows = t.filter(x=>txnStatus(x)==='OVERDUE').map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date())}));
-      return overdueRows.length + ' loan(s) past due date';
+    <div class="panel-head"><h3>Today's class timetable — ${esc(weekday)}</h3><div class="hint">${(() => {
+      const classes = sortedClasses().filter(c=>Object.keys(classTimetableFor(c)[weekday]||{}).length);
+      return classes.length ? classes.length+' class(es) with a timetable entered for today' : 'No class timetables entered yet';
     })()}</div></div>
-    <div class="table-wrap"><table class="datatable"><thead><tr><th>Member ID</th><th>Name</th><th>Class</th><th>Acc. No</th><th>Title</th><th>Due date</th><th>Days overdue</th></tr></thead>
-    <tbody>${(() => {
-      const overdueRows = t.filter(x=>txnStatus(x)==='OVERDUE').map(x=>({...x, daysOverdue: daysBetween(parseAnyDate(x.dueDate), new Date())}))
-        .sort((a,b)=>b.daysOverdue-a.daysOverdue);
-      return overdueRows.map(r=>'<tr><td>'+esc(r.userId)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.cls)+'</td><td>'+esc(r.acc)+'</td><td>'+esc(r.title)+'</td><td>'+fmtDate(r.dueDate)+'</td><td><span class="badge red">'+r.daysOverdue+'</span></td></tr>').join('')||'<tr><td colspan=7><div class="empty"><div class="big">✓</div>Nothing overdue</div></td></tr>';
-    })()}</tbody></table></div>
+    ${(() => {
+      const classes = sortedClasses();
+      const periods = PERIOD_OPTIONS.filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
+      if(!classes.length || !periods.length) return `<div class="empty">No class timetable entered for today yet — add one from <a href="javascript:void(0)" onclick="route='schedule';scheduleSubview='timetable';render()">Schedule → Class timetable</a>.</div>`;
+      const cellHtml = (val)=>{
+        if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
+        if(val==='BREAK') return '<span style="color:var(--muted-label);font-style:italic">Break</span>';
+        if(!val) return '<span style="color:var(--muted-label)">—</span>';
+        return esc(val);
+      };
+      return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${esc(p)}</th>`).join('')}</tr></thead>
+      <tbody>${classes.map(c=>{
+        const tt = classTimetableFor(c)[weekday]||{};
+        return `<tr><td>${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
+      }).join('')}</tbody></table></div>`;
+    })()}
   </div>`;
 }
 function kpi(lbl,val,sub){
@@ -14707,16 +14719,34 @@ function printWeeklySchedule(){
   DB.scheduleDays.forEach(r=>{ (byDay[r[0]]=byDay[r[0]]||[]).push(r); });
   const sections = days.filter(d=>byDay[d]).map(d=>({
     heading: d,
-    columns:[{label:'Period', get:r=>r[1]},{label:'Time', get:r=>(r[2]||'').slice(0,5)},{label:'Expected class(es)', get:r=>r[3]},{label:'Notes', get:r=>r[4]}],
+    columns:[{label:'Period', get:r=>r[1]},{label:'Time', get:r=>(r[2]||'').slice(0,5)},{label:'Expected class(es)', get:r=>r[3]},{label:'Notes', get:r=>{
+      let n = r[4]||'';
+      if(r[5] && typeof r[5]==='object'){
+        const extra = Object.entries(r[5]).filter(([,info])=>info && info.students && info.students.length)
+          .map(([cls,info])=>`${cls}: ${info.students.length} free (not offering ${info.subject})`).join('; ');
+        if(extra) n = n ? n+' | '+extra : extra;
+      }
+      return n;
+    }}],
     rows: byDay[d],
   }));
   printMultiSection('Weekly Library Schedule', 'Expected classes per period, by day', sections);
 }
+let scheduleSubview = 'weekly';
+function setScheduleSubview(v){ scheduleSubview = v; render(); }
 function pageSchedule(){
+  const tabsHtml = `
+  <div class="profile-tabs">
+    <button class="profile-tab-btn ${scheduleSubview==='weekly'?'active':''}" onclick="setScheduleSubview('weekly')">Weekly schedule</button>
+    <button class="profile-tab-btn ${scheduleSubview==='timetable'?'active':''}" onclick="setScheduleSubview('timetable')">Class timetable</button>
+  </div>`;
+  if(scheduleSubview==='timetable'){
+    return tabsHtml + pageClassTimetable() + '<div id="mod_roster" style="display:none"></div>';
+  }
   const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
   const byDay = {};
   DB.scheduleDays.forEach((r,i)=>{ (byDay[r[0]]=byDay[r[0]]||[]).push({...r, __i:i}); });
-  return `
+  return tabsHtml + `
   <div class="card panel">
     <div class="panel-head">
       <div><h3>Weekly library schedule</h3></div>
@@ -14729,7 +14759,7 @@ function pageSchedule(){
     ${days.filter(d=>byDay[d]).map(d=>`
       <h4 style="margin:14px 0 8px;font-size:13px;color:var(--muted-label);letter-spacing:.5px">${d}</h4>
       <div class="table-wrap" style="margin-bottom:10px"><table class="datatable"><thead><tr><th>Period</th><th>Time</th><th>Expected class(es)</th><th>Notes</th>${isAdmin()?'<th></th>':''}</tr></thead>
-      <tbody>${byDay[d].map(r=>`<tr><td>${esc(r[1]||'')}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td>${esc(r[4]||'')}</td>
+      <tbody>${byDay[d].map(r=>`<tr><td>${esc(r[1]||'')}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td>${esc(r[4]||'')}${renderIndividualFreeHtml(r[5])}</td>
         ${isAdmin()? `<td><button class="btn secondary small" onclick="openScheduleForm(${r.__i})">Edit</button> <button class="btn danger small" onclick="deleteScheduleEntry(${r.__i})">Delete</button></td>`:''}</tr>`).join('')}</tbody></table></div>
     `).join('') || '<div class="empty">No schedule data available</div>'}
   </div>
@@ -14748,6 +14778,149 @@ function academicSessionOptions(){
   return opts;
 }
 const PERIOD_OPTIONS = ['1ST','2ND','3RD','4TH','5TH','6TH','7TH','8TH','9TH','10TH'];
+/* ============ Class subject timetable → auto-build library schedule ============
+   DB.classTimetable shape: { [className]: { [day]: { [period]: 'LIBRARY'|'BREAK'|subjectCode } } }
+   A period simply absent from the map counts as a free period. Auto-build reads every
+   class's timetable: if a class has any period tagged LIBRARY, those become its library
+   visit slot(s); otherwise its free periods are used as candidate visit slots. */
+const TIMETABLE_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
+let ttSelectedClass = null;
+function classTimetableFor(cls){ return (DB.classTimetable && DB.classTimetable[cls]) || {}; }
+function pageClassTimetable(){
+  const classes = sortedClasses();
+  if(!ttSelectedClass || !classes.includes(ttSelectedClass)) ttSelectedClass = classes[0] || '';
+  const cls = ttSelectedClass;
+  const subjectCodes = (DB.setup.classSubjects && DB.setup.classSubjects[cls]) || [];
+  const subjectNames = DB.setup.subjectNames || {};
+  const tt = classTimetableFor(cls);
+  return `
+  <div class="card panel">
+    <div class="panel-head">
+      <div><h3>Class subject timetable</h3><div class="hint">Enter each class's weekly timetable so the library visit schedule can be built from it automatically</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
+      </div>
+    </div>
+    ${!classes.length? '<div class="empty">No classes set up yet — add classes from Setup first.</div>' : `
+    <div class="field" style="max-width:280px"><label>Class</label>
+      <select id="ttClassSelect" onchange="ttSelectedClass=this.value;render();">
+        ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="table-wrap" style="margin-top:10px"><table class="datatable">
+      <thead><tr><th>Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${PERIOD_OPTIONS.map(period=>`
+          <tr><td>${esc(period)}</td>
+          ${TIMETABLE_DAYS.map(day=>{
+            const val = (tt[day] && tt[day][period]) || '';
+            return `<td><select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'}>
+              <option value="" ${val===''?'selected':''}>— Free —</option>
+              <option value="LIBRARY" ${val==='LIBRARY'?'selected':''}>📚 LIBRARY</option>
+              <option value="BREAK" ${val==='BREAK'?'selected':''}>Break/Assembly</option>
+              ${subjectCodes.map(code=>`<option value="${esc(code)}" ${val===code?'selected':''}>${esc(code)}${subjectNames[code]?' – '+esc(subjectNames[code]):''}</option>`).join('')}
+            </select></td>`;
+          }).join('')}
+          </tr>`).join('')}
+      </tbody>
+    </table></div>
+    ${isAdmin()? `<button class="btn secondary" style="margin-top:10px" onclick="saveClassTimetable()">Save timetable for ${esc(cls)}</button>`:''}
+    <p class="field-hint" style="margin-top:8px">Mark "📚 LIBRARY" on the period(s) a class visits the library. Otherwise leave periods on "— Free —" — auto-build uses free periods for any class with no Library period set.</p>
+    `}
+  </div>`;
+}
+function saveClassTimetable(){
+  if(!isAdmin()) return requireAdmin('edit the class timetable');
+  const cls = ttSelectedClass; if(!cls) return;
+  if(!DB.classTimetable) DB.classTimetable = {};
+  const dayMap = {};
+  $$('.ttCell').forEach(sel=>{
+    const day = sel.dataset.day, period = sel.dataset.period, val = sel.value;
+    if(val){ (dayMap[day] = dayMap[day] || {})[period] = val; }
+  });
+  DB.classTimetable[cls] = dayMap;
+  saveDB(`Class timetable saved for ${cls}`); render(); toast('Timetable saved for '+cls);
+}
+function classStudents(cls){ return DB.users.filter(u=>u.category==='STUDENT' && u.cls===cls); }
+function renderIndividualFreeHtml(breakdown){
+  if(!breakdown || typeof breakdown!=='object') return '';
+  const parts = Object.entries(breakdown).filter(([,info])=>info && info.students && info.students.length);
+  if(!parts.length) return '';
+  return parts.map(([cls,info])=>`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--muted-label)">${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})</summary><div style="font-size:12px;margin:4px 0 0 10px">${info.students.map(esc).join(', ')}</div></details>`).join('');
+}
+function autoBuildLibrarySchedule(){
+  if(!isAdmin()) return requireAdmin('auto-build the library schedule');
+  const classesWithTimetable = Object.keys(DB.classTimetable||{}).filter(c=> DB.classTimetable[c] && Object.keys(DB.classTimetable[c]).length);
+  if(!classesWithTimetable.length){ alertModal('Enter at least one class\'s subject timetable first, from the Class timetable tab.'); return; }
+  const proposals = {};
+  const individualFree = {}; // 'DAY|PERIOD' -> { [cls]: {subject, students:[names]} }
+  classesWithTimetable.forEach(cls=>{
+    const tt = DB.classTimetable[cls];
+    const librarySlots = [], freeSlots = [];
+    const students = classStudents(cls);
+    TIMETABLE_DAYS.forEach(day=>{
+      PERIOD_OPTIONS.forEach(period=>{
+        const val = (tt[day] && tt[day][period]) || '';
+        if(val==='LIBRARY') librarySlots.push([day,period]);
+        else if(val==='') freeSlots.push([day,period]);
+        else if(val!=='BREAK' && students.length){
+          // A subject is scheduled for the class — but students who don't offer it (per their
+          // own individual subject combination, not just the class default) are personally free.
+          const namesFree = students.filter(u=>!studentSubjects(u).includes(val)).map(u=>u.name);
+          if(namesFree.length){
+            const key = day+'|'+period;
+            if(!individualFree[key]) individualFree[key] = {};
+            individualFree[key][cls] = {subject:val, students:namesFree};
+          }
+        }
+      });
+    });
+    const slots = librarySlots.length ? librarySlots : freeSlots;
+    const reason = librarySlots.length ? 'library' : 'free';
+    slots.forEach(([day,period])=>{
+      const key = day+'|'+period;
+      if(!proposals[key]) proposals[key] = {day, period, classes:new Set(), reason};
+      proposals[key].classes.add(cls);
+      if(reason==='library') proposals[key].reason = 'library';
+    });
+  });
+  const keys = Object.keys(proposals);
+  const individualKeys = Object.keys(individualFree);
+  if(!keys.length && !individualKeys.length){ alertModal('No Library-tagged, free, or partly-free periods were found in the timetables entered so far.'); return; }
+  const individualCount = individualKeys.reduce((n,k)=>n+Object.values(individualFree[k]).reduce((m,info)=>m+info.students.length,0), 0);
+  confirmModal(`Generate/update ${keys.length} weekly schedule period(s) from the class timetable${individualCount? `, plus ${individualCount} individually-free student mention(s) on subject periods where their own combination excludes that subject`:''}? Existing periods at the same day &amp; time get these added, not replaced.`, ()=>{
+    let added=0, merged=0;
+    keys.forEach(k=>{
+      const p = proposals[k];
+      const classesArr = [...p.classes];
+      const note = p.reason==='library' ? 'Library period (from class timetable)' : 'Free period (from class timetable)';
+      const existingIdx = DB.scheduleDays.findIndex(r=> r[0]===p.day && r[1]===p.period);
+      if(existingIdx>-1){
+        const row = DB.scheduleDays[existingIdx];
+        const existingClasses = String(row[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+        row[3] = Array.from(new Set([...existingClasses, ...classesArr])).join(', ');
+        if(!row[4]) row[4] = note;
+        merged++;
+      } else {
+        DB.scheduleDays.push([p.day, p.period, '', classesArr.join(', '), note]);
+        added++;
+      }
+    });
+    individualKeys.forEach(k=>{
+      const [day,period] = k.split('|');
+      const breakdown = individualFree[k];
+      let existingIdx = DB.scheduleDays.findIndex(r=> r[0]===day && r[1]===period);
+      if(existingIdx===-1){
+        DB.scheduleDays.push([day, period, '', '', '']);
+        existingIdx = DB.scheduleDays.length-1;
+        added++;
+      }
+      const row = DB.scheduleDays[existingIdx];
+      row[5] = Object.assign({}, row[5], breakdown);
+    });
+    saveDB('Library schedule auto-built from class timetable'); render(); toast(`${added} period(s) added, ${merged} updated`);
+  });
+}
 function scheduleFields(r){
   return [
     {row:[
@@ -16576,6 +16749,7 @@ const DATA_PORTAL_CATEGORIES = [
   {key:'scheduleDays', label:'Schedule — days', hint:'Array of schedule day rows'},
   {key:'scheduleRoster', label:'Schedule — roster', hint:'Array of roster rows'},
   {key:'scheduleSubjects', label:'Schedule — subjects', hint:'Array of subject codes'},
+  {key:'classTimetable', label:'Schedule — class timetables', hint:'Single object of per-class subject timetables'},
   {key:'setup', label:'Setup & settings', hint:'Single settings object (Dewey lists, classes, fines, codes, etc.)'},
 ];
 function downloadCategoryJSON(key){
@@ -16590,7 +16764,7 @@ function importCategoryJSON(key, file){
   if(!isAdmin()) return requireAdmin('import data');
   const cat = DATA_PORTAL_CATEGORIES.find(c=>c.key===key);
   const label = cat ? cat.label : key;
-  const expectArray = key!=='setup';
+  const expectArray = key!=='setup' && key!=='classTimetable';
   const reader = new FileReader();
   reader.onload = ()=>{
     let parsed;
