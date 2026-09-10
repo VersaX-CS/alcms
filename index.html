@@ -9874,7 +9874,7 @@ function pageDashboard(){
     <div class="card panel" style="margin-bottom:16px">
       <div class="panel-head"><div><h3>Due today &amp; overdue</h3><div class="hint">${dueList.length} loan(s) need attention · click one to return it</div></div></div>
       ${dueList.slice(0,10).map(r=>`<div class="activity-row" style="cursor:pointer" onclick="viewTransaction('${esc(r.trxId)}')"><div class="dot" style="background:${r.status==='OVERDUE'?'#A8452F':'#B8863E'}"></div>
-        <div style="flex:1"><strong>${esc(r.name)}</strong> — <em>${esc(r.title)}</em>
+        <div style="flex:1"><strong>${memberNameHtml(r.name, r.userId)}</strong> — <em>${esc(r.title)}</em>
         <div class="meta">${esc(r.acc)} · due ${fmtDate(r.dueDate)}</div></div>
         <span class="badge ${r.status==='OVERDUE'?'red':'gold'}">${r.status==='OVERDUE'?'OVERDUE':'DUE TODAY'}</span></div>`).join('')}
       ${dueList.length>10? `<p class="field-hint" style="margin-top:6px">+ ${dueList.length-10} more — see the full list in <a href="javascript:void(0)" onclick="route='reminders';render()">Reminder Log</a>.</p>`:''}
@@ -9887,7 +9887,7 @@ function pageDashboard(){
         const st = txnStatus(r);
         const color = st==='RETURNED'?'#2F6B44':st==='OVERDUE'?'#A8452F':st==='MISSING'?'#6b1f1f':'#B8863E';
         return `<div class="activity-row"><div class="dot" style="background:${color}"></div>
-          <div style="flex:1"><strong>${esc(r.name)}</strong> ${st==='RETURNED'||st==='MISSING'?'returned':'borrowed'} <em>${esc(r.title)}</em>
+          <div style="flex:1"><strong>${memberNameHtml(r.name, r.userId)}</strong> ${st==='RETURNED'||st==='MISSING'?'returned':'borrowed'} <em>${esc(r.title)}</em>
           <div class="meta">${esc(r.acc)} · ${fmtDate(r.dateBorrowed)}${r.returnDate? ' → returned '+fmtDate(r.returnDate):''}</div></div>
           <span class="badge ${st==='RETURNED'?'green':st==='OVERDUE'||st==='MISSING'?'red':'gold'}">${st}</span></div>`;
       }).join('') : '<div class="empty">No circulation activity yet</div>'}
@@ -10089,7 +10089,7 @@ function openTitleLoansModal(idx){
   hideAnalyticsHoverTip();
   const rows = tt.loans.map(l=>{
     const status = txnStatus(l);
-    return `<tr><td>${esc(l.name||'—')}</td><td>${esc(l.cls||'—')}</td><td>${esc(l.acc||'—')}</td><td>${fmtDate(l.dateBorrowed)}</td><td>${fmtDate(l.dueDate)}</td><td>${l.returnDate?fmtDate(l.returnDate):'—'}</td><td><span class="badge ${status==='RETURNED'?'green':status==='OVERDUE'||status==='MISSING'?'red':'gold'}">${status}</span></td></tr>`;
+    return `<tr><td>${memberNameHtml(l.name||'—', l.userId)}</td><td>${esc(l.cls||'—')}</td><td>${esc(l.acc||'—')}</td><td>${fmtDate(l.dateBorrowed)}</td><td>${fmtDate(l.dueDate)}</td><td>${l.returnDate?fmtDate(l.returnDate):'—'}</td><td><span class="badge ${status==='RETURNED'?'green':status==='OVERDUE'||status==='MISSING'?'red':'gold'}">${status}</span></td></tr>`;
   });
   analyticsLoanDetailModal(
     `${esc(tt.title)} — borrow history`,
@@ -10368,7 +10368,7 @@ function viewBook(acc){
         </table>
         <h4 style="margin:16px 0 6px">Transaction history (${txns.length})</h4>
         ${txns.length? `<div class="table-wrap" style="max-height:220px;overflow:auto"><table class="datatable cards-on-mobile"><thead><tr><th>Member</th><th>Borrowed</th><th>Due</th><th>Returned</th><th>Status</th></tr></thead><tbody>
-          ${txns.map(t=>`<tr><td data-label="Member">${esc(t.name)}</td><td data-label="Borrowed">${fmtDate(t.dateBorrowed)}</td><td data-label="Due">${fmtDate(t.dueDate)}</td><td data-label="Returned">${t.returnDate?fmtDate(t.returnDate):'—'}</td><td data-label="Status">${esc(txnStatus(t))}</td></tr>`).join('')}
+          ${txns.map(t=>`<tr><td data-label="Member">${memberNameHtml(t.name, t.userId)}</td><td data-label="Borrowed">${fmtDate(t.dateBorrowed)}</td><td data-label="Due">${fmtDate(t.dueDate)}</td><td data-label="Returned">${t.returnDate?fmtDate(t.returnDate):'—'}</td><td data-label="Status">${esc(txnStatus(t))}</td></tr>`).join('')}
         </tbody></table></div>` : `<div class="empty" style="padding:12px"><div class="big">📚</div>No transactions on file for this item yet</div>`}
         <h4 style="margin:16px 0 6px">Item history (${log.length})</h4>
         <div class="table-wrap" style="max-height:220px;overflow:auto"><table class="datatable cards-on-mobile"><thead><tr><th>Date</th><th>Status</th><th>Condition</th><th>Shelf</th><th>Note</th></tr></thead><tbody>
@@ -10890,7 +10890,7 @@ function pageUsers(){
     ],
     columns:[
       {key:'id', label:'ID'},
-      {key:'name', label:'Full name'},
+      {key:'name', label:'Full name', render:r=>memberNameHtml(r.name, r.id)},
       {key:'category', label:'Category'},
       {key:'cls', label:'Class / Designation'},
       {key:'borrowed', label:'Borrowed', render:r=>`${r.borrowed} / ${r.maxAllowed}`},
@@ -10968,7 +10968,6 @@ function viewMember(id){
   if(!u) return;
   const rows = [
     ['Member ID', u.id],
-    ['Full name', u.name],
     ['Gender', u.gender||'—'],
     ['Category', u.category||'—'],
     ['Class / Designation', u.cls||'—'],
@@ -10989,6 +10988,7 @@ function viewMember(id){
       <div class="modal-head"><h3>Member details</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <table class="datatable">
+          <tr><td style="font-weight:600;width:40%">Full name</td><td>${memberNameHtml(u.name, u.id)}</td></tr>
           ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:40%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}
         </table>
       </div>
@@ -11144,7 +11144,7 @@ function viewSubjects(userId){
   const html = `
   <div class="modal-backdrop" id="mb">
     <div class="modal">
-      <div class="modal-head"><h3>Subjects — ${esc(u.name)}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-head"><h3>Subjects — ${memberNameHtml(u.name, u.id)}</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <p class="field-hint">${esc(u.id)} · ${esc(u.cls)} ${isOverridden? '· <strong>custom selection</strong>' : '· using class default'}</p>
         <div class="subject-pill-grid" id="subjectGrid">
@@ -11516,7 +11516,7 @@ function openMemberDocumentUploadModal(memberId){
   const html = `
   <div class="modal-backdrop" id="mb">
     <div class="modal">
-      <div class="modal-head"><h3>Add document — ${esc(u.name)}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-head"><h3>Add document — ${memberNameHtml(u.name, u.id)}</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <div class="field">
           <label>Document type</label>
@@ -11967,7 +11967,6 @@ function viewTransaction(trxId){
     ['Transaction ID', trx.trxId],
     ['Title', trx.title],
     ['Accession No.', trx.acc],
-    ['Member', `${trx.name} (${trx.userId})`],
     ['Category / Class', `${trx.category||'—'}${trx.cls?' · '+trx.cls:''}`],
     ['Date borrowed', fmtDate(trx.dateBorrowed)],
     ['Due date', fmtDate(trx.dueDate)],
@@ -12004,6 +12003,7 @@ function viewTransaction(trxId){
       <div class="modal-head"><h3>Transaction details</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <table class="datatable">
+          <tr><td style="font-weight:600;width:40%">Member</td><td>${memberNameHtml(trx.name, trx.userId)} (${esc(trx.userId)})</td></tr>
           ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:40%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}
         </table>
         <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--line);">
@@ -12698,9 +12698,9 @@ function renderLockLoanSuggest(){
   let html = '';
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="scan-suggest-row" data-kind="book" data-id="${esc(b.acc)}"><span class="ss-ic">📘</span><span class="ss-main"><strong>${esc(b.title)}</strong><span class="ss-sub">${esc(b.acc)} · ${esc(b.available)}</span></span></div>`).join(''); }
   if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="scan-suggest-row" data-kind="member" data-id="${esc(u.id)}"><span class="ss-ic">👤</span><span class="ss-main"><strong class="${getMemberStatusClass(u.id)}">${esc(u.name)}</strong><span class="ss-sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</span></span></div>`).join(''); }
-  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${esc(t.name)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
-  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · ${esc(r.status)}</span></span></div>`).join(''); }
-  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
+  if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="scan-suggest-row" data-kind="txn" data-id="${esc(t.trxId)}"><span class="ss-ic">🔄</span><span class="ss-main"><strong>${esc(t.title)}</strong><span class="ss-sub">${memberNameHtml(t.name, t.userId)} · ${esc(txnStatus(t))}</span></span></div>`).join(''); }
+  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="scan-suggest-row" data-kind="reservation" data-id="${esc(r.id)}"><span class="ss-ic">📌</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${memberNameHtml(r.name, r.userId)} · ${esc(r.status)}</span></span></div>`).join(''); }
+  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="scan-suggest-row" data-kind="reminder" data-id="${esc(r.trxId)}"><span class="ss-ic">✉</span><span class="ss-main"><strong>${esc(r.title)}</strong><span class="ss-sub">${memberNameHtml(r.name, r.userId)} · sent ${esc(fmtDate(r.dateSent))}</span></span></div>`).join(''); }
   if(!html){ box.classList.remove('open'); box.innerHTML=`<div class="empty" style="padding:16px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`; box.classList.add('open'); positionFloatingPanel(box, input); return; }
   box.innerHTML = html;
   box.classList.add('open');
@@ -12756,7 +12756,7 @@ function openLockSearchDetail(kind, id){
     title = '🔄 Loan details';
     bodyHtml = t ? `
       <p style="margin:8px 0 4px"><strong>${esc(t.title)}</strong></p>
-      <p class="field-hint" style="margin:0 0 8px">Borrower: ${esc(t.name)} (${esc(t.userId)})</p>
+      <p class="field-hint" style="margin:0 0 8px">Borrower: ${memberNameHtml(t.name, t.userId)} (${esc(t.userId)})</p>
       <div class="activity-row"><div class="dot" style="background:${status==='OVERDUE'?'#A8452F':'#3E6B52'}"></div>
         <div style="flex:1">Due ${esc(fmtDate(t.dueDate))}</div><span class="badge ${status==='OVERDUE'?'red':'green'}">${esc(status)}</span></div>
     ` : `<p style="margin:10px 0;color:var(--terracotta)">Transaction not found.</p>`;
@@ -12765,7 +12765,7 @@ function openLockSearchDetail(kind, id){
     title = '📌 Reservation details';
     bodyHtml = r ? `
       <p style="margin:8px 0 4px"><strong>${esc(r.title)}</strong></p>
-      <p class="field-hint" style="margin:0 0 8px">Reserved by: ${esc(r.name)}</p>
+      <p class="field-hint" style="margin:0 0 8px">Reserved by: ${memberNameHtml(r.name, r.userId)}</p>
       <div class="activity-row"><div class="dot" style="background:#B8863E"></div><div style="flex:1">Status</div><span class="badge gold">${esc(r.status)}</span></div>
       ${(()=>{ const pos = reservationQueuePosition(r); return pos ? `<div class="activity-row"><div class="dot" style="background:#B8863E"></div><div style="flex:1">Queue position</div><span class="badge ${pos===1?'green':'gold'}">#${pos}</span></div>` : ''; })()}
     ` : `<p style="margin:10px 0;color:var(--terracotta)">Reservation not found.</p>`;
@@ -12774,7 +12774,7 @@ function openLockSearchDetail(kind, id){
     title = '✉ Reminder details';
     bodyHtml = r ? `
       <p style="margin:8px 0 4px"><strong>${esc(r.title)}</strong></p>
-      <p class="field-hint" style="margin:0 0 8px">Sent to: ${esc(r.name)} (${esc(r.userId)})</p>
+      <p class="field-hint" style="margin:0 0 8px">Sent to: ${memberNameHtml(r.name, r.userId)} (${esc(r.userId)})</p>
       <div class="activity-row"><div class="dot" style="background:#A8452F"></div>
         <div style="flex:1">Sent ${esc(fmtDate(r.dateSent))}</div><span class="badge red">${r.daysOverdue!==''&&r.daysOverdue!=null? esc(r.daysOverdue)+'d overdue':'Overdue'}</span></div>
     ` : `<p style="margin:10px 0;color:var(--terracotta)">Reminder not found.</p>`;
@@ -12838,7 +12838,7 @@ function runSelfCheckLoans(rawId, resEl){
   const loans = DB.circulation.map(x=>({...x,status:txnStatus(x)})).filter(x=>x.userId===user.id && x.status!=='RETURNED');
   const holds = (DB.reservations||[]).filter(r=>r.userId===user.id && r.status!=='FULFILLED' && r.status!=='CANCELLED');
   resEl.innerHTML = `
-    <p style="margin:10px 0 4px"><strong>${esc(user.name)}</strong> — ${esc(user.cls||user.category||'')}</p>
+    <p style="margin:10px 0 4px"><strong>${memberNameHtml(user.name, user.id)}</strong> — ${esc(user.cls||user.category||'')}</p>
     <p class="field-hint" style="margin:0 0 8px">${loans.length} loan(s) out · ${holds.length} reservation(s) waiting</p>
     ${loans.length? loans.map(l=>`<div class="activity-row"><div class="dot" style="background:${l.status==='OVERDUE'?'#A8452F':'#3E6B52'}"></div>
       <div style="flex:1"><em>${esc(l.title)}</em><div class="meta">due ${fmtDate(l.dueDate)}</div></div>
@@ -13001,8 +13001,8 @@ function buildGlobalSearchHTML(q){
   if(m.books.length){ html += `<div class="gsearch-group-label">Catalogue</div>` + m.books.map(b=>`<div class="gsearch-row" onclick="globalSearchGoto('book','${esc(b.acc)}')"><span class="gs-ic">📘</span><div class="gs-main"><div class="ttl">${esc(b.title)}</div><div class="sub">${esc(b.acc)} · ${esc(b.available)}</div></div></div>`).join(''); }
   if(m.members.length){ html += `<div class="gsearch-group-label">Members</div>` + m.members.map(u=>`<div class="gsearch-row ${getMemberStatusClass(u.id)}" onclick="globalSearchGoto('member','${esc(u.id)}')"><span class="gs-ic">👤</span><div class="gs-main"><div class="ttl">${esc(u.name)}</div><div class="sub">${esc(u.id)} · ${esc(u.cls||u.category||'')}</div></div></div>`).join(''); }
   if(m.txns.length){ html += `<div class="gsearch-group-label">Circulation</div>` + m.txns.map(t=>`<div class="gsearch-row" onclick="globalSearchGoto('txn','${esc(t.trxId)}')"><span class="gs-ic">🔄</span><div class="gs-main"><div class="ttl">${esc(t.title)}</div><div class="sub"><span class="${getMemberStatusClass(t.userId)}">${esc(t.name)}</span> · ${esc(txnStatus(t))}</div></div></div>`).join(''); }
-  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · ${esc(r.status)}</div></div></div>`).join(''); }
-  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.name)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
+  if(m.reservations.length){ html += `<div class="gsearch-group-label">Reservations</div>` + m.reservations.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reservation','${esc(r.id)}')"><span class="gs-ic">📌</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${memberNameHtml(r.name, r.userId)} · ${esc(r.status)}</div></div></div>`).join(''); }
+  if(m.reminders.length){ html += `<div class="gsearch-group-label">Reminders</div>` + m.reminders.map(r=>`<div class="gsearch-row" onclick="globalSearchGoto('reminder','${esc(r.trxId)}')"><span class="gs-ic">✉</span><div class="gs-main"><div class="ttl">${esc(r.title)}</div><div class="sub">${memberNameHtml(r.name, r.userId)} · sent ${esc(fmtDate(r.dateSent))}</div></div></div>`).join(''); }
   return html || `<div class="empty" style="padding:20px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>No matches for "${esc(q)}"</div>`;
 }
 function renderGlobalSearchResults(q){
@@ -13844,7 +13844,7 @@ function openScanModal(mode){
         if(trx){ doReturnOne(trx,'GOOD'); saveDB(`Item returned: ${book.title}`); render(); toast(`Returned: ${book.title}`); close(); return; }
       }
     } else if(user){
-      resEl.innerHTML = `<p style="margin:8px 0"><strong>${esc(user.name)}</strong> — ${esc(user.id)} <span class="badge grey">${esc(user.cls||user.category||'')}</span></p>` + status;
+      resEl.innerHTML = `<p style="margin:8px 0"><strong>${memberNameHtml(user.name, user.id)}</strong> — ${esc(user.id)} <span class="badge grey">${esc(user.cls||user.category||'')}</span></p>` + status;
       if(mode==='issue' || mode==='batch'){
         const blockReason = mode==='issue' ? memberBorrowBlockReason(user) : memberCheckinBlockReason(user);
         const alreadyIn = mode==='batch' && currentlyInLibrary().some(r=>r.id===user.id);
@@ -13940,7 +13940,7 @@ function pageReminders(){
     searchKeys:['acc','title','userId','name'],
     columns:[
       {key:'trxId', label:'Transaction', render:r=>`<span style="font-size:10.5px">${esc(r.trxId.slice(0,20))}</span>`},{key:'acc', label:'Acc. No'},{key:'title', label:'Title'},
-      {key:'userId', label:'Member'},{key:'name', label:'Name'},{key:'cls', label:'Class'},
+      {key:'userId', label:'Member'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.userId)},{key:'cls', label:'Class'},
       {key:'dueDate', label:'Due', render:r=>fmtDate(r.dueDate)},
       {key:'daysOverdue', label:'Days overdue', render:r=>`<span class="badge red">${r.daysOverdue}</span>`},
       {key:'reminded', label:'Reminder', render:r=>r.reminded?'<span class="badge green">SENT</span>':'<span class="badge grey">PENDING</span>'},
@@ -13960,7 +13960,7 @@ function pageReminders(){
     data:()=>nearOverdue.map(x=>({...x, daysLeft: daysBetween(new Date(), parseAnyDate(x.dueDate))})),
     searchKeys:['acc','title','userId','name'],
     columns:[
-      {key:'acc', label:'Acc. No'},{key:'title', label:'Title'},{key:'userId', label:'Member'},{key:'name', label:'Name'},{key:'cls', label:'Class'},
+      {key:'acc', label:'Acc. No'},{key:'title', label:'Title'},{key:'userId', label:'Member'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.userId)},{key:'cls', label:'Class'},
       {key:'dueDate', label:'Due', render:r=>fmtDate(r.dueDate)},
       {key:'daysLeft', label:'Days left', render:r=>`<span class="badge gold">${r.daysLeft}</span>`},
       {key:'wa', label:'WhatsApp', render:r=>waButtonHtml(r,'soon')},
@@ -13980,7 +13980,7 @@ function pageReminders(){
     selectable:true, rowKey:r=>r.trxId+'|'+r.dateSent+'|'+r.timeSent,
     columns:[
       {key:'dateSent', label:'Sent', render:r=>fmtDate(r.dateSent)+(r.timeSent?' '+r.timeSent:'')},
-      {key:'name', label:'Member'},{key:'userId', label:'Member ID'},{key:'cls', label:'Class'},
+      {key:'name', label:'Member', render:r=>memberNameHtml(r.name, r.userId)},{key:'userId', label:'Member ID'},{key:'cls', label:'Class'},
       {key:'title', label:'Title'},{key:'acc', label:'Acc. No'},{key:'dueDate', label:'Due', render:r=>r.dueDate?fmtDate(r.dueDate):''},
       {key:'daysOverdue', label:'Days overdue'},
       {key:'channel', label:'Channel', render:r=>`<span class="badge ${r.channel==='WHATSAPP'?'green':'grey'}">${esc(r.channel||'LOGGED ONLY')}</span>`},
@@ -14411,7 +14411,7 @@ function pageRegister(){
     columns:[
       {key:'date', label:'Date', render:r=>fmtDate(r.date)},
       {key:'timeIn', label:'Time in', render:r=>fmtTime(r.timeIn)},{key:'timeOut', label:'Time out', render:r=>fmtTime(r.timeOut)},
-      {key:'id', label:'ID'},{key:'name', label:'Name'},{key:'cls', label:'Class'},
+      {key:'id', label:'ID'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.id)},{key:'cls', label:'Class'},
       {key:'purpose', label:'Purpose / reason'},
       {key:'borrow', label:'Borrowed?', render:r=>r.source==='DESK'?`<span class="badge ${r.borrow==='YES'?'gold':'grey'}">${esc(r.borrow)}</span>`:'—'},
       {key:'offense', label:'Offense', render:r=>r.offense?`<span class="badge red">${esc(r.offense)}</span>`:'—'},
@@ -14618,7 +14618,7 @@ function renderBatchStagingHtml(){
     <thead><tr><th><input type="checkbox" id="batchSelectAll" ${batchStaging.every(s=>batchChecked[s.id])?'checked':''}></th><th>ID</th><th>Name</th><th>Class</th><th></th></tr></thead>
     <tbody>${batchStaging.map(s=>`<tr>
       <td><input type="checkbox" class="batchRowCheck" data-id="${esc(s.id)}" ${batchChecked[s.id]?'checked':''}></td>
-      <td>${esc(s.id)}</td><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
+      <td>${esc(s.id)}</td><td>${memberNameHtml(s.name, s.id)}</td><td>${esc(s.cls)}</td>
       <td><button class="btn danger small" onclick="removeFromBatch('${esc(s.id)}')">Remove</button></td>
     </tr>`).join('')}</tbody>
   </table>
@@ -14691,7 +14691,7 @@ function renderCheckoutHtml(){
     <thead><tr><th><input type="checkbox" id="checkoutSelectAll" ${inLib.every(r=>checkoutChecked[r.entryId])?'checked':''}></th><th>ID</th><th>Name</th><th>Class</th><th>Time in</th></tr></thead>
     <tbody>${inLib.map(r=>`<tr>
       <td><input type="checkbox" class="checkoutRowCheck" data-id="${esc(r.entryId)}" ${checkoutChecked[r.entryId]?'checked':''}></td>
-      <td>${esc(r.id)}</td><td>${esc(r.name)}</td><td>${esc(r.cls)}</td><td>${fmtTime(r.timeIn)}</td>
+      <td>${esc(r.id)}</td><td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls)}</td><td>${fmtTime(r.timeIn)}</td>
     </tr>`).join('')}</tbody>
   </table>
   <button class="btn" onclick="submitCheckout()">Check out selected (<span id="checkoutSelectedCount">${selectedCount}</span>)</button>`;
@@ -15306,7 +15306,7 @@ function pageRosterTable(){
     data:()=>DB.users.filter(u=>u.category==='STUDENT').map(u=>({id:u.id, name:u.name, cls:u.cls, subs:studentSubjects(u)})),
     searchKeys:['id','name','cls'],
     columns:[
-      {key:'id', label:'ID'},{key:'name', label:'Name'},{key:'cls', label:'Class'},
+      {key:'id', label:'ID'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.id)},{key:'cls', label:'Class'},
       {key:'subs', label:'Subjects offered', render:r=>r.subs.map(s=>`<span class="pill">${esc(s)}</span>`).join(' ')||'—'},
     ],
     rowActions:r=>`<button class="btn secondary small" onclick="viewSubjects('${r.id}')">Edit</button>`,
@@ -15332,7 +15332,7 @@ function pageFeedback(){
     selectable:true, rowKey:r=>r.entryId,
     columns:[
       {key:'date', label:'Date', render:r=>fmtDate(r.date)},
-      {key:'userName', label:'From'},{key:'type', label:'Type'},{key:'subject', label:'Subject'},
+      {key:'userName', label:'From', render:r=>memberNameHtml(r.userName, r.userId)},{key:'type', label:'Type'},{key:'subject', label:'Subject'},
       {key:'text', label:'Feedback'},{key:'priority', label:'Priority', render:r=>`<span class="badge ${r.priority==='HIGH'?'red':r.priority==='LOW'?'grey':'gold'}">${esc(r.priority)}</span>`},
       {key:'status', label:'Status', render:r=>`<span class="badge ${r.status==='RESOLVED'?'green':r.status==='IN REVIEW'?'gold':'grey'}">${esc(r.status)}</span>`},
     ],
@@ -15358,7 +15358,7 @@ function pageFeedback(){
 function viewFeedback(entryId){
   const f = DB.feedback.find(x=>x.entryId===entryId); if(!f) return;
   const rows = [
-    ['Date', fmtDate(f.date)], ['From', f.userName], ['Member ID', f.userId||'—'],
+    ['Date', fmtDate(f.date)], ['Member ID', f.userId||'—'],
     ['Type', f.type], ['Priority', f.priority], ['Subject', f.subject], ['Feedback', f.text], ['Status', f.status],
   ];
   const wrap = document.createElement('div');
@@ -15366,7 +15366,9 @@ function viewFeedback(entryId){
   wrap.innerHTML = `
     <div class="modal">
       <div class="modal-head"><h3>Feedback details</h3><button id="mClose" aria-label="Close">✕</button></div>
-      <div class="modal-body"><table class="datatable">${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:35%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}</table></div>
+      <div class="modal-body"><table class="datatable">
+        <tr><td style="font-weight:600;width:35%">From</td><td>${memberNameHtml(f.userName, f.userId)}</td></tr>
+        ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:35%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}</table></div>
       <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
     </div>`;
   document.body.appendChild(wrap);
