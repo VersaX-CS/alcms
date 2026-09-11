@@ -6216,8 +6216,16 @@ function migrateNewFeatureData(db){
   if(db.setup.scanWebhookUrl===undefined) db.setup.scanWebhookUrl = '';
   if(db.setup.stationId===undefined) db.setup.stationId = '';
   if(!db.setup.notifTypes) db.setup.notifTypes = {};
-  ['schedule','overdue','dueSoon','feedback','summary','reservation'].forEach(k=>{
+  ['schedule','overdue','dueSoon','feedback','summary','reservation','staffSchedule'].forEach(k=>{
     if(db.setup.notifTypes[k]===undefined) db.setup.notifTypes[k] = true;
+  });
+  if(!Array.isArray(db.setup.staffEventCategories) || !db.setup.staffEventCategories.length) db.setup.staffEventCategories = DEFAULT_STAFF_CATEGORIES.slice();
+  if(db.setup.staffScheduleLeadMinutes===undefined) db.setup.staffScheduleLeadMinutes = 10;
+  if(!Array.isArray(db.staffTimetable)) db.staffTimetable = [];
+  db.staffTimetable.forEach(e=>{
+    if(e.leadMinutes===undefined) e.leadMinutes = db.setup.staffScheduleLeadMinutes;
+    if(e.active===undefined) e.active = true;
+    if(e.notes===undefined) e.notes = '';
   });
   if(!db.setup.shelfMap || typeof db.setup.shelfMap!=='object') db.setup.shelfMap = {};
   if(!db.setup.periodTimes || typeof db.setup.periodTimes!=='object' || Array.isArray(db.setup.periodTimes)) db.setup.periodTimes = {};
@@ -6516,9 +6524,11 @@ function buildSeedDB(){
   if(!Array.isArray(setup.equipmentCategories) || !setup.equipmentCategories.length) setup.equipmentCategories = DEFAULT_EQUIPMENT_CATEGORIES.slice();
   if(!setup.aiDescription) setup.aiDescription = {enabled:false, endpoint:'https://api.openai.com/v1/chat/completions', model:'gpt-4o-mini', apiKey:''};
   if(!setup.notifTypes) setup.notifTypes = {};
-  ['schedule','overdue','dueSoon','feedback','summary','reservation'].forEach(k=>{
+  ['schedule','overdue','dueSoon','feedback','summary','reservation','staffSchedule'].forEach(k=>{
     if(setup.notifTypes[k]===undefined) setup.notifTypes[k] = true;
   });
+  if(!Array.isArray(setup.staffEventCategories) || !setup.staffEventCategories.length) setup.staffEventCategories = DEFAULT_STAFF_CATEGORIES.slice();
+  if(setup.staffScheduleLeadMinutes===undefined) setup.staffScheduleLeadMinutes = 10;
   if(!setup.shelfMap || typeof setup.shelfMap!=='object') setup.shelfMap = {};
   if(!setup.periodTimes || typeof setup.periodTimes!=='object') setup.periodTimes = {};
   circulation.forEach(t=>{ t.renewCount = 0; t.finePaid = false; t.finePaidAmount = 0; t.fineWaived = false; t.fineWaiveReason = ''; });
@@ -6529,6 +6539,12 @@ function buildSeedDB(){
     scheduleActivities: [...DEFAULT_ACTIVITIES],
     classTimetable: {},
     classTimings: {},
+    staffTimetable: [
+      {id:'ST-1', day:'EVERYDAY', time:'07:45', category:'Assembly', title:'', leadMinutes:10, notes:'', active:true},
+      {id:'ST-2', day:'EVERYDAY', time:'12:30', category:'Lunch Break', title:'', leadMinutes:5, notes:'', active:true},
+      {id:'ST-3', day:'MONDAY', time:'14:30', category:'Staff Meeting', title:'', leadMinutes:15, notes:'', active:true},
+      {id:'ST-4', day:'EVERYDAY', time:'15:30', category:'Closing', title:'', leadMinutes:10, notes:'', active:true},
+    ],
     setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
   };
 }
@@ -6747,7 +6763,7 @@ function restartOutstandingSummaryTimer(){
   outstandingSummaryTimer = setInterval(checkOutstandingSummaryAlert, ms);
 }
 restartOutstandingSummaryTimer();
-setInterval(()=>{ checkScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
+setInterval(()=>{ checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
 
 /* ================= navigation ================= */
 const NAV = [
@@ -14781,9 +14797,13 @@ function pageSchedule(){
   <div class="profile-tabs floating-tabs">
     <button class="profile-tab-btn ${scheduleSubview==='weekly'?'active':''}" onclick="setScheduleSubview('weekly')">Weekly schedule</button>
     <button class="profile-tab-btn ${scheduleSubview==='timetable'?'active':''}" onclick="setScheduleSubview('timetable')">Class timetable</button>
+    <button class="profile-tab-btn ${scheduleSubview==='staff'?'active':''}" onclick="setScheduleSubview('staff')">Staff timetable</button>
   </div>`;
   if(scheduleSubview==='timetable'){
     return tabsHtml + pageClassTimetable() + '<div id="mod_roster" style="display:none"></div>';
+  }
+  if(scheduleSubview==='staff'){
+    return tabsHtml + pageStaffTimetable();
   }
   const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
   const byDay = {};
@@ -14827,6 +14847,16 @@ const PERIOD_OPTIONS = ['1ST','2ND','3RD','4TH','5TH','6TH','7TH','8TH','9TH','1
    visit slot(s); otherwise its free periods are used as candidate visit slots. */
 const TIMETABLE_DAYS = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
 const DEFAULT_ACTIVITIES = ['BREAK', 'ASSEMBLY', 'SPORTS', 'STAFF MEETING', 'EXAM', 'GUEST LECTURE', 'FIELD TRIP', 'REHEARSAL'];
+/* ============ Staff personal timetable — recurring daily routine reminders ============
+   DB.staffTimetable shape: array of {id, day, time, category, title, leadMinutes, notes, active}.
+   day is MONDAY..SUNDAY or 'EVERYDAY' (applies every day). category is one of
+   DEFAULT_STAFF_CATEGORIES (or a custom one added in Setup); when category is 'Other', title
+   holds the custom event name. leadMinutes is how long before "time" the "get ready" alert
+   fires — a second alert always fires at "time" itself ("starting now"). */
+const DEFAULT_STAFF_CATEGORIES = ['Fellowship','Assembly','Staff Meeting','Lunch Break','Sport','Etiquette','Seminar','Closing','Other'];
+const STAFF_TIMETABLE_DAYS = ['EVERYDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
+function staffEventLabel(e){ return (e.category==='Other' && e.title) ? e.title : (e.category||e.title||'Event'); }
+function staffEventCategories(){ return (DB.setup && DB.setup.staffEventCategories && DB.setup.staffEventCategories.length) ? DB.setup.staffEventCategories : DEFAULT_STAFF_CATEGORIES; }
 function timeToMinutes(t){
   if(!t) return null;
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
@@ -15363,6 +15393,151 @@ function clearAllSchedule(){
   confirmModal(`This removes all ${DB.scheduleDays.length} weekly schedule period(s). Continue?`, ()=>{
     DB.scheduleDays = []; saveDB('All schedule periods cleared'); render(); toast('Schedule cleared');
   }, {confirmLabel:'Clear all', danger:true});
+}
+/* ============ Staff personal timetable page ============ */
+function staffTimetableSorted(){
+  return (DB.staffTimetable||[]).map((e,i)=>({...e, __i:i}))
+    .sort((a,b)=> STAFF_TIMETABLE_DAYS.indexOf(a.day)-STAFF_TIMETABLE_DAYS.indexOf(b.day) || timeToMinutes(a.time)-timeToMinutes(b.time));
+}
+function pageStaffTimetable(){
+  const rows = staffTimetableSorted();
+  const byDay = {};
+  rows.forEach(r=> (byDay[r.day]=byDay[r.day]||[]).push(r));
+  const dayLabel = d=> d==='EVERYDAY' ? 'Every day' : (d[0]+d.slice(1).toLowerCase());
+  const notifOn = !!(DB.setup.notifTypes && DB.setup.notifTypes.staffSchedule);
+  const browserPerm = (typeof Notification!=='undefined') ? Notification.permission : 'unsupported';
+  return `
+  <div class="card panel">
+    <div class="panel-head">
+      <div><h3>Staff timetable</h3><p class="field-hint" style="margin-top:2px">Fellowship, assembly, staff meetings, lunch break, sport, etiquette, seminars, closing — or anything else — with a reminder before it starts and again right when it starts.</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${isAdmin()? `<button class="btn" onclick="openStaffTimetableForm()">+ Add event</button>`:''}
+        ${isAdmin() && rows.length? `<button class="btn danger" onclick="clearAllStaffTimetable()">⚠ Clear all</button>`:''}
+      </div>
+    </div>
+    ${!notifOn? `<div class="empty" style="margin-bottom:12px">Staff timetable alerts are currently turned off in <a href="#" onclick="route='setup';render();return false;" style="color:var(--forest);font-weight:600">Setup → Notifications &amp; alerts</a>.</div>` : ''}
+    ${browserPerm!=='granted' && browserPerm!=='unsupported' ? `<div class="empty" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>Turn on device notifications so these still pop up even if this tab isn't in front.</span>
+        <button class="btn secondary small" onclick="requestBrowserNotifPermission()">Enable device notifications</button>
+      </div>` : ''}
+    ${STAFF_TIMETABLE_DAYS.filter(d=>byDay[d]).map(d=>`
+      <h4 style="margin:14px 0 8px;font-size:13px;color:var(--muted-label);letter-spacing:.5px">${esc(dayLabel(d))}</h4>
+      <div class="table-wrap" style="margin-bottom:10px"><table class="datatable"><thead><tr><th>Time</th><th>Event</th><th>Reminder</th><th>Notes</th>${isAdmin()?'<th></th>':''}</tr></thead>
+      <tbody>${byDay[d].map(r=>`<tr ${r.active===false?'style="opacity:.5"':''}>
+        <td>${esc(fmtTime(r.time))}</td>
+        <td>${esc(staffEventLabel(r))}${r.active===false?' <span class="field-hint">(inactive)</span>':''}</td>
+        <td>${r.leadMinutes? esc(r.leadMinutes)+' min before + at start' : 'At start only'}</td>
+        <td>${esc(r.notes||'')}</td>
+        ${isAdmin()? `<td><button class="btn secondary small" onclick="openStaffTimetableForm(${r.__i})">Edit</button> <button class="btn danger small" onclick="deleteStaffTimetableEntry(${r.__i})">Delete</button></td>`:''}
+      </tr>`).join('')}</tbody></table></div>
+    `).join('') || '<div class="empty">No staff timetable events yet' + (isAdmin()? ' — add one above.' : '.') + '</div>'}
+  </div>`;
+}
+function openStaffTimetableForm(index){
+  if(!isAdmin()) return requireAdmin('edit the staff timetable');
+  const existing = index!==undefined ? DB.staffTimetable[index] : null;
+  const cats = staffEventCategories();
+  openModal({
+    title: existing? 'Edit staff event' : 'Add staff event',
+    fields:[
+      {row:[
+        {key:'day', label:'Day', type:'select', required:true, placeholder:false, options: STAFF_TIMETABLE_DAYS, default: existing? existing.day : 'EVERYDAY'},
+        {key:'time', label:'Time', type:'time', required:true, default: existing? existing.time : ''},
+      ]},
+      {key:'category', label:'Event type', type:'select', required:true, placeholder:false, options: cats, default: existing? (existing.category||'Other') : cats[0]},
+      {key:'title', label:'Custom title', type:'text', wrapId:'staffTitleWrap', hidden: !(existing && existing.category==='Other'), default: existing? (existing.title||'') : '', subHint:'Shown for "Other" event types'},
+      {key:'leadMinutes', label:'Remind this many minutes before (0 = only at start time)', type:'number', default: existing? (existing.leadMinutes ?? DB.setup.staffScheduleLeadMinutes) : DB.setup.staffScheduleLeadMinutes},
+      {key:'notes', label:'Notes (optional)', type:'textarea', default: existing? (existing.notes||'') : ''},
+    ],
+    postRender:()=>{
+      const catSel = document.getElementById('f_category');
+      const titleWrap = document.getElementById('staffTitleWrap');
+      const sync = ()=>{ if(titleWrap) titleWrap.style.display = catSel.value==='Other' ? '' : 'none'; };
+      if(catSel){ catSel.addEventListener('change', sync); sync(); }
+    },
+    onSave:(v)=>{
+      if(v.category==='Other' && !v.title.trim()){ toast('Enter a custom title for "Other" events'); return; }
+      const row = {
+        id: existing? existing.id : ('ST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)),
+        day: v.day, time: v.time, category: v.category,
+        title: v.category==='Other' ? v.title.trim() : '',
+        leadMinutes: Math.max(0, +v.leadMinutes||0),
+        notes: (v.notes||'').trim(),
+        active: existing? (existing.active!==false) : true,
+      };
+      if(existing) DB.staffTimetable[index] = row; else DB.staffTimetable.push(row);
+      saveDB(`Staff timetable event ${existing?'updated':'added'}: ${staffEventLabel(row)}`); render(); toast(existing? 'Event updated':'Event added');
+    }
+  });
+}
+function deleteStaffTimetableEntry(index){
+  if(!isAdmin()) return requireAdmin('delete staff timetable events');
+  const row = DB.staffTimetable[index];
+  confirmDelete('Remove this staff timetable event?', ()=>{
+    DB.staffTimetable.splice(index,1); saveDB(`Staff timetable event removed: ${row?staffEventLabel(row):''}`); render(); toast('Event removed');
+  });
+}
+function clearAllStaffTimetable(){
+  if(!isAdmin()) return requireAdmin('clear the staff timetable');
+  confirmModal(`This removes all ${DB.staffTimetable.length} staff timetable event(s). Continue?`, ()=>{
+    DB.staffTimetable = []; saveDB('All staff timetable events cleared'); render(); toast('Staff timetable cleared');
+  }, {confirmLabel:'Clear all', danger:true});
+}
+/* Real OS/browser notification (Notification API) so a reminder can still surface even if this
+   tab isn't the focused one — separate from, and in addition to, the in-app bell + pop-up alert,
+   which only show while the tab is actually open and rendered. Silently a no-op wherever the
+   Notification API isn't available (e.g. iOS Safari) or permission hasn't been granted. */
+function notifyBrowser(title, body){
+  try{
+    if(typeof Notification==='undefined' || Notification.permission!=='granted') return;
+    new Notification(title, {body: body||'', icon: 'https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/notifications/default/24px.svg'});
+  }catch(e){ /* some browsers throw constructing Notification directly on mobile — safe to ignore */ }
+}
+function requestBrowserNotifPermission(){
+  if(typeof Notification==='undefined'){ toast('Device notifications aren\'t supported on this browser'); return; }
+  if(Notification.permission==='granted'){ toast('Device notifications are already on'); render(); return; }
+  Notification.requestPermission().then(perm=>{
+    toast(perm==='granted' ? 'Device notifications turned on' : 'Device notifications weren\'t enabled');
+    render();
+  });
+}
+let staffAlertDayKey = null, staffAlertedSlots = new Set();
+function checkStaffScheduleAlerts(){
+  if(!SESSION || !DB || !Array.isArray(DB.staffTimetable) || $('#timedAlertBackdrop')) return;
+  if(!DB.setup.notifTypes.staffSchedule) return;
+  if(!isStaff()) return; // routine school-day events are only prompted for STAFF/ADMIN sessions
+  const now = new Date();
+  const dayKey = now.toDateString();
+  if(staffAlertDayKey !== dayKey){ staffAlertDayKey = dayKey; staffAlertedSlots = new Set(); }
+  const weekday = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][now.getDay()];
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const todays = DB.staffTimetable.filter(e=> e.active!==false && (e.day===weekday || e.day==='EVERYDAY'));
+  todays.forEach(e=>{
+    const startMin = timeToMinutes(e.time);
+    if(startMin==null) return;
+    const label = staffEventLabel(e);
+    const lead = Math.max(0, +e.leadMinutes||0);
+    if(lead>0 && nowMin===startMin-lead){
+      const key = e.id+'|lead|'+dayKey;
+      if(!staffAlertedSlots.has(key)){
+        staffAlertedSlots.add(key);
+        const body = `Starts at ${fmtTime(e.time)} — in ${lead} minute${lead>1?'s':''}${e.notes?'. '+e.notes:''}`;
+        pushNotification({type:'staffSchedule', title:`Get ready: ${label}`, body, route:'schedule'});
+        openTimedAlert({title:`Get ready: ${label}`, bodyHtml:`<p style="margin:0 0 8px">Starts at <strong>${esc(fmtTime(e.time))}</strong> — in ${lead} minute${lead>1?'s':''}.</p>${e.notes?`<p style="margin:0;color:var(--muted)">${esc(e.notes)}</p>`:''}`, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; scheduleSubview='staff'; render(); }}]});
+        notifyBrowser(`Get ready: ${label}`, body);
+      }
+    }
+    if(nowMin===startMin){
+      const key = e.id+'|now|'+dayKey;
+      if(!staffAlertedSlots.has(key)){
+        staffAlertedSlots.add(key);
+        const body = e.notes || 'It\'s time — head over now.';
+        pushNotification({type:'staffSchedule', title:`${label} starting now`, body, route:'schedule'});
+        openTimedAlert({title:`${label} starting now`, bodyHtml:`<p style="margin:0">${esc(body)}</p>`, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; scheduleSubview='staff'; render(); }}]});
+        notifyBrowser(`${label} starting now`, body);
+      }
+    }
+  });
 }
 function clearAllStrikes(){
   if(!isAdmin()) return requireAdmin('clear all strikes');
@@ -16329,9 +16504,18 @@ function pageSetup(){
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifReservation" ${DB.setup.notifTypes.reservation?'checked':''} onchange="saveNotifTypeSetting('reservation', this.checked)"> Reservation ready for pickup</label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifFeedback" ${DB.setup.notifTypes.feedback?'checked':''} onchange="saveNotifTypeSetting('feedback', this.checked)"> Unresolved feedback</label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifSchedule" ${DB.setup.notifTypes.schedule?'checked':''} onchange="saveNotifTypeSetting('schedule', this.checked)"> Class period starting</label>
+      <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifStaffSchedule" ${DB.setup.notifTypes.staffSchedule?'checked':''} onchange="saveNotifTypeSetting('staffSchedule', this.checked)"> Staff timetable (fellowship, assembly, meetings, lunch, sport, etc.)</label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifSummary" ${DB.setup.notifTypes.summary?'checked':''} onchange="saveNotifTypeSetting('summary', this.checked)"> Periodic "Needs your attention" summary</label>
     </div>
     <p class="field-hint">Turning one off stops that pop-up/bell alert from firing again — it doesn't affect the underlying record (an overdue loan is still overdue, a reservation is still marked ready) or the WhatsApp receipt below.</p>
+    <div class="field-row" style="margin-top:12px">
+      <div class="field"><label>Staff timetable — default reminder lead time</label><select id="setStaffLeadMinutes">
+        ${[0,5,10,15,20,30].map(m=>`<option value="${m}" ${(DB.setup.staffScheduleLeadMinutes??10)===m?'selected':''}>${m===0?'At start time only':m+' minutes before'}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Event types on offer</label><input id="setStaffCategories" type="text" value="${esc(staffEventCategories().join(', '))}" placeholder="Fellowship, Assembly, Staff Meeting, ..."></div>
+    </div>
+    <button class="btn secondary" onclick="saveStaffScheduleSettings()">Save staff timetable settings</button>
+    <p class="field-hint">This lead time only fills in as the default when adding a new event — each event's own reminder time can still be changed individually. "Event types on offer" is the pick-list shown when adding an event; keep "Other" in the list so custom one-off events are still possible.</p>
     <div class="field-row" style="margin-top:12px">
       <div class="field"><label>"Needs your attention" summary — recheck every</label><select id="setAlertFrequency">
         ${[5,15,30,60].map(m=>`<option value="${m}" ${(DB.setup.alertFrequencyMinutes||15)===m?'selected':''}>${m} minutes</option>`).join('')}
@@ -18806,6 +18990,16 @@ function saveNotifTypeSetting(key, on){
   if(!isAdmin()) return requireAdmin('change notification settings');
   if(!DB.setup.notifTypes) DB.setup.notifTypes = {};
   DB.setup.notifTypes[key] = on; saveDB(`Notification type "${key}" ${on?'enabled':'disabled'}`);
+}
+function saveStaffScheduleSettings(){
+  if(!isAdmin()) return requireAdmin('change staff timetable settings');
+  const lead = +($('#setStaffLeadMinutes')?.value ?? 10);
+  const cats = ($('#setStaffCategories')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!cats.length){ toast('Keep at least one event type'); return; }
+  if(!cats.includes('Other')) cats.push('Other');
+  DB.setup.staffScheduleLeadMinutes = Math.max(0, lead);
+  DB.setup.staffEventCategories = cats;
+  saveDB('Staff timetable settings updated'); render(); toast('Staff timetable settings saved');
 }
 function sendTransactionReceiptIfEnabled(trx, kind){
   // kind: 'BORROWED' | 'RETURNED' — optional, off by default (Setup → Notifications)
