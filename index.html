@@ -9148,6 +9148,9 @@ function generateSummaryReport(){
   const classEntries = Object.entries(byClass).sort((a,b)=>b[1]-a[1]);
   const byMemberClass = groupCount(u, x=>x.cls||'UNSPECIFIED');
   const memberClassEntries = Object.entries(byMemberClass).sort((a,b)=>b[1]-a[1]);
+  const activeMembers = u.filter(x=>x.status==='ACTIVE').length;
+  const suspendedMembers = u.filter(x=>x.status==='SUSPENDED').length;
+  const inactiveMembers = u.filter(x=>x.status==='INACTIVE').length;
   printMultiSection('Summary Report', 'Snapshot as of '+new Date().toLocaleString('en-GB'), [
     { heading:'Collection', kpis:[
       {label:'Titles in collection', value:inCatalogue},
@@ -9156,7 +9159,9 @@ function generateSummaryReport(){
       {label:'Withdrawn', value:withdrawn},
     ]},
     { heading:'Members', kpis:[
-      {label:'Registered members', value:u.length},
+      {label:'Active members', value:activeMembers},
+      {label:'Suspended', value:suspendedMembers},
+      {label:'Inactive', value:inactiveMembers},
       {label:'Staff', value:u.filter(x=>x.category==='STAFF').length},
       {label:'Students', value:u.filter(x=>x.category==='STUDENT').length},
     ]},
@@ -9781,6 +9786,7 @@ function cycleWeatherAmbienceSet(){
 function pageHome(){
   const c = DB.catalogue, u = DB.users, t = DB.circulation;
   const titlesInCatalogue = c.filter(b=>b.available!=='WITHDRAWN').length;
+  const activeMembersHome = u.filter(x=>x.status==='ACTIVE').length;
   const overdue = t.filter(x=>txnStatus(x)==='OVERDUE').length;
   const today = todayISO();
   const issuedToday = t.filter(x=>(x.dateBorrowed||'').slice(0,10)===today).length;
@@ -9804,7 +9810,7 @@ function pageHome(){
   <div class="grid quicklinks">
     ${qlink(navIcon('dashboard','▤'),'Dashboard', 'Full library overview','dashboard')}
     ${qlink(navIcon('catalogue','▥'),'Catalogue', titlesInCatalogue+' titles on the shelf','catalogue')}
-    ${qlink(navIcon('users','👥'),'Members', u.length+' registered borrowers','users')}
+    ${qlink(navIcon('users','👥'),'Members', activeMembersHome+' active members','users')}
     ${qlink(navIcon('circulation','⇄'),'Circulation', t.filter(x=>txnStatus(x)!=='RETURNED').length+' active loans','circulation')}
     ${qlink(navIcon('reminders','✉'),'Reminders', overdue+' overdue right now','reminders')}
     ${qlink(navIcon('register','✎'),'Register', DB.registerLog.length+' logged visits','register')}
@@ -9871,13 +9877,10 @@ function pageDashboard(){
     
     <!-- Key Metrics -->
     ${(() => {
-      const totalMembers = u.length;
       const activeCount = u.filter(x=>x.status==='ACTIVE').length;
       const suspendedCount = u.filter(x=>x.status==='SUSPENDED').length;
       const inactiveCount = u.filter(x=>x.status==='INACTIVE').length;
-      const staffCount = u.filter(x=>x.category==='STAFF').length;
-      const breakdown = `Active: ${activeCount} · Suspended: ${suspendedCount} · Inactive: ${inactiveCount}`;
-      return kpi('Registered members', totalMembers, breakdown);
+      return kpi('Active members', activeCount, `${suspendedCount} suspended · ${inactiveCount} inactive`);
     })()}
     ${kpi('Ready for pickup', getReservationsReadyForPickup(), 'reserved items')}
     ${kpi('New this month', getNewRegistrationsThisMonth(), 'new members')}
