@@ -5821,7 +5821,6 @@ function promptSignOut(opts={}){
         <p style="margin:0 0 10px;font-size:13.5px;line-height:1.6;color:var(--muted)">Everything you've entered is already saved to this browser. Want a backup copy (JSON file) before you go?</p>
       </div>
       <div class="modal-foot signout-actions">
-        <button class="btn secondary" id="mCancel">Cancel</button>
         <button class="btn" id="mSkip">${opts.lockOnly? 'Lock without saving' : 'Sign out without saving'}</button>
         <button class="btn" id="mSave" style="background:var(--brass-light)">⬇ Download backup &amp; ${opts.lockOnly? 'lock' : 'sign out'}</button>
       </div>
@@ -5830,7 +5829,6 @@ function promptSignOut(opts={}){
   const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
   wrap.onclick = e=>{ if(e.target===wrap) close(); };
   wrap.querySelector('#mClose').onclick = close;
-  wrap.querySelector('#mCancel').onclick = close;
   wrap.querySelector('#mSkip').onclick = ()=>{ close(); signOut(); };
   wrap.querySelector('#mSave').onclick = ()=>{ close(); try{ downloadDataBackup(); } catch(e){ console.warn('Backup before sign-out failed', e); } signOut(); };
   setTimeout(()=> wrap.querySelector('#mSave').focus(), 30);
