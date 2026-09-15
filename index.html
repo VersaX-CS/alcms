@@ -14922,10 +14922,18 @@ function periodHeaderHtml(day, period){
 }
 let ptSelectedDay = 'MONDAY';
 let ptApplyDays = {}; // which OTHER days are checked to receive a copy of ptSelectedDay's times
-async function savePeriodTimes(){
-  if(!isAdmin()) return requireAdmin('edit period times');
-  capturePendingPeriodTimes();
-  await saveDB('Period times updated for '+ptSelectedDay); render(); toast('Period times saved for '+ptSelectedDay);
+async function autoSavePeriodTime(period, field, value){
+  if(!isAdmin()) return;
+  if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
+  const day = ptSelectedDay;
+  if(!DB.setup.periodTimes[day]) DB.setup.periodTimes[day] = {};
+  
+  // Update the specific field
+  if(!DB.setup.periodTimes[day][period]) DB.setup.periodTimes[day][period] = {};
+  DB.setup.periodTimes[day][period][field] = value;
+  
+  // Auto-save to database
+  await saveDB(`Period ${period} ${field} time updated for ${day}`);
 }
 /* Copies whatever is currently set (including any not-yet-saved typing, via
    capturePendingPeriodTimes) for ptSelectedDay onto every other day checked in ptApplyDays.
@@ -15088,15 +15096,16 @@ function pageClassTimetable(){
         <thead><tr><th>Start</th><th>End</th><th>Period</th>${isAdmin()?'<th></th>':''}</tr></thead>
         <tbody>${timetablePeriods().map(period=>{
           const pt = periodTime(ptSelectedDay, period) || {};
+          const periodEsc = period.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<tr>
-            <td><input type="time" id="ptStart_${esc(period)}" value="${esc(pt.start||'')}" ${isAdmin()?'':'disabled'}></td>
-            <td><input type="time" id="ptEnd_${esc(period)}" value="${esc(pt.end||'')}" ${isAdmin()?'':'disabled'}></td>
+            <td><input type="time" id="ptStart_${esc(period)}" value="${esc(pt.start||'')}" ${isAdmin()?'':'disabled'} onchange="autoSavePeriodTime('${periodEsc}','start',this.value)"></td>
+            <td><input type="time" id="ptEnd_${esc(period)}" value="${esc(pt.end||'')}" ${isAdmin()?'':'disabled'} onchange="autoSavePeriodTime('${periodEsc}','end',this.value)"></td>
             <td>${esc(period)}</td>
             ${isAdmin()? `<td style="white-space:nowrap"><button class="btn secondary small" onclick="renameTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Edit</button> <button class="btn danger small" onclick="removeTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Remove</button></td>`:''}
           </tr>`;
         }).join('')}</tbody>
       </table></div>
-      ${isAdmin()? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" onclick="savePeriodTimes()">Save times for ${esc(ptSelectedDay)}</button><button class="btn" onclick="addTimetablePeriod()">+ Add period</button></div>`:''}
+      ${isAdmin()? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><p style="margin:0;color:var(--text-muted, #666);font-size:0.9em">ℹ Times save automatically as you type</p><button class="btn" onclick="addTimetablePeriod()">+ Add period</button></div>`:''}
       ${isAdmin() && TIMETABLE_DAYS.length>1 ? `
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color, rgba(0,0,0,0.08))">
         <label style="display:block;margin-bottom:6px">Apply ${esc(ptSelectedDay)}'s times to other days</label>
