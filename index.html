@@ -14922,15 +14922,15 @@ function periodHeaderHtml(day, period){
 }
 let ptSelectedDay = 'MONDAY';
 let ptApplyDays = {}; // which OTHER days are checked to receive a copy of ptSelectedDay's times
-function savePeriodTimes(){
+async function savePeriodTimes(){
   if(!isAdmin()) return requireAdmin('edit period times');
   capturePendingPeriodTimes();
-  saveDB('Period times updated for '+ptSelectedDay); render(); toast('Period times saved for '+ptSelectedDay);
+  await saveDB('Period times updated for '+ptSelectedDay); render(); toast('Period times saved for '+ptSelectedDay);
 }
 /* Copies whatever is currently set (including any not-yet-saved typing, via
    capturePendingPeriodTimes) for ptSelectedDay onto every other day checked in ptApplyDays.
    Each target day's own times are fully replaced by the source day's times. */
-function applyPeriodTimesToDays(){
+async function applyPeriodTimesToDays(){
   if(!isAdmin()) return requireAdmin('edit period times');
   capturePendingPeriodTimes();
   const sourceDay = ptSelectedDay;
@@ -14940,7 +14940,7 @@ function applyPeriodTimesToDays(){
   const sourceMap = DB.setup.periodTimes[sourceDay] || {};
   targets.forEach(d=>{ DB.setup.periodTimes[d] = JSON.parse(JSON.stringify(sourceMap)); });
   ptApplyDays = {};
-  saveDB('Period times copied from '+sourceDay+' to '+targets.join(', '));
+  await saveDB('Period times copied from '+sourceDay+' to '+targets.join(', '));
   render();
   toast(sourceDay.slice(0,1)+sourceDay.slice(1).toLowerCase()+"'s times applied to "+targets.map(d=>d.slice(0,1)+d.slice(1).toLowerCase()).join(', '));
 }
@@ -14954,9 +14954,9 @@ function capturePendingPeriodTimes(){
   if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
   const day = ptSelectedDay;
   const dayMap = DB.setup.periodTimes[day] || {};
-  (DB.setup.periods && DB.setup.periods.length ? DB.setup.periods : PERIOD_OPTIONS).forEach(period=>{
-    const startEl = document.getElementById('ptStart_'+period);
-    const endEl = document.getElementById('ptEnd_'+period);
+  timetablePeriods().forEach(period=>{
+    const startEl = document.getElementById('ptStart_'+esc(period));
+    const endEl = document.getElementById('ptEnd_'+esc(period));
     if(!startEl && !endEl) return;
     const start = startEl?.value || '';
     const end = endEl?.value || '';
