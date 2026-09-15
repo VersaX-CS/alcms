@@ -14882,15 +14882,6 @@ function timetablePeriods(){
   const base = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS;
   return [...base].sort((a,b)=> periodSortKey(a)-periodSortKey(b));
 }
-/* Used only for the editable "Period times" table itself. timetablePeriods() re-sorts
-   chronologically the moment a period gets a start time, which visibly jumps that row to a
-   new position right after you save — easy to mistake for the time having been cleared. The
-   editing table instead stays in a fixed, declared order (same as DB.setup.periods) so rows
-   never move out from under you while you're working in the panel; every other display
-   (class-subject grid, exports, dashboard) still uses the chronological timetablePeriods(). */
-function periodTimesEditOrder(){
-  return (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : [...PERIOD_OPTIONS];
-}
 function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
 function periodTimeLabel(day, period){
   const pt = periodTime(day, period);
@@ -14933,16 +14924,8 @@ let ptSelectedDay = 'MONDAY';
 let ptApplyDays = {}; // which OTHER days are checked to receive a copy of ptSelectedDay's times
 function savePeriodTimes(){
   if(!isAdmin()) return requireAdmin('edit period times');
-  if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-  const day = ptSelectedDay;
-  const dayMap = DB.setup.periodTimes[day] || {};
-  periodTimesEditOrder().forEach(period=>{
-    const start = document.getElementById('ptStart_'+period)?.value || '';
-    const end = document.getElementById('ptEnd_'+period)?.value || '';
-    if(start||end) dayMap[period] = {start, end}; else delete dayMap[period];
-  });
-  DB.setup.periodTimes[day] = dayMap;
-  saveDB('Period times updated for '+day); render(); toast('Period times saved for '+day);
+  capturePendingPeriodTimes();
+  saveDB('Period times updated for '+ptSelectedDay); render(); toast('Period times saved for '+ptSelectedDay);
 }
 /* Copies whatever is currently set (including any not-yet-saved typing, via
    capturePendingPeriodTimes) for ptSelectedDay onto every other day checked in ptApplyDays.
@@ -15103,7 +15086,7 @@ function pageClassTimetable(){
       </div>
       <div class="table-wrap" style="margin-top:8px"><table class="datatable">
         <thead><tr><th>Start</th><th>End</th><th>Period</th>${isAdmin()?'<th></th>':''}</tr></thead>
-        <tbody>${periodTimesEditOrder().map(period=>{
+        <tbody>${timetablePeriods().map(period=>{
           const pt = periodTime(ptSelectedDay, period) || {};
           return `<tr>
             <td><input type="time" id="ptStart_${esc(period)}" value="${esc(pt.start||'')}" ${isAdmin()?'':'disabled'}></td>
