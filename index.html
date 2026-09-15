@@ -14921,6 +14921,7 @@ function periodHeaderHtml(day, period){
   return `${esc(period)}${t? `<div style="font-weight:400;font-size:11px;color:var(--muted-label)">${esc(t)}</div>`:''}`;
 }
 let ptSelectedDay = 'MONDAY';
+let ptApplyDays = {}; // which OTHER days are checked to receive a copy of ptSelectedDay's times
 function savePeriodTimes(){
   if(!isAdmin()) return requireAdmin('edit period times');
   if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
@@ -14934,18 +14935,106 @@ function savePeriodTimes(){
   DB.setup.periodTimes[day] = dayMap;
   saveDB('Period times updated for '+day); render(); toast('Period times saved for '+day);
 }
+/* Copies whatever is currently set (including any not-yet-saved typing, via
+   capturePendingPeriodTimes) for ptSelectedDay onto every other day checked in ptApplyDays.
+   Each target day's own times are fully replaced by the source day's times. */
+function applyPeriodTimesToDays(){
+  if(!isAdmin()) return requireAdmin('edit period times');
+  capturePendingPeriodTimes();
+  const sourceDay = ptSelectedDay;
+  const targets = TIMETABLE_DAYS.filter(d=> d!==sourceDay && ptApplyDays[d]);
+  if(!targets.length){ toast('Pick at least one day to copy to'); return; }
+  if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
+  const sourceMap = DB.setup.periodTimes[sourceDay] || {};
+  targets.forEach(d=>{ DB.setup.periodTimes[d] = JSON.parse(JSON.stringify(sourceMap)); });
+  ptApplyDays = {};
+  saveDB('Period times copied from '+sourceDay+' to '+targets.join(', '));
+  render();
+  toast(sourceDay.slice(0,1)+sourceDay.slice(1).toLowerCase()+"'s times applied to "+targets.map(d=>d.slice(0,1)+d.slice(1).toLowerCase()).join(', '));
+}
+/* Grabs whatever is currently sitting in the Start/End time boxes for the selected day —
+   including values the user typed but hasn't clicked "Save times" for yet — and folds them
+   into DB.setup.periodTimes. Called before any action that re-renders the page (adding or
+   removing a period), so those in-progress edits aren't silently discarded. No-op if the
+   period times panel isn't open/rendered. */
+function capturePendingPeriodTimes(){
+  if(typeof ptSelectedDay==='undefined' || !ptSelectedDay) return;
+  if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
+  const day = ptSelectedDay;
+  const dayMap = DB.setup.periodTimes[day] || {};
+  (DB.setup.periods && DB.setup.periods.length ? DB.setup.periods : PERIOD_OPTIONS).forEach(period=>{
+    const startEl = document.getElementById('ptStart_'+period);
+    const endEl = document.getElementById('ptEnd_'+period);
+    if(!startEl && !endEl) return;
+    const start = startEl?.value || '';
+    const end = endEl?.value || '';
+    if(start||end) dayMap[period] = {start, end}; else delete dayMap[period];
+  });
+  DB.setup.periodTimes[day] = dayMap;
+}
 function addTimetablePeriod(){
   if(!isAdmin()) return requireAdmin('add a period');
   const label = (prompt('New period label (e.g. 11TH, or a name like "ASSEMBLY"):')||'').trim();
   if(!label) return;
   if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
   if(DB.setup.periods.includes(label)){ toast('That period already exists'); return; }
+  capturePendingPeriodTimes();
   DB.setup.periods.push(label);
   saveDB('Period added: '+label); render(); toast('Period added');
+}
+/* Renames a period label everywhere it's used — the period list itself, its saved start/end
+   times (every day), every class's subject timetable entries, per-class time overrides, and
+   the weekly library-visit schedule — so renaming doesn't orphan or lose existing data the
+   way remove-then-re-add would. */
+function renameTimetablePeriod(period){
+  if(!isAdmin()) return requireAdmin('rename a period');
+  const input = prompt('Rename period "'+period+'" to:', period);
+  if(input===null) return; // cancelled
+  const label = input.trim();
+  if(!label || label===period) return;
+  const periods = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : [...PERIOD_OPTIONS];
+  if(periods.includes(label)){ toast('That period already exists'); return; }
+  capturePendingPeriodTimes();
+  if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
+  const idx = DB.setup.periods.indexOf(period);
+  if(idx===-1) DB.setup.periods.push(label); else DB.setup.periods[idx] = label;
+  if(DB.setup.periodTimes){
+    Object.keys(DB.setup.periodTimes).forEach(day=>{
+      const dayMap = DB.setup.periodTimes[day];
+      if(dayMap && Object.prototype.hasOwnProperty.call(dayMap, period)){ dayMap[label] = dayMap[period]; delete dayMap[period]; }
+    });
+  }
+  if(DB.classTimetable){
+    Object.keys(DB.classTimetable).forEach(cls=>{
+      const dayMap = DB.classTimetable[cls];
+      if(!dayMap) return;
+      Object.keys(dayMap).forEach(day=>{
+        const periodMap = dayMap[day];
+        if(periodMap && Object.prototype.hasOwnProperty.call(periodMap, period)){ periodMap[label] = periodMap[period]; delete periodMap[period]; }
+      });
+    });
+  }
+  if(DB.classTimings){
+    Object.keys(DB.classTimings).forEach(cls=>{
+      const dayMap = DB.classTimings[cls];
+      if(!dayMap) return;
+      Object.keys(dayMap).forEach(day=>{
+        const periodMap = dayMap[day];
+        if(periodMap && Object.prototype.hasOwnProperty.call(periodMap, period)){ periodMap[label] = periodMap[period]; delete periodMap[period]; }
+      });
+    });
+  }
+  if(Array.isArray(DB.scheduleDays)){
+    DB.scheduleDays.forEach(r=>{ if(r[1]===period) r[1]=label; });
+  }
+  saveDB('Period renamed: '+period+' \u2192 '+label);
+  render();
+  toast('Period renamed to '+label);
 }
 function removeTimetablePeriod(period){
   if(!isAdmin()) return requireAdmin('remove a period');
   confirmModal(`Remove period "${esc(period)}"? Existing timetable entries using it are left as-is.`, ()=>{
+    capturePendingPeriodTimes();
     if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
     DB.setup.periods = DB.setup.periods.filter(p=>p!==period);
     if(DB.setup.periodTimes){ Object.keys(DB.setup.periodTimes).forEach(d=>{ if(DB.setup.periodTimes[d]) delete DB.setup.periodTimes[d][period]; }); }
@@ -14999,7 +15088,7 @@ function pageClassTimetable(){
     <details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times ${isAdmin()?'(edit)':''}</summary>
       <div class="field" style="max-width:220px;margin-top:8px"><label>Day</label>
-        <select onchange="ptSelectedDay=this.value;render();">
+        <select onchange="ptSelectedDay=this.value;ptApplyDays={};render();">
           ${TIMETABLE_DAYS.map(d=>`<option value="${esc(d)}" ${d===ptSelectedDay?'selected':''}>${esc(d)}</option>`).join('')}
         </select>
       </div>
@@ -15011,11 +15100,25 @@ function pageClassTimetable(){
             <td><input type="time" id="ptStart_${esc(period)}" value="${esc(pt.start||'')}" ${isAdmin()?'':'disabled'}></td>
             <td><input type="time" id="ptEnd_${esc(period)}" value="${esc(pt.end||'')}" ${isAdmin()?'':'disabled'}></td>
             <td>${esc(period)}</td>
-            ${isAdmin()? `<td><button class="btn danger small" onclick="removeTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Remove</button></td>`:''}
+            ${isAdmin()? `<td style="white-space:nowrap"><button class="btn secondary small" onclick="renameTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Edit</button> <button class="btn danger small" onclick="removeTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Remove</button></td>`:''}
           </tr>`;
         }).join('')}</tbody>
       </table></div>
       ${isAdmin()? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" onclick="savePeriodTimes()">Save times for ${esc(ptSelectedDay)}</button><button class="btn" onclick="addTimetablePeriod()">+ Add period</button></div>`:''}
+      ${isAdmin() && TIMETABLE_DAYS.length>1 ? `
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color, rgba(0,0,0,0.08))">
+        <label style="display:block;margin-bottom:6px">Apply ${esc(ptSelectedDay)}'s times to other days</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">
+          ${TIMETABLE_DAYS.filter(d=>d!==ptSelectedDay).map(d=>`
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:400;cursor:pointer">
+              <input type="checkbox" ${ptApplyDays[d]?'checked':''} onchange="ptApplyDays['${d}']=this.checked">
+              ${esc(d.slice(0,3))}
+            </label>
+          `).join('')}
+        </div>
+        <button class="btn secondary small" onclick="applyPeriodTimesToDays()">📋 Apply to selected days</button>
+        <p class="field-hint" style="margin-top:6px">Replaces the picked days' times entirely with ${esc(ptSelectedDay)}'s — including any times you've typed above but haven't saved yet.</p>
+      </div>`:''}
       <p class="field-hint" style="margin-top:8px">Set separately per day — periods don't run at the same time every day.</p>
     </details>
     <div class="field" style="max-width:280px"><label>Class</label>
