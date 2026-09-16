@@ -15291,6 +15291,163 @@ async function importClassTimetableFromExcel(){
   };
   fileInput.click();
 }
+
+/* ============ EXCEL IMPORT: Full Timetable (one file, one button) ============
+   One file per class does it all. Requires:
+   Column A: Period (1ST, 2ND, BREAK, etc.)
+   Column B: Start time (HH:MM) — optional
+   Column C: End time (HH:MM) — optional (Start & End must both be present to apply)
+   Remaining columns: MONDAY..FRIDAY — subject/activity per period, "Free", or "LIBRARY"
+
+   If Start/End are present, this also updates the shared period times (used by
+   ALL classes) in the same step, so you don't need a separate import for that.
+
+   Example:
+   Period | Start | End   | MONDAY | TUESDAY | WEDNESDAY | THURSDAY | FRIDAY
+   1ST    | 08:00 | 08:50 | MATH   | MATH    | MATH      | MATH     | MATH
+   BREAK  | 11:20 | 11:30 | Free   | Free    | Free      | Free     | Free
+*/
+async function importFullTimetableFromExcel(){
+  if(!isAdmin()) return requireAdmin('import timetable');
+
+  if(!DB.setup.userClasses || !DB.setup.userClasses.length){
+    toast('No classes set up yet. Add classes in Setup first.');
+    return;
+  }
+
+  const classOptions = DB.setup.userClasses;
+  const selectedClass = prompt(`Import timetable for which class?\n\nAvailable:\n${classOptions.join('\n')}`, classOptions[0]);
+  if(!selectedClass || !classOptions.includes(selectedClass)){
+    toast('Invalid class selection');
+    return;
+  }
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.xlsx,.xls';
+  fileInput.onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+
+    try{
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, {type:'array'});
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(worksheet, {header:1});
+
+      if(!rows.length || rows.length < 2){
+        toast('Excel file must have at least 2 rows (header + data)');
+        return;
+      }
+
+      const header = rows[0];
+      const periodColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('period'));
+      const startColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('start'));
+      const endColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('end'));
+      const hasTimes = startColIdx!==-1 && endColIdx!==-1;
+
+      if(periodColIdx===-1){
+        toast('Excel must have a "Period" column');
+        return;
+      }
+
+      const dayColumns = {};
+      TIMETABLE_DAYS.forEach(day=>{
+        const idx = header.findIndex(h=> h && String(h).toUpperCase() === day);
+        if(idx!==-1) dayColumns[day] = idx;
+      });
+
+      if(!Object.keys(dayColumns).length){
+        toast(`Excel must have day columns: ${TIMETABLE_DAYS.join(', ')}`);
+        return;
+      }
+
+      const timetable = {};
+      const periodTimes = {};
+      const errors = [];
+
+      for(let i=1; i<rows.length; i++){
+        const row = rows[i];
+        const period = row[periodColIdx];
+        if(!period) continue; // skip empty rows
+
+        const periodStr = String(period).trim();
+        let start = null, end = null;
+
+        if(hasTimes){
+          const rawStart = row[startColIdx];
+          const rawEnd = row[endColIdx];
+          const hasRawTime = rawStart!=null && rawEnd!=null && String(rawStart).trim()!=='' && String(rawEnd).trim()!=='';
+          if(hasRawTime){
+            const sOk = String(rawStart).match(/^\d{1,2}:\d{2}$/);
+            const eOk = String(rawEnd).match(/^\d{1,2}:\d{2}$/);
+            if(!sOk) errors.push(`Row ${i+1}: Invalid start time "${rawStart}" (use HH:MM format)`);
+            if(!eOk) errors.push(`Row ${i+1}: Invalid end time "${rawEnd}" (use HH:MM format)`);
+            if(sOk && eOk){ start = String(rawStart).trim(); end = String(rawEnd).trim(); }
+          }
+        }
+
+        Object.keys(dayColumns).forEach(day=>{
+          const dayColIdx = dayColumns[day];
+          let subject = row[dayColIdx];
+          if(!subject) subject = 'Free';
+          subject = String(subject).trim();
+          if(subject.toLowerCase() === 'free' || subject === '—' || subject === '') subject = 'Free';
+          if(subject.toUpperCase() === 'LIBRARY') subject = 'LIBRARY';
+
+          if(!timetable[day]) timetable[day] = {};
+          if(subject !== 'Free') timetable[day][periodStr] = subject;
+
+          if(start && end){
+            if(!periodTimes[day]) periodTimes[day] = {};
+            periodTimes[day][periodStr] = {start, end};
+          }
+        });
+      }
+
+      if(errors.length){
+        toast(`${errors.length} time error(s) found — subjects were not imported:\n${errors.slice(0,3).join('\n')}${errors.length>3?'\n...':''}`, {duration:5000});
+        return;
+      }
+
+      if(!Object.keys(timetable).length){
+        toast('No valid timetable data found in Excel');
+        return;
+      }
+
+      const preview = Object.keys(timetable).slice(0,3).map(day=>{
+        const entries = Object.keys(timetable[day]).map(p=>`${p}: ${timetable[day][p]}`).join(', ');
+        return `${day}: ${entries}`;
+      }).join('\n');
+
+      const hasPeriodTimes = hasTimes && Object.keys(periodTimes).length;
+      const timesNote = hasPeriodTimes
+        ? `\n\nThis file also sets period start/end times, which apply to ALL classes.`
+        : '';
+
+      confirmModal(`Import timetable for "${selectedClass}"?\n\n${preview}${Object.keys(timetable).length>3?'\n...':''}${timesNote}`, async ()=>{
+        if(!DB.classTimetable) DB.classTimetable = {};
+        DB.classTimetable[selectedClass] = timetable;
+        if(hasPeriodTimes){
+          if(!DB.setup) DB.setup = {};
+          if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
+          Object.keys(periodTimes).forEach(day=>{
+            DB.setup.periodTimes[day] = Object.assign({}, DB.setup.periodTimes[day]||{}, periodTimes[day]);
+          });
+        }
+        await saveDB(`Timetable imported for ${selectedClass}`);
+        render();
+        toast(`✓ Imported timetable for ${selectedClass}${hasPeriodTimes?' (and period times)':''}`);
+      }, {confirmLabel:'Import', danger:false});
+
+    }catch(err){
+      console.error('Import error:', err);
+      toast('Error reading Excel file: '+err.message);
+    }
+  };
+  fileInput.click();
+}
+
 function addTimetablePeriod(){
   if(!isAdmin()) return requireAdmin('add a period');
   const label = (prompt('New period label (e.g. 11TH, or a name like "ASSEMBLY"):')||'').trim();
@@ -15408,7 +15565,6 @@ function pageClassTimetable(){
         <div><strong style="font-size:13px">🕐 Period times</strong><p class="field-hint" style="margin:4px 0 0">Set start/end times for each period on each day</p></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn secondary small" onclick="editPeriodTimeModal()">Edit times</button>
-          <button class="btn small" onclick="importPeriodTimesFromExcel()">📥 Import Excel</button>
         </div>
       </div>
     </div>` : ''}
@@ -15432,7 +15588,7 @@ function pageClassTimetable(){
         ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
     </div>
-    ${isAdmin()? `<button class="btn small" style="margin-top:20px;width:fit-content" onclick="importClassTimetableFromExcel()">📥 Import Excel for this class</button>`:''}
+    ${isAdmin()? `<button class="btn small" style="margin-top:20px;width:fit-content" onclick="importFullTimetableFromExcel()">📥 Import Timetable (Excel)</button>`:''}
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
       <thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
       <tbody>
