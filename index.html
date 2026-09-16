@@ -15182,13 +15182,13 @@ async function importPeriodTimesFromExcel(){
 async function importClassTimetableFromExcel(){
   if(!isAdmin()) return requireAdmin('import class timetable');
   
-  if(!DB.setup.classes || !DB.setup.classes.length){
+  if(!DB.setup.userClasses || !DB.setup.userClasses.length){
     toast('No classes set up yet. Add classes in Setup first.');
     return;
   }
   
   // Prompt for class selection
-  const classOptions = DB.setup.classes;
+  const classOptions = DB.setup.userClasses;
   const selectedClass = prompt(`Import timetable for which class?\n\nAvailable:\n${classOptions.join('\n')}`, classOptions[0]);
   if(!selectedClass || !classOptions.includes(selectedClass)){
     toast('Invalid class selection');
