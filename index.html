@@ -14874,52 +14874,24 @@ function timeToMinutes(t){
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
   return m ? (+m[1])*60 + (+m[2]) : null;
 }
-/* A single flat list of period rows has to serve every day at once, but different days can
-   run a genuinely different sequence — e.g. MONDAY–WEDNESDAY open with ASSEMBLY 08:00–08:50
-   then 1ST at 09:00, while THURSDAY–FRIDAY (no assembly) go straight into 1ST at 08:00. Taking
-   just the earliest start time seen anywhere (the old approach) breaks exactly this case: 1ST's
-   earliest time across all days is 08:00 (from Thu/Fri) which ties with ASSEMBLY's 08:00
-   (Mon–Wed), and the tie-break then falls back to whichever was declared first — with no
-   guarantee that lands ASSEMBLY above 1ST, even though on the days they actually coexist,
-   Assembly always comes first.
-   Instead this reads each day's own timed periods in that day's own order and merges the
-   orderings: if day X says A comes before B, A is placed before B in the merged list,
-   regardless of what any other day says about A or B individually. This is a topological
-   sort — Kahn's algorithm — over "comes before" edges gathered from every day, falling back
-   to the declared order in DB.setup.periods for anything no day's times constrain (including
-   a period with no times set at all, and to break any leftover tie or contradiction). */
-function periodsInChronoOrder(base){
-  const adjacents = new Map(base.map(p=>[p, new Set()])); // p -> periods that must follow p
-  const indeg = new Map(base.map(p=>[p, 0]));
+// A period's sort key is the earliest start time set for it on any day — so "3RD" and "BREAK"
+// interleave correctly even though only one of them may have a time set yet on a given day.
+// Periods with no start time set anywhere fall back to Infinity, which (thanks to Array#sort
+// being stable) just leaves them at the end in their original declared order — the moment an
+// admin sets a time for a newly-added period (e.g. a later-added "ASSEMBLY"), it automatically
+// slots into its correct chronological spot everywhere the table is shown, printed, or exported.
+function periodSortKey(period){
+  let min = Infinity;
   TIMETABLE_DAYS.forEach(day=>{
-    const timed = base
-      .map(p=>{ const pt = DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][p]; return {p, mins: pt && timeToMinutes(pt.start)}; })
-      .filter(x=> x.mins!=null)
-      .sort((a,b)=> a.mins-b.mins);
-    for(let i=0;i<timed.length-1;i++){
-      const a = timed[i].p, b = timed[i+1].p;
-      if(a===b || adjacents.get(a).has(b)) continue;
-      adjacents.get(a).add(b);
-      indeg.set(b, indeg.get(b)+1);
-    }
+    const pt = DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period];
+    const mins = pt && timeToMinutes(pt.start);
+    if(mins!=null && mins<min) min = mins;
   });
-  const remaining = new Set(base);
-  const result = [];
-  while(remaining.size){
-    let next = base.find(p=> remaining.has(p) && indeg.get(p)===0);
-    // No zero-in-degree node left means contradictory day orders (e.g. admin set A before B
-    // on Monday but B before A on Tuesday) — an edge case, broken by declared order rather
-    // than left unresolved.
-    if(!next) next = base.find(p=> remaining.has(p));
-    result.push(next);
-    remaining.delete(next);
-    adjacents.get(next).forEach(n=>{ if(remaining.has(n)) indeg.set(n, indeg.get(n)-1); });
-  }
-  return result;
+  return min;
 }
 function timetablePeriods(){
   const base = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS;
-  return periodsInChronoOrder(base);
+  return [...base].sort((a,b)=> periodSortKey(a)-periodSortKey(b));
 }
 function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
 function periodTimeLabel(day, period){
