@@ -6172,6 +6172,11 @@ function migrateNewFeatureData(db){
   if(!Array.isArray(db.reservations)) db.reservations = [];
   if(!Array.isArray(db.notifications)) db.notifications = [];
   if(!Array.isArray(db.trash)) db.trash = [];
+  // Archived members/titles live outside DB.users / DB.catalogue so they can't surface anywhere
+  // else in the app; older saves predate the archive and just start empty.
+  if(!db.archive || typeof db.archive!=='object') db.archive = {};
+  if(!Array.isArray(db.archive.users)) db.archive.users = [];
+  if(!Array.isArray(db.archive.catalogue)) db.archive.catalogue = [];
   if(!Array.isArray(db.activityLog)) db.activityLog = [];
   if(!Array.isArray(db.equipment)) db.equipment = [];
   db.equipment.forEach(it=>{
@@ -6544,7 +6549,7 @@ function buildSeedDB(){
       {id:'ST-3', day:'MONDAY', time:'14:30', category:'Staff Meeting', title:'', leadMinutes:15, notes:'', active:true},
       {id:'ST-4', day:'EVERYDAY', time:'15:30', category:'Closing', title:'', leadMinutes:10, notes:'', active:true},
     ],
-    setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
+    setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], archive: {users:[], catalogue:[]}, consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
   };
 }
 
@@ -10323,6 +10328,8 @@ function pageCatalogue(){
         label: sel => (sel.length && sel.every(r=>r.available==='WITHDRAWN')) ? '♻ Reinstate selected' : '🗃 Withdraw selected',
         onClick: sel => (sel.length && sel.every(r=>r.available==='WITHDRAWN')) ? bulkReinstateCatalogue() : bulkWithdrawCatalogue(),
       },
+      {label:'🗄 Archive selected (withdrawn)', onClick:()=> bulkArchiveCatalogue()},
+      {label: ()=> `🗄 Archive (${archiveCount('catalogue')})`, alwaysShow:true, onClick:()=> openArchiveModal('catalogue')},
       {label:'🗑 Delete selected', onClick:()=> bulkDeleteCatalogue(), danger:true},
       {label:'⚠ Clear all titles', onClick:clearAllCatalogue, danger:true},
     ],
@@ -10946,6 +10953,8 @@ function pageUsers(){
     extraActions:[
       {label:'🪪 Member ID cards', alwaysShow:true, onClick:()=> openAllMemberCardsModal()},
       {label:'🏫 Reassign class (selected)', onClick:()=> bulkReassignClass()},
+      {label:'🗄 Archive selected (inactive)', onClick:()=> bulkArchiveUsers()},
+      {label: ()=> `🗄 Archive (${archiveCount('users')})`, alwaysShow:true, onClick:()=> openArchiveModal('users')},
       {label:'🗑 Delete selected', onClick:()=> bulkDeleteUsers(), danger:true},
       {label:'⚠ Clear all strikes', onClick:clearAllStrikes},
       {label:'⚠ Clear all members', onClick:clearAllMembers, danger:true},
@@ -11140,6 +11149,187 @@ function bulkDeleteUsers(){
     logActivity('members', 'delete', `Deleted ${ids.length} member(s) in bulk`);
     saveDB(`${ids.length} member(s) moved to Trash`); render(); toast(`${ids.length} member(s) moved to Trash — restorable for 30 days`);
   });
+}
+/* ============ Archive (members & titles) ============
+   A halfway house between "still on the books" and "deleted". A member who has left the
+   school, or a title that's been pulled for good, shouldn't keep padding out lists, filters,
+   counts and pickers — but nobody wants to destroy the record either. Archiving MOVES the
+   record out of DB.users / DB.catalogue and into DB.archive, so it disappears from every
+   screen in the app at once (nothing else reads DB.archive) while staying restorable from the
+   archive modal on the page it came from. Deleting from inside the archive is the permanent
+   step, and says so — unlike the row Delete action it does not go to Trash.  */
+function archiveBucket(kind){
+  if(!DB.archive || typeof DB.archive!=='object') DB.archive = {};
+  if(!Array.isArray(DB.archive[kind])) DB.archive[kind] = [];
+  return DB.archive[kind];
+}
+function archiveCount(kind){ return archiveBucket(kind).length; }
+const ARCHIVE_KINDS = {
+  users: {
+    title:'Member archive', noun:'member', nounPlural:'members',
+    idOf: d=> d.id,
+    label: d=> d.name || d.id,
+    sub: d=> [d.id, d.cls, d.category, d.status].filter(Boolean).join(' · '),
+    search: d=> [d.id, d.name, d.cls, d.category, d.status].join(' ').toUpperCase(),
+    live: ()=> DB.users,
+    logKey: 'members',
+  },
+  catalogue: {
+    title:'Title archive', noun:'title', nounPlural:'titles',
+    idOf: d=> d.acc,
+    label: d=> d.title || d.acc,
+    sub: d=> [d.acc, d.author, d.shelf, d.available].filter(Boolean).join(' · '),
+    search: d=> [d.acc, d.title, d.author, d.category, d.mainClass].join(' ').toUpperCase(),
+    live: ()=> DB.catalogue,
+    logKey: 'catalogue',
+  },
+};
+function archiveRecords(kind, records, note){
+  const cfg = ARCHIVE_KINDS[kind];
+  const bucket = archiveBucket(kind);
+  const stamp = new Date().toISOString();
+  records.forEach(d=>{
+    bucket.push({
+      id: 'ARC-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6),
+      archivedAt: stamp,
+      archivedBy: (typeof SESSION!=='undefined' && SESSION && SESSION.fullName) || '',
+      data: JSON.parse(JSON.stringify(d)),
+    });
+  });
+  const ids = records.map(cfg.idOf);
+  if(kind==='users') DB.users = DB.users.filter(u=> !ids.includes(u.id));
+  else DB.catalogue = DB.catalogue.filter(b=> !ids.includes(b.acc));
+  logActivity(cfg.logKey, 'archive', note || `Archived ${records.length} ${records.length===1?cfg.noun:cfg.nounPlural}`);
+}
+/* Only members already marked INACTIVE can be archived — archiving is for people who have
+   left, not a shortcut for hiding an active or merely suspended account — and never one who
+   still has a book out, since their loan would lose its borrower. */
+function bulkArchiveUsers(){
+  if(!isAdmin()) return requireAdmin('archive members');
+  const ids = [...(usersModuleState.selected||[])];
+  if(!ids.length){ toast('Tick one or more members first'); return; }
+  const picked = DB.users.filter(u=> ids.includes(u.id));
+  const eligible = picked.filter(u=> u.status==='INACTIVE' && !(u.borrowed>0));
+  const notInactive = picked.filter(u=> u.status!=='INACTIVE').length;
+  const onLoan = picked.filter(u=> u.status==='INACTIVE' && u.borrowed>0).length;
+  if(!eligible.length){
+    return alertModal(`None of the selected member(s) can be archived.\n${notInactive? `${notInactive} are not marked INACTIVE — set their status to Inactive first.`:''}\n${onLoan? `${onLoan} still have book(s) on loan — take those back first.`:''}`, {title:'Nothing to archive'});
+  }
+  const skips = [notInactive? `${notInactive} not marked INACTIVE`:'', onLoan? `${onLoan} still holding book(s)`:''].filter(Boolean).join(', ');
+  confirmModal(`Archive ${eligible.length} member(s)?${skips? ` (Skipped: ${skips}.)`:''}\nThey are moved out of the members register into the archive — they stop appearing in lists, searches, filters, pickers and counts anywhere in the app. You can restore them (or delete them for good) from Members → Archive at any time.`, ()=>{
+    archiveRecords('users', eligible);
+    usersModuleState.selected.clear();
+    saveDB(`${eligible.length} member(s) archived`); render(); toast(`${eligible.length} member(s) archived`);
+  }, {confirmLabel:'Archive', danger:false});
+}
+/* The catalogue equivalent: a title has to be Withdrawn first — the existing "inactive" state
+   for stock — so a live, issued, or reserved copy can't vanish from under a loan. */
+function bulkArchiveCatalogue(){
+  if(!isAdmin()) return requireAdmin('archive titles');
+  const accs = [...(catalogueModuleState.selected||[])];
+  if(!accs.length){ toast('Tick one or more titles first'); return; }
+  const picked = DB.catalogue.filter(b=> accs.includes(b.acc));
+  const eligible = picked.filter(b=> b.available==='WITHDRAWN');
+  const skipped = picked.length - eligible.length;
+  if(!eligible.length) return alertModal('None of the selected title(s) can be archived — only titles already Withdrawn qualify. Withdraw them first, then archive.', {title:'Nothing to archive'});
+  confirmModal(`Archive ${eligible.length} title(s)?${skipped? ` (${skipped} skipped — only Withdrawn titles can be archived.)`:''}\nThey are moved out of the catalogue into the archive — they stop appearing in searches, filters, reports and counts anywhere in the app. You can restore them (or delete them for good) from Catalogue → Archive at any time.`, ()=>{
+    archiveRecords('catalogue', eligible);
+    catalogueModuleState.selected.clear();
+    saveDB(`${eligible.length} title(s) archived`); render(); toast(`${eligible.length} title(s) archived`);
+  }, {confirmLabel:'Archive', danger:false});
+}
+/* The archive itself: one modal, shared by both pages, with its own search and selection.
+   Restore puts records back where they came from; Delete permanently is the only place in the
+   app where something is destroyed without a 30-day Trash safety net, so it's spelled out. */
+function openArchiveModal(kind){
+  const cfg = ARCHIVE_KINDS[kind];
+  if(!cfg) return;
+  const selected = new Set();
+  let q = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>🗄 ${esc(cfg.title)}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <p class="field-hint" style="margin:0 0 10px">Archived ${esc(cfg.nounPlural)} are kept here only — they don't appear in any list, search, filter or count elsewhere in the app. Restore one to put it back exactly as it was.</p>
+        <input id="arcSearch" placeholder="Search the archive" autocomplete="off" style="width:100%;margin-bottom:8px">
+        <div id="arcList" style="max-height:46vh;overflow:auto;border:1px solid var(--border,rgba(0,0,0,.12));border-radius:6px"></div>
+        <div id="arcCount" class="field-hint" style="margin-top:8px"></div>
+      </div>
+      <div class="modal-foot" style="flex-wrap:wrap;gap:6px">
+        <button class="btn secondary" id="arcSelAll">Select all shown</button>
+        <button class="btn secondary" id="arcRestore">♻ Restore selected</button>
+        <button class="btn danger" id="arcDelete">🗑 Delete permanently</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  const shown = ()=>{
+    const needle = q.trim().toUpperCase();
+    return archiveBucket(kind).filter(rec=> !needle || cfg.search(rec.data).includes(needle));
+  };
+  const draw = ()=>{
+    const rows = shown();
+    const list = wrap.querySelector('#arcList');
+    list.innerHTML = rows.length ? rows.map(rec=>`
+      <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border,rgba(0,0,0,.08));font-size:13px">
+        <input type="checkbox" class="arcPick" value="${esc(rec.id)}" ${selected.has(rec.id)?'checked':''} style="margin-top:3px">
+        <span style="min-width:0">
+          <strong style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(cfg.label(rec.data))}</strong>
+          <span style="color:var(--muted);font-size:11.5px">${esc(cfg.sub(rec.data))}</span>
+          <span class="field-hint" style="display:block;margin-top:2px">Archived ${esc(new Date(rec.archivedAt).toLocaleDateString('en-GB'))}${rec.archivedBy? ` by ${esc(rec.archivedBy)}`:''}</span>
+        </span>
+      </label>`).join('')
+      : `<div class="empty" style="padding:22px 12px;text-align:center;color:var(--muted);font-size:13px">${archiveCount(kind)? 'Nothing matches that search' : `No archived ${esc(cfg.nounPlural)} yet`}</div>`;
+    wrap.querySelector('#arcCount').textContent = `${rows.length} shown · ${archiveCount(kind)} archived · ${selected.size} selected`;
+    list.querySelectorAll('.arcPick').forEach(cb=>{
+      cb.onchange = ()=>{ cb.checked ? selected.add(cb.value) : selected.delete(cb.value); draw(); };
+    });
+  };
+  wrap.querySelector('#arcSearch').oninput = e=>{ q = e.target.value; draw(); };
+  wrap.querySelector('#arcSelAll').onclick = ()=>{
+    const rows = shown();
+    const allOn = rows.length && rows.every(r=> selected.has(r.id));
+    rows.forEach(r=> allOn ? selected.delete(r.id) : selected.add(r.id));
+    draw();
+  };
+  const pickedRecords = ()=> archiveBucket(kind).filter(r=> selected.has(r.id));
+  wrap.querySelector('#arcRestore').onclick = ()=>{
+    if(!isAdmin()) return requireAdmin(`restore ${cfg.nounPlural}`);
+    const recs = pickedRecords();
+    if(!recs.length) return toast(`Tick one or more archived ${cfg.nounPlural} first`);
+    // An ID/accession number freed up by archiving may since have been reused, so anything that
+    // would collide is left in the archive rather than creating a duplicate record.
+    const liveIds = new Set(cfg.live().map(cfg.idOf));
+    const ok = recs.filter(r=> !liveIds.has(cfg.idOf(r.data)));
+    const clashes = recs.length - ok.length;
+    if(!ok.length) return alertModal(`Could not restore — the ID(s) involved are already in use by ${cfg.nounPlural} currently on the register.`, {title:'Nothing restored'});
+    close();
+    confirmModal(`Restore ${ok.length} ${ok.length===1?cfg.noun:cfg.nounPlural}?${clashes? ` (${clashes} skipped — their ID is already in use.)`:''}`, ()=>{
+      const keep = new Set(ok.map(r=> r.id));
+      ok.forEach(r=> cfg.live().push(r.data));
+      DB.archive[kind] = archiveBucket(kind).filter(r=> !keep.has(r.id));
+      logActivity(cfg.logKey, 'restore', `Restored ${ok.length} ${ok.length===1?cfg.noun:cfg.nounPlural} from the archive`);
+      saveDB(`${ok.length} ${cfg.nounPlural} restored from archive`); render(); toast(`${ok.length} ${cfg.nounPlural} restored`);
+    }, {confirmLabel:'Restore', danger:false});
+  };
+  wrap.querySelector('#arcDelete').onclick = ()=>{
+    if(!isAdmin()) return requireAdmin(`delete archived ${cfg.nounPlural}`);
+    const recs = pickedRecords();
+    if(!recs.length) return toast(`Tick one or more archived ${cfg.nounPlural} first`);
+    close();
+    confirmModal(`Permanently delete ${recs.length} archived ${recs.length===1?cfg.noun:cfg.nounPlural}?\nThis cannot be undone — unlike the usual Delete, these do NOT go to Trash and cannot be recovered afterwards.`, ()=>{
+      const gone = new Set(recs.map(r=> r.id));
+      DB.archive[kind] = archiveBucket(kind).filter(r=> !gone.has(r.id));
+      logActivity(cfg.logKey, 'delete', `Permanently deleted ${recs.length} archived ${recs.length===1?cfg.noun:cfg.nounPlural}`);
+      saveDB(`${recs.length} archived ${cfg.nounPlural} permanently deleted`); render(); toast(`${recs.length} archived ${cfg.nounPlural} deleted for good`);
+    }, {confirmLabel:'Delete for good', danger:true});
+  };
+  draw();
+  setTimeout(()=> wrap.querySelector('#arcSearch').focus(), 30);
 }
 function bulkReassignClass(){
   if(!isAdmin()) return requireAdmin('edit members');
@@ -15951,8 +16141,9 @@ function ttFindCellInput(day, period){
   return Array.from(document.querySelectorAll('.ttCell')).find(el=> el.dataset.day===day && el.dataset.period===period) || null;
 }
 /* Every slot — any class, any day, any period — whose cell contains one of `values`.
-   A bad import label rarely lands in just one place: the same ⚠ MATHS is usually sitting
-   in several periods of the same class as well as in other classes, and on different days.
+   A repeated entry rarely lands in just one place: the same ⚠ MATHS (or the same ordinary
+   SPORTS or MATH) is usually sitting in several periods of the same class as well as in
+   other classes, and on different days.
    `skip` is the cell being edited right now, which is handled separately by the editor.
    Returns [{cls, day, period, matched:[...]}], current class first so the summary reads
    naturally ("3 more slots in this class, 5 in other classes"). */
@@ -15990,14 +16181,15 @@ function editTimetableCellModal(day, period){
   const subjectNames = DB.setup.subjectNames || {};
   const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
   const extras = current.filter(v=> !ttValueIsKnown(v)); // imported/unrecognised entries
-  // "Apply everywhere" only makes sense here when this cell holds an import error (an
-  // unrecognised value). It should NOT fire for an ordinary edit, since two slots can
-  // legitimately run two different, correct subjects — overwriting them all with this
-  // cell's new value would clobber that.
-  // The sweep deliberately isn't limited to this day/period in other classes: one bad
-  // import label repeats down a class's own week too, so it covers every slot carrying
-  // the flagged value — this class's other periods and days included.
-  const occurrences = extras.length ? ttFlaggedOccurrences(extras, {cls, day, period}) : [];
+  // "Apply everywhere" matches on whatever this cell held before the edit — a flagged import
+  // error, but equally a recognised subject or an activity. Renaming MATHS → MATH, moving a
+  // period from SPORTS to ASSEMBLY, or swapping one subject for another is the same job, and
+  // the correction usually needs making in every slot that carries it.
+  // The sweep isn't limited to this day/period in other classes: a repeated entry runs down a
+  // class's own week too, so it covers every slot carrying these values — this class's other
+  // periods and days included. It stays opt-in and off by default, since two slots can
+  // legitimately hold the same entry and only want changing in one place.
+  const occurrences = current.length ? ttFlaggedOccurrences(current, {cls, day, period}) : [];
   const sameClassHits = occurrences.filter(o=> o.cls===cls).length;
   const otherClassNames = Array.from(new Set(occurrences.filter(o=> o.cls!==cls).map(o=> o.cls)));
   const occurrenceSummary = [
@@ -16028,7 +16220,7 @@ function editTimetableCellModal(day, period){
         </div>
         ${occurrences.length? `<label class="subject-check" style="display:flex;align-items:flex-start;gap:8px;margin-top:4px;font-size:13px">
           <input type="checkbox" id="ttApplyAllClasses" style="margin-top:2px">
-          <span>Also fix this everywhere else the same flagged entr${extras.length===1?'y':'ies'} (⚠ ${esc(extras.join(', '))}) appear${extras.length===1?'s':''} — ${esc(occurrenceSummary)}<span class="field-hint" style="display:block;margin-top:2px">Every day and period is checked, not just ${esc(day.slice(0,3))} ${esc(period)}. Other subjects already in those cells are kept.</span></span>
+          <span>Also apply this change everywhere else ${current.length===1?'this entry':'these entries'} appear${current.length===1?'s':''} (${esc(current.map(v=> ttValueIsKnown(v)? v : '⚠ '+v).join(', '))}) — ${esc(occurrenceSummary)}<span class="field-hint" style="display:block;margin-top:2px">Every day and period is checked, not just ${esc(day.slice(0,3))} ${esc(period)}. Works for flagged imports, ordinary subjects and activities alike. Anything else already in those cells is kept.</span></span>
         </label>`:''}
       </div>
       <div class="modal-foot">
@@ -16049,17 +16241,17 @@ function editTimetableCellModal(day, period){
     close();
     if(applyAll && occurrences.length){
       // `occurrences` is every slot — this class's other periods and days as well as other
-      // classes' — whose cell carries one of this cell's *flagged* (unrecognised) values,
-      // i.e. the same import error repeated. Fix it in all of them, but only strip out the
-      // matched flagged value(s) and merge in this cell's new resolution; anything else
-      // already in that cell (a real subject sharing the period, or a different flagged
-      // value) is left alone rather than being wiped by a blanket overwrite.
+      // classes' — whose cell carries one of the values this cell held before the edit,
+      // flagged import, subject or activity alike. Change them all, but only strip out the
+      // matched value(s) and merge in this cell's new content; anything else already in that
+      // cell (another subject sharing the period, an activity) is left alone rather than
+      // being wiped by a blanket overwrite.
       // Touches saved data directly — most of these slots aren't on screen to edit via the
       // grid — so this persists immediately rather than waiting on "Save timetable".
       capturePendingClassTimetable(); // fold this class's on-screen picks (incl. this one) into DB first
       if(!DB.classTimetable) DB.classTimetable = {};
       occurrences.forEach(o=>{
-        const existing = ttCellAt(o.cls, o.day, o.period).filter(v=> !extras.includes(v));
+        const existing = ttCellAt(o.cls, o.day, o.period).filter(v=> !current.includes(v));
         const merged = ttCellValues([...existing, ...stored]);
         const storeVal = ttCellStore(merged);
         if(!DB.classTimetable[o.cls]) DB.classTimetable[o.cls] = {};
@@ -16068,9 +16260,9 @@ function editTimetableCellModal(day, period){
         else DB.classTimetable[o.cls][o.day][o.period] = storeVal;
       });
       const classCount = new Set(occurrences.map(o=> o.cls)).add(cls).size;
-      saveDB(`Flagged timetable entry corrected in ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
+      saveDB(`Timetable entry changed in ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
       render();
-      toast(`Fixed ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
+      toast(`Updated ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
     } else {
       // Single-class edit stays "pending" like before (folded into DB but not yet saved to
       // storage) — just refresh the unknown-entries banner in place so it reflects this edit
@@ -16339,7 +16531,13 @@ function autoBuildLibrarySchedule(){
           // A period may run several subjects at once — senior classes split and each student
           // sits whichever one their own combination includes. A student is personally free
           // only when their combination includes NONE of the subjects running in that period.
-          const subjects = vals.filter(v=> v!=='BREAK');
+          // Only real, recognised subject codes can make a student free. Activities (BREAK,
+          // ASSEMBLY, SPORTS, EXAM…) are things the whole class attends regardless of subject
+          // combination — nobody is "free" during assembly — and an unrecognised imported label
+          // is no evidence of a free period either, since no student combination will ever list
+          // it and every student would be wrongly reported free.
+          const actList = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+          const subjects = vals.filter(v=> v!=='LIBRARY' && !actList.includes(v) && (DB.setup.subjects||[]).includes(v));
           if(subjects.length && students.length){
             const namesFree = students.filter(u=>{
               const mine = studentSubjects(u);
@@ -17532,7 +17730,11 @@ function pageSetup(){
   <div class="card panel">
     <div class="panel-head"><h3>Class subject distribution</h3><div class="hint">Default subjects auto-assigned to every student in a class — override per-student from Members → Subjects</div></div>
     <div id="classSubjectGrid">${renderClassSubjectGridHtml()}</div>
-    <button class="btn secondary" onclick="saveClassSubjects()">Save subject distribution</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn secondary" onclick="autoTickClassSubjectsFromTimetable()">🧭 Auto-tick from timetable</button>
+      <button class="btn secondary" onclick="saveClassSubjects()">Save subject distribution</button>
+    </div>
+    <p class="field-hint" style="margin-top:6px">Auto-tick reads each class's timetable and ticks every subject actually taught to that class. It only adds ticks — nothing already ticked is removed — and nothing is written until you save.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Schedule management</h3></div>
@@ -19412,6 +19614,38 @@ function removeSubject(s){
   if(DB.setup.subjectNames) delete DB.setup.subjectNames[s];
   Object.keys(DB.setup.classSubjects).forEach(c=> DB.setup.classSubjects[c] = (DB.setup.classSubjects[c]||[]).filter(x=>x!==s));
   saveDB(`Subject removed: ${s}`); refreshSetupSection('subjectList', renderSubjectsHtml); refreshSetupSection('classSubjectGrid', renderClassSubjectGridHtml);
+}
+/* The class timetable already says which subjects a class sits, period by period — retyping
+   that into this grid by hand for every class is busywork and a fresh chance to get it wrong.
+   This ticks each class's boxes from its own timetable instead: any recognised subject code
+   appearing anywhere in that class's week gets ticked. Activities, LIBRARY and flagged
+   imported labels are ignored (they aren't subjects), and existing ticks are left alone —
+   a subject a class takes but that isn't on the timetable yet stays ticked. Nothing is saved
+   until "Save subject distribution" is clicked, so a wrong result is one reload away from
+   being undone. */
+function autoTickClassSubjectsFromTimetable(){
+  if(!isAdmin()) return requireAdmin('edit class subjects');
+  const known = DB.setup.subjects || [];
+  if(!known.length) return alertModal('No subjects have been added in Setup yet, so there is nothing to tick.', {title:'Nothing to tick'});
+  const boxes = $$('.classSubjChk');
+  if(!boxes.length) return;
+  const found = {}, noTimetable = [];
+  sortedClasses().forEach(c=>{
+    const tt = classTimetableFor(c);
+    const set = new Set();
+    Object.keys(tt).forEach(d=> Object.keys(tt[d]||{}).forEach(pd=>{
+      ttCellValues(tt[d][pd]).forEach(v=>{ if(known.includes(v)) set.add(v); });
+    }));
+    if(!set.size) noTimetable.push(c); else found[c] = set;
+  });
+  if(!Object.keys(found).length) return alertModal('No class timetable has any recognised subject codes in it yet. Enter or import the timetables first (Schedule → Class Timetable), then try again.', {title:'Nothing to tick'});
+  let ticked = 0; const classesTouched = new Set();
+  boxes.forEach(cb=>{
+    const set = found[cb.dataset.cls];
+    if(set && set.has(cb.value) && !cb.checked){ cb.checked = true; ticked++; classesTouched.add(cb.dataset.cls); }
+  });
+  if(!ticked) return toast(noTimetable.length? `Already up to date — ${noTimetable.length} class(es) have no timetable subjects yet` : 'Already up to date — every timetabled subject is ticked');
+  toast(`${ticked} subject tick(s) added across ${classesTouched.size} class(es) — review, then Save`);
 }
 function saveClassSubjects(){
   if(!isAdmin()) return requireAdmin('edit class subjects');
