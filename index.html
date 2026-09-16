@@ -14920,8 +14920,8 @@ function periodHeaderHtml(day, period){
   const t = periodTimeLabel(day, period);
   return `${esc(period)}${t? `<div style="font-weight:400;font-size:11px;color:var(--muted-label)">${esc(t)}</div>`:''}`;
 }
-/* Modal-based period time editor — saves each period's times immediately without page re-render.
-   Much simpler than the old "capture pending" approach. */
+/* Modal-based period time editor — edit all day/period times in one grid, save all at once.
+   No re-render confusion, no cascading logic. Much simpler than the old "capture pending" approach. */
 async function editPeriodTimeModal(){
   if(!isAdmin()) return requireAdmin('edit period times');
   
@@ -14936,30 +14936,56 @@ async function editPeriodTimeModal(){
       const pt = periodTime(day, period) || {};
       const start = pt.start || '';
       const end = pt.end || '';
-      const dayKey = `pt_${day}_${period}`;
-      return `<td style="padding:6px">
-        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" 
-               value="${esc(start)}" placeholder="Start" style="width:70px;margin-bottom:2px">
-        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" 
-               value="${esc(end)}" placeholder="End" style="width:70px">
+      return `<td style="padding:6px;text-align:center">
+        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" data-type="start"
+               value="${esc(start)}" style="width:70px;margin-bottom:2px;font-size:12px">
+        <div style="font-size:10px;color:var(--muted);margin:2px 0">–</div>
+        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" data-type="end"
+               value="${esc(end)}" style="width:70px;font-size:12px">
       </td>`;
     }).join('');
-    return `<tr><td style="padding:6px;font-weight:600">${esc(period)}</td>${row}</tr>`;
+    return `<tr><td style="padding:6px;font-weight:600;text-align:left">${esc(period)}</td>${row}</tr>`;
   }).join('');
   
-  const formHtml = `<div style="font-size:13px">
-    <div class="table-wrap"><table style="font-size:12px;width:100%">
-      <thead><tr><th style="padding:6px;text-align:left">Period</th>
-        ${days.map(d=>`<th style="padding:6px;text-align:center">${esc(d.slice(0,3))}</th>`).join('')}
+  const formHtml = `<div style="font-size:13px;max-height:60vh;overflow-y:auto">
+    <div class="table-wrap"><table style="font-size:12px;width:100%;border-collapse:collapse">
+      <thead style="background:var(--surface-1);position:sticky;top:0"><tr><th style="padding:8px;text-align:left;font-weight:600">Period</th>
+        ${days.map(d=>`<th style="padding:8px;text-align:center;font-weight:600">${esc(d.slice(0,3))}</th>`).join('')}
       </tr></thead>
       <tbody>${tableHtml}</tbody>
     </table></div>
-    <p class="field-hint" style="margin-top:8px;font-size:12px">Each cell shows start/end time inputs for that day/period combo. Click Save to apply all changes at once.</p>
+    <p class="field-hint" style="margin-top:12px;font-size:12px">Edit start/end times for each period on each day. Click "Save all times" to apply changes.</p>
   </div>`;
   
-  const onSave = async () => {
+  // Create modal backdrop and structure
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.id = 'ptModalBackdrop';
+  wrap.innerHTML = `
+    <div class="modal" style="max-width:900px;width:90%">
+      <div class="modal-head">
+        <h3>⏰ Set period times for all days</h3>
+        <button id="ptmClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">${formHtml}</div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="ptmCancel">Cancel</button>
+        <button class="btn primary" id="ptmSave">Save all times</button>
+      </div>
+    </div>`;
+  
+  document.body.appendChild(wrap);
+  
+  // Set up close functionality
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#ptmClose').onclick = close;
+  wrap.querySelector('#ptmCancel').onclick = close;
+  
+  // Set up save functionality
+  wrap.querySelector('#ptmSave').onclick = async ()=>{
     // Grab all edited times from the modal inputs
-    const timeInputs = document.querySelectorAll('[data-day][data-period]');
+    const timeInputs = wrap.querySelectorAll('[data-day][data-period]');
     if(!timeInputs.length) return;
     
     // Collect all changes
@@ -14967,10 +14993,10 @@ async function editPeriodTimeModal(){
     timeInputs.forEach(input=>{
       const day = input.dataset.day;
       const period = input.dataset.period;
-      const isStart = input.getAttribute('placeholder') === 'Start';
+      const type = input.dataset.type; // 'start' or 'end'
       if(!updates[day]) updates[day] = {};
       if(!updates[day][period]) updates[day][period] = {start:'', end:''};
-      if(isStart) updates[day][period].start = input.value;
+      if(type==='start') updates[day][period].start = input.value;
       else updates[day][period].end = input.value;
     });
     
@@ -14986,19 +15012,13 @@ async function editPeriodTimeModal(){
     });
     
     await saveDB('Period times updated');
-    hideModal();
+    close();
     render();
     toast('Period times saved');
   };
   
-  openModal({
-    title: '⏰ Set period times for all days',
-    html: formHtml,
-    actions: [
-      {label:'Save all times', primary:true, onClick:onSave},
-      {label:'Cancel'}
-    ]
-  });
+  // Focus the save button
+  setTimeout(()=> wrap.querySelector('#ptmSave').focus(), 30);
 }
 /* Grabs whatever is currently selected in the class subject-timetable dropdowns (the
    "Free / LIBRARY / subject" cells) for the currently-selected class — including selections
@@ -15139,8 +15159,20 @@ function pageClassTimetable(){
         <button class="btn secondary" onclick="editPeriodTimeModal()">Edit times</button>
       </div>
     </div>` : ''}
-    ${isAdmin() ? `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <button class="btn" onclick="addTimetablePeriod()">+ Add period</button>
+    ${isAdmin() ? `<div style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <strong style="font-size:13px">📋 Periods</strong>
+        <button class="btn small" onclick="addTimetablePeriod()">+ Add period</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${timetablePeriods().map(period=>`
+          <div style="display:flex;align-items:center;gap:4px;padding:6px 8px;background:var(--surface-2);border-radius:4px;font-size:12px">
+            <span>${esc(period)}</span>
+            <button class="btn small" style="padding:2px 4px;font-size:10px" onclick="renameTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">✎</button>
+            <button class="btn danger small" style="padding:2px 4px;font-size:10px" onclick="removeTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">×</button>
+          </div>
+        `).join('')}
+      </div>
     </div>` : ''}
     <div class="field" style="max-width:280px"><label>Class</label>
       <select id="ttClassSelect" onchange="capturePendingClassTimetable();ttSelectedClass=this.value;render();">
