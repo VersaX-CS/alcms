@@ -6250,8 +6250,9 @@ function migrateNewFeatureData(db){
           if(!periodMap) return;
           Object.keys(periodMap).forEach(period=>{
             const val = periodMap[period];
-            const mapped = caseMap[String(val).toLowerCase()];
-            if(mapped && val !== mapped) periodMap[period] = mapped;
+            const list = Array.isArray(val) ? val : [val];
+            const fixed = list.map(x=> caseMap[String(x).toLowerCase()] || x);
+            if(fixed.some((x,i)=> x !== String(list[i]))) periodMap[period] = Array.isArray(val) ? fixed : fixed[0];
           });
         });
       });
@@ -9935,11 +9936,15 @@ function pageDashboard(){
       const classes = sortedClasses();
       const periods = timetablePeriods().filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
       if(!classes.length || !periods.length) return `<div class="empty">No class timetable entered for today yet — add one from <a href="javascript:void(0)" onclick="route='schedule';scheduleSubview='timetable';render()">Schedule → Class timetable</a>.</div>`;
-      const cellHtml = (val)=>{
-        if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
-        if(val==='BREAK') return '<span style="color:var(--muted-label);font-style:italic">Break</span>';
-        if(!val) return '<span style="color:var(--muted-label)">—</span>';
-        return esc(val);
+      const cellHtml = (raw)=>{
+        const vals = ttCellValues(raw);
+        if(!vals.length) return '<span style="color:var(--muted-label)">—</span>';
+        // A period can carry several subjects at once (senior classes splitting by combination)
+        return vals.map(val=>{
+          if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
+          if(val==='BREAK') return '<span style="color:var(--muted-label);font-style:italic">Break</span>';
+          return esc(val);
+        }).join('<span style="color:var(--muted-label)"> / </span>');
       };
       return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
       <tbody>${classes.map(c=>{
@@ -15032,8 +15037,9 @@ function capturePendingClassTimetable(){
   if(!DB.classTimetable) DB.classTimetable = {};
   const dayMap = {};
   cells.forEach(sel=>{
-    const day = sel.dataset.day, period = sel.dataset.period, val = sel.value;
-    if(val){ (dayMap[day] = dayMap[day] || {})[period] = val; }
+    const day = sel.dataset.day, period = sel.dataset.period;
+    const stored = ttCellStore(String(sel.value||'').split('|'));
+    if(stored){ (dayMap[day] = dayMap[day] || {})[period] = stored; }
   });
   DB.classTimetable[cls] = dayMap;
 }
@@ -15300,7 +15306,9 @@ async function importClassTimetableFromExcel(){
    Column A: Period (1ST, 2ND, BREAK, etc.)
    Column B: Start time (HH:MM) — optional
    Column C: End time (HH:MM) — optional (Start & End must both be present to apply)
-   Remaining columns: MONDAY..FRIDAY — subject/activity per period, "Free", or "LIBRARY"
+   Remaining columns: MONDAY..FRIDAY — subject/activity per period, "Free", or "LIBRARY".
+   A period running several subjects at once (senior electives) can list them in one cell
+   separated by / , ; or +, or on repeated rows for the same period — both are merged.
 
    If Start/End are present, this also updates the shared period times (used by
    ALL classes) in the same step, so you don't need a separate import for that.
@@ -15372,6 +15380,17 @@ function ttResolveCellValue(raw){
   const byName = Object.keys(names).find(c=> ttLooseKey(names[c])===key);
   if(byName && codes.includes(byName)) return {kind:'known', value:byName};
   return {kind:'unknown', value: text.toUpperCase()};
+}
+/* One cell often holds several subjects for the same period — senior timetables write them
+   as "MATH / FURTHER MATH", "LIT, GOVT; CRS" or "PHY + CHEM". Split on those separators so
+   each becomes its own entry. The whole cell is tried first, so a legitimate name that
+   contains a separator ("HEALTH & PE", "STAFF MEETING") is never chopped up. */
+function ttSplitCellText(raw){
+  const text = String(raw==null?'':raw).trim();
+  if(!text) return [''];
+  if(ttResolveCellValue(text).kind !== 'unknown') return [text];
+  const parts = text.split(/\s*(?:[\/;,\n\r]|\s\+\s)\s*/).map(t=>t.trim()).filter(Boolean);
+  return parts.length ? parts : [text];
 }
 /* The header row isn't always row 1 — files often carry a school name or a "TIMETABLE FOR
    JSS1" banner above it. Scan the first few rows for the one that actually looks like a
@@ -15492,12 +15511,19 @@ async function importFullTimetableFromExcel(){
         }
 
         foundDays.forEach(day=>{
-          const resolved = ttResolveCellValue(row[dayColumns[day]]);
           if(!timetable[day]) timetable[day] = {};
-          if(resolved.kind!=='free'){
-            timetable[day][periodStr] = resolved.value;
-            cellCount++;
+          const picked = [];
+          ttSplitCellText(row[dayColumns[day]]).forEach(tok=>{
+            const resolved = ttResolveCellValue(tok);
+            if(resolved.kind==='free') return;
+            picked.push(resolved.value);
             if(resolved.kind==='unknown') unknownValues[resolved.value] = (unknownValues[resolved.value]||0)+1;
+          });
+          if(picked.length){
+            // Union rather than overwrite: some files list a period's alternative subjects on
+            // repeated rows instead of side by side in one cell.
+            const merged = ttCellStore([...ttCellValues(timetable[day][periodStr]), ...picked]);
+            if(merged){ timetable[day][periodStr] = merged; cellCount++; }
           }
           if(start && end){
             if(!periodTimes[day]) periodTimes[day] = {};
@@ -15569,10 +15595,11 @@ function ttUnknownValuesFor(cls){
   const out = [];
   Object.keys(tt).forEach(day=>{
     Object.keys(tt[day]||{}).forEach(period=>{
-      const v = tt[day][period];
-      if(!v || v==='LIBRARY') return;
-      if(activities.includes(v) || codes.includes(v)) return;
-      if(!out.includes(v)) out.push(v);
+      ttCellValues(tt[day][period]).forEach(v=>{
+        if(!v || v==='LIBRARY') return;
+        if(activities.includes(v) || codes.includes(v)) return;
+        if(!out.includes(v)) out.push(v);
+      });
     });
   });
   return out;
@@ -15662,6 +15689,118 @@ function removeTimetablePeriod(period){
 let ttSelectedClass = null;
 let ttManageActivitiesOpen = false;
 function classTimetableFor(cls){ return (DB.classTimetable && DB.classTimetable[cls]) || {}; }
+/* ---- Multi-subject periods -------------------------------------------------
+   Senior classes routinely run several subjects in the same period — the class splits
+   and each student sits whichever one their own combination includes. So a cell in
+   DB.classTimetable[cls][day][period] may hold either a single value (the original
+   shape, still written when there's only one) or an array of values. Everything that
+   reads a cell goes through ttCellValues() so both shapes work, and nothing saved by
+   an older version of the app needs migrating. */
+function ttCellValues(raw){
+  if(raw==null || raw==='') return [];
+  const arr = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  arr.forEach(v=>{ const s = String(v==null?'':v).trim(); if(s && !out.includes(s)) out.push(s); });
+  return out;
+}
+/* Collapses an edited list back into what actually gets stored: nothing for an empty
+   cell, a bare string for one value (so single-subject periods stay byte-identical to
+   before), an array only when a period genuinely carries more than one. */
+function ttCellStore(values){
+  const v = ttCellValues(values);
+  if(!v.length) return null;
+  return v.length===1 ? v[0] : v;
+}
+function ttCellAt(cls, day, period){
+  const tt = classTimetableFor(cls);
+  return ttCellValues(tt[day] && tt[day][period]);
+}
+function ttValueIsKnown(v){
+  if(v==='LIBRARY') return true;
+  return (DB.scheduleActivities || DEFAULT_ACTIVITIES).includes(v) || (DB.setup.subjects || []).includes(v);
+}
+/* Plain-text rendering of a cell, used by print / PDF / export so those always match
+   what's on screen. Several subjects in one period read as "MATH / FURTHER MATH". */
+function ttCellText(values, opts){
+  const withNames = opts && opts.withNames;
+  const names = DB.setup.subjectNames || {};
+  const v = ttCellValues(values);
+  if(!v.length) return '—';
+  return v.map(x=> x==='LIBRARY' ? '📚 LIBRARY' : (withNames && names[x] ? `${x} – ${names[x]}` : x)).join(' / ');
+}
+function ttChipsHtml(values){
+  const v = ttCellValues(values);
+  if(!v.length) return `<span style="color:var(--muted-label)">— Free —</span>`;
+  return v.map(x=>{
+    const unknown = !ttValueIsKnown(x);
+    const bg = x==='LIBRARY' ? 'rgba(45,160,90,.18)' : (unknown ? 'rgba(200,150,0,.20)' : 'var(--surface-2)');
+    const label = x==='LIBRARY' ? '📚 LIBRARY' : (unknown ? '⚠ '+x : x);
+    return `<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:10px;background:${bg};font-size:11px;line-height:1.5;white-space:nowrap">${esc(label)}</span>`;
+  }).join('');
+}
+function ttFindCellInput(day, period){
+  return Array.from(document.querySelectorAll('.ttCell')).find(el=> el.dataset.day===day && el.dataset.period===period) || null;
+}
+/* The cell editor. A grid of 35 multi-selects would be unusable, so each cell is a chip
+   button that opens this picker: tick every subject running in that period, or tick
+   📚 LIBRARY, or tick nothing for a free period. Applying updates the hidden .ttCell
+   input in place — no full re-render — so other unsaved cells aren't lost. */
+function editTimetableCellModal(day, period){
+  if(!isAdmin()) return requireAdmin('edit the class timetable');
+  const cls = ttSelectedClass;
+  const input = ttFindCellInput(day, period);
+  if(!input) return;
+  const current = ttCellValues(input.value.split('|'));
+  const subjectNames = DB.setup.subjectNames || {};
+  const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const extras = current.filter(v=> !ttValueIsKnown(v)); // imported/unrecognised entries
+  const box = (val, label, note)=>`
+    <label class="subject-check" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--surface-1);font-size:13px">
+      <input type="checkbox" class="ttPick" value="${esc(val)}" ${current.includes(val)?'checked':''}>
+      <span>${esc(label)}${note? ` <span style="opacity:.6">${esc(note)}</span>`:''}</span>
+    </label>`;
+  const group = (title, html)=> html ? `<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted-label);margin-bottom:6px">${esc(title)}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">${html}</div></div>` : '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>${esc(cls)} — ${esc(day.slice(0,3))} ${esc(period)}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <p class="field-hint" style="margin:0 0 12px">Tick every subject running in this period. Senior classes often split across two or three at once — tick them all, and students are matched to whichever one their own combination includes.</p>
+        ${group('Library', box('LIBRARY','📚 LIBRARY'))}
+        ${group('Subjects', (DB.setup.subjects||[]).map(c=> box(c, c, subjectNames[c]||'')).join(''))}
+        ${group('Activities', activities.map(a=> box(a, a)).join(''))}
+        ${group('Not in setup', extras.map(v=> box(v, v, '⚠ imported')).join(''))}
+        <div class="field" style="margin-top:4px"><label>Add something else</label>
+          <input id="ttCustom" placeholder="e.g. FURTHER MATH, TECH DRAWING" autocomplete="off">
+          <p class="field-hint">Separate several with commas. These are kept as typed and flagged ⚠ until you add them in Setup.</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="ttClear">Clear (free period)</button>
+        <button class="btn" id="ttApply">Apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  const commit = (values)=>{
+    const stored = ttCellValues(values);
+    input.value = stored.join('|');
+    const btn = input.parentElement && input.parentElement.querySelector('.ttCellBtn');
+    if(btn) btn.innerHTML = ttChipsHtml(stored);
+    close();
+  };
+  wrap.querySelector('#ttClear').onclick = ()=> commit([]);
+  wrap.querySelector('#ttApply').onclick = ()=>{
+    const picked = Array.from(wrap.querySelectorAll('.ttPick')).filter(c=>c.checked).map(c=>c.value);
+    const custom = (wrap.querySelector('#ttCustom').value||'').split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+    commit([...picked, ...custom]);
+  };
+  setTimeout(()=> wrap.querySelector('#ttApply').focus(), 30);
+}
 function pageClassTimetable(){
   const classes = sortedClasses();
   if(!ttSelectedClass || !classes.includes(ttSelectedClass)) ttSelectedClass = classes[0] || '';
@@ -15746,27 +15885,22 @@ function pageClassTimetable(){
         ${timetablePeriods().map(period=>`
           <tr><td style="width:64px;white-space:nowrap">${esc(period)}</td>
           ${TIMETABLE_DAYS.map(day=>{
-            const val = (tt[day] && tt[day][period]) || '';
+            const vals = ttCellValues(tt[day] && tt[day][period]);
             const defaultTime = periodTime(day, period) || {};
             const overrideTime = classHasTimeOverride(cls, day, period) ? getClassPeriodTime(cls, day, period) : null;
             const hasAnyTime = overrideTime || (defaultTime && (defaultTime.start || defaultTime.end));
             const timeLbl = overrideTime ? `<strong style="color:var(--text-accent)">${fmtTime(overrideTime.start)}–${fmtTime(overrideTime.end)}</strong>` : periodTimeLabel(day, period);
             const buttonLabel = overrideTime ? '✓ Edit' : (hasAnyTime ? 'Edit' : 'Set time');
-            return `<td style="${overrideTime?'background:var(--bg-accent);border-radius:6px;':''}">${timeLbl? `<div style="font-size:10px;${overrideTime?'color:var(--text-accent)':' color:var(--muted-label)'}margin-bottom:2px">${timeLbl}</div>`:''}<select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'} style="width:100%;margin-bottom:4px">
-              <option value="" ${val===''?'selected':''}>— Free —</option>
-              <option value="LIBRARY" ${val==='LIBRARY'?'selected':''}>📚 LIBRARY</option>
-              ${(val && val!=='LIBRARY' && !(DB.scheduleActivities || DEFAULT_ACTIVITIES).includes(val) && !subjectCodes.includes(val))
-                ? `<option value="${esc(val)}" selected>⚠ ${esc(val)} (not in setup)</option>` : ''}
-              ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map(act=>`<option value="${esc(act)}" ${val===act?'selected':''}>${esc(act)}</option>`).join('')}
-              ${subjectCodes.map(code=>`<option value="${esc(code)}" ${val===code?'selected':''}>${esc(code)}${subjectNames[code]?' – '+esc(subjectNames[code]):''}</option>`).join('')}
-            </select>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${buttonLabel}</button>`:''}
+            const dayAttr = esc(day), periodAttr = esc(period);
+            return `<td style="${overrideTime?'background:var(--bg-accent);border-radius:6px;':''}">${timeLbl? `<div style="font-size:10px;${overrideTime?'color:var(--text-accent)':' color:var(--muted-label)'}margin-bottom:2px">${timeLbl}</div>`:''}<input type="hidden" class="ttCell" data-day="${dayAttr}" data-period="${periodAttr}" value="${esc(vals.join('|'))}">
+            <button type="button" class="ttCellBtn btn secondary small" ${isAdmin()?`onclick="editTimetableCellModal(this.parentElement.querySelector('.ttCell').dataset.day, this.parentElement.querySelector('.ttCell').dataset.period)"`:'disabled'} style="width:100%;margin-bottom:4px;text-align:left;min-height:30px;white-space:normal;padding:4px 6px">${ttChipsHtml(vals)}</button>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${buttonLabel}</button>`:''}
             </td>`;
           }).join('')}
           </tr>`).join('')}
       </tbody>
     </table></div>
     ${isAdmin()? `<button class="btn secondary" style="margin-top:10px" onclick="saveClassTimetable()">Save timetable for ${esc(cls)}</button>`:''}
-    <p class="field-hint" style="margin-top:8px">Mark "📚 LIBRARY" on the period(s) a class visits the library. Otherwise leave periods on "— Free —" — auto-build uses free periods for any class with no Library period set.</p>
+    <p class="field-hint" style="margin-top:8px">Click a cell to pick what runs in that period. A period can hold more than one subject — for senior classes that split by subject combination, tick every subject running at that time, and auto-build will count a student as free only if their own combination includes none of them. Mark "📚 LIBRARY" on the period(s) a class visits the library; leave a period empty for "— Free —".</p>
     `}
   </div>`;
 }
@@ -15776,13 +15910,7 @@ function pageClassTimetable(){
 function classTimetableExportSections(){
   const classes = sortedClasses();
   const subjectNames = DB.setup.subjectNames || {};
-  const cellLabel = (cls, day, period)=>{
-    const tt = classTimetableFor(cls);
-    const val = (tt[day] && tt[day][period]) || '';
-    if(!val) return '—';
-    if(val==='LIBRARY') return '📚 LIBRARY';
-    return subjectNames[val] ? `${val} – ${subjectNames[val]}` : val;
-  };
+  const cellLabel = (cls, day, period)=> ttCellText(ttCellAt(cls, day, period), {withNames:true});
   return classes.map(cls=>({
     heading: cls,
     columns: [
@@ -15826,8 +15954,9 @@ function saveClassTimetable(){
   if(!DB.classTimetable) DB.classTimetable = {};
   const dayMap = {};
   $$('.ttCell').forEach(sel=>{
-    const day = sel.dataset.day, period = sel.dataset.period, val = sel.value;
-    if(val){ (dayMap[day] = dayMap[day] || {})[period] = val; }
+    const day = sel.dataset.day, period = sel.dataset.period;
+    const stored = ttCellStore(String(sel.value||'').split('|'));
+    if(stored){ (dayMap[day] = dayMap[day] || {})[period] = stored; }
   });
   DB.classTimetable[cls] = dayMap;
   // CRITICAL: await saveDB before render so data is persisted first
@@ -15922,17 +16051,24 @@ function autoBuildLibrarySchedule(){
     const students = classStudents(cls);
     TIMETABLE_DAYS.forEach(day=>{
       timetablePeriods().forEach(period=>{
-        const val = (tt[day] && tt[day][period]) || '';
-        if(val==='LIBRARY') librarySlots.push([day,period]);
-        else if(val==='') freeSlots.push([day,period]);
-        else if(val!=='BREAK' && students.length){
-          // A subject is scheduled for the class — but students who don't offer it (per their
-          // own individual subject combination, not just the class default) are personally free.
-          const namesFree = students.filter(u=>!studentSubjects(u).includes(val)).map(u=>u.name);
-          if(namesFree.length){
-            const key = day+'|'+period;
-            if(!individualFree[key]) individualFree[key] = {};
-            individualFree[key][cls] = {subject:val, students:namesFree};
+        const vals = ttCellValues(tt[day] && tt[day][period]);
+        if(vals.includes('LIBRARY')) librarySlots.push([day,period]);
+        else if(!vals.length) freeSlots.push([day,period]);
+        else {
+          // A period may run several subjects at once — senior classes split and each student
+          // sits whichever one their own combination includes. A student is personally free
+          // only when their combination includes NONE of the subjects running in that period.
+          const subjects = vals.filter(v=> v!=='BREAK');
+          if(subjects.length && students.length){
+            const namesFree = students.filter(u=>{
+              const mine = studentSubjects(u);
+              return !subjects.some(sub=> mine.includes(sub));
+            }).map(u=>u.name);
+            if(namesFree.length){
+              const key = day+'|'+period;
+              if(!individualFree[key]) individualFree[key] = {};
+              individualFree[key][cls] = {subject: subjects.join(' / '), students:namesFree};
+            }
           }
         }
       });
