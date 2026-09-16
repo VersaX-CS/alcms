@@ -14920,58 +14920,90 @@ function periodHeaderHtml(day, period){
   const t = periodTimeLabel(day, period);
   return `${esc(period)}${t? `<div style="font-weight:400;font-size:11px;color:var(--muted-label)">${esc(t)}</div>`:''}`;
 }
-let ptSelectedDay = 'MONDAY';
-let ptApplyDays = {}; // which OTHER days are checked to receive a copy of ptSelectedDay's times
-async function savePeriodTimes(){
+/* Modal-based period time editor — saves each period's times immediately without page re-render.
+   Much simpler than the old "capture pending" approach. */
+async function editPeriodTimeModal(){
   if(!isAdmin()) return requireAdmin('edit period times');
-  capturePendingTimetableEdits();
-  await saveDB('Period times updated for '+ptSelectedDay); render(); toast('Period times saved for '+ptSelectedDay);
-}
-/* Copies whatever is currently set (including any not-yet-saved typing, via
-   capturePendingPeriodTimes) for ptSelectedDay onto every other day checked in ptApplyDays.
-   Each target day's own times are fully replaced by the source day's times. */
-async function applyPeriodTimesToDays(){
-  if(!isAdmin()) return requireAdmin('edit period times');
-  capturePendingTimetableEdits();
-  const sourceDay = ptSelectedDay;
-  const targets = TIMETABLE_DAYS.filter(d=> d!==sourceDay && ptApplyDays[d]);
-  if(!targets.length){ toast('Pick at least one day to copy to'); return; }
+  
+  const days = TIMETABLE_DAYS;
+  const periods = timetablePeriods();
+  
   if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-  const sourceMap = DB.setup.periodTimes[sourceDay] || {};
-  targets.forEach(d=>{ DB.setup.periodTimes[d] = JSON.parse(JSON.stringify(sourceMap)); });
-  ptApplyDays = {};
-  await saveDB('Period times copied from '+sourceDay+' to '+targets.join(', '));
-  render();
-  toast(sourceDay.slice(0,1)+sourceDay.slice(1).toLowerCase()+"'s times applied to "+targets.map(d=>d.slice(0,1)+d.slice(1).toLowerCase()).join(', '));
-}
-/* Grabs whatever is currently sitting in the Start/End time boxes for the selected day —
-   including values the user typed but hasn't clicked "Save times" for yet — and folds them
-   into DB.setup.periodTimes. Called before any action that re-renders the page (adding or
-   removing a period), so those in-progress edits aren't silently discarded. No-op if the
-   period times panel isn't open/rendered. */
-function capturePendingPeriodTimes(){
-  if(typeof ptSelectedDay==='undefined' || !ptSelectedDay) return;
-  if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-  const day = ptSelectedDay;
-  const dayMap = DB.setup.periodTimes[day] || {};
-  timetablePeriods().forEach(period=>{
-    const startEl = document.getElementById('ptStart_'+esc(period));
-    const endEl = document.getElementById('ptEnd_'+esc(period));
-    if(!startEl && !endEl) return;
-    const start = startEl?.value || '';
-    const end = endEl?.value || '';
-    if(start||end) dayMap[period] = {start, end}; else delete dayMap[period];
+  
+  // Build the form HTML for all days and periods
+  const tableHtml = periods.map(period=>{
+    const row = days.map(day=>{
+      const pt = periodTime(day, period) || {};
+      const start = pt.start || '';
+      const end = pt.end || '';
+      const dayKey = `pt_${day}_${period}`;
+      return `<td style="padding:6px">
+        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" 
+               value="${esc(start)}" placeholder="Start" style="width:70px;margin-bottom:2px">
+        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" 
+               value="${esc(end)}" placeholder="End" style="width:70px">
+      </td>`;
+    }).join('');
+    return `<tr><td style="padding:6px;font-weight:600">${esc(period)}</td>${row}</tr>`;
+  }).join('');
+  
+  const formHtml = `<div style="font-size:13px">
+    <div class="table-wrap"><table style="font-size:12px;width:100%">
+      <thead><tr><th style="padding:6px;text-align:left">Period</th>
+        ${days.map(d=>`<th style="padding:6px;text-align:center">${esc(d.slice(0,3))}</th>`).join('')}
+      </tr></thead>
+      <tbody>${tableHtml}</tbody>
+    </table></div>
+    <p class="field-hint" style="margin-top:8px;font-size:12px">Each cell shows start/end time inputs for that day/period combo. Click Save to apply all changes at once.</p>
+  </div>`;
+  
+  const onSave = async () => {
+    // Grab all edited times from the modal inputs
+    const timeInputs = document.querySelectorAll('[data-day][data-period]');
+    if(!timeInputs.length) return;
+    
+    // Collect all changes
+    const updates = {};
+    timeInputs.forEach(input=>{
+      const day = input.dataset.day;
+      const period = input.dataset.period;
+      const isStart = input.getAttribute('placeholder') === 'Start';
+      if(!updates[day]) updates[day] = {};
+      if(!updates[day][period]) updates[day][period] = {start:'', end:''};
+      if(isStart) updates[day][period].start = input.value;
+      else updates[day][period].end = input.value;
+    });
+    
+    // Apply to DB
+    if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
+    Object.keys(updates).forEach(day=>{
+      if(!DB.setup.periodTimes[day]) DB.setup.periodTimes[day] = {};
+      Object.keys(updates[day]).forEach(period=>{
+        const {start, end} = updates[day][period];
+        if(start || end) DB.setup.periodTimes[day][period] = {start, end};
+        else delete DB.setup.periodTimes[day][period];
+      });
+    });
+    
+    await saveDB('Period times updated');
+    hideModal();
+    render();
+    toast('Period times saved');
+  };
+  
+  openModal({
+    title: '⏰ Set period times for all days',
+    html: formHtml,
+    actions: [
+      {label:'Save all times', primary:true, onClick:onSave},
+      {label:'Cancel'}
+    ]
   });
-  DB.setup.periodTimes[day] = dayMap;
 }
 /* Grabs whatever is currently selected in the class subject-timetable dropdowns (the
    "Free / LIBRARY / subject" cells) for the currently-selected class — including selections
    the user made but hasn't clicked "Save timetable for {class}" for yet — and folds them into
-   DB.classTimetable. Mirrors capturePendingPeriodTimes above, and exists for the same reason:
-   so that switching the period-times day, adding/renaming/removing a period, or clicking
-   "Save times" (all of which re-render this page) don't silently wipe out subject entries the
-   admin already picked in the grid but hadn't separately saved. No-op if the subject timetable
-   grid isn't currently rendered (e.g. no classes set up yet). */
+   DB.classTimetable. No-op if the subject timetable grid isn't currently rendered. */
 function capturePendingClassTimetable(){
   const cls = (typeof ttSelectedClass!=='undefined') ? ttSelectedClass : null;
   if(!cls) return;
@@ -14985,13 +15017,8 @@ function capturePendingClassTimetable(){
   });
   DB.classTimetable[cls] = dayMap;
 }
-/* Captures every kind of in-progress, not-yet-saved edit on the Class timetable page (both the
-   period Start/End time boxes and the per-class subject dropdowns) in one call. Use this instead
-   of calling capturePendingPeriodTimes/capturePendingClassTimetable individually before any
-   action on this page that triggers a re-render, so neither kind of unsaved entry ever gets
-   silently cleared by the other's save button. */
+/* Only capture class timetable edits — period times are now saved immediately via modal. */
 function capturePendingTimetableEdits(){
-  capturePendingPeriodTimes();
   capturePendingClassTimetable();
 }
 function addTimetablePeriod(){
@@ -15065,7 +15092,6 @@ function removeTimetablePeriod(period){
 }
 let ttSelectedClass = null;
 let ttManageActivitiesOpen = false;
-let ttPeriodTimesOpen = false;
 function classTimetableFor(cls){ return (DB.classTimetable && DB.classTimetable[cls]) || {}; }
 function pageClassTimetable(){
   const classes = sortedClasses();
@@ -15107,44 +15133,17 @@ function pageClassTimetable(){
         ${isAdmin()?`<button class="btn secondary" onclick="addScheduleActivity()" style="margin-top:8px">+ Add activity</button>`:''}
       </div>
     </details>
-    <details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
-      <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times ${isAdmin()?'(edit)':''}</summary>
-      <div class="field" style="max-width:220px;margin-top:8px"><label>Day</label>
-        <select onchange="capturePendingTimetableEdits();ptSelectedDay=this.value;ptApplyDays={};render();">
-          ${TIMETABLE_DAYS.map(d=>`<option value="${esc(d)}" ${d===ptSelectedDay?'selected':''}>${esc(d)}</option>`).join('')}
-        </select>
+    ${isAdmin() ? `<div style="margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div><strong style="font-size:13px">🕐 Period times</strong><p class="field-hint" style="margin:4px 0 0">Set start/end times for each period on each day</p></div>
+        <button class="btn secondary" onclick="editPeriodTimeModal()">Edit times</button>
       </div>
-      <div class="table-wrap" style="margin-top:8px"><table class="datatable">
-        <thead><tr><th>Start</th><th>End</th><th>Period</th>${isAdmin()?'<th></th>':''}</tr></thead>
-        <tbody>${timetablePeriods().map(period=>{
-          const pt = periodTime(ptSelectedDay, period) || {};
-          return `<tr>
-            <td><input type="time" id="ptStart_${esc(period)}" value="${esc(pt.start||'')}" ${isAdmin()?'':'disabled'}></td>
-            <td><input type="time" id="ptEnd_${esc(period)}" value="${esc(pt.end||'')}" ${isAdmin()?'':'disabled'}></td>
-            <td>${esc(period)}</td>
-            ${isAdmin()? `<td style="white-space:nowrap"><button class="btn secondary small" onclick="renameTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Edit</button> <button class="btn danger small" onclick="removeTimetablePeriod('${esc(period).replace(/'/g,"\\'")}')">Remove</button></td>`:''}
-          </tr>`;
-        }).join('')}</tbody>
-      </table></div>
-      ${isAdmin()? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" onclick="savePeriodTimes()">Save times for ${esc(ptSelectedDay)}</button><button class="btn" onclick="addTimetablePeriod()">+ Add period</button></div>`:''}
-      ${isAdmin() && TIMETABLE_DAYS.length>1 ? `
-      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color, rgba(0,0,0,0.08))">
-        <label style="display:block;margin-bottom:6px">Apply ${esc(ptSelectedDay)}'s times to other days</label>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">
-          ${TIMETABLE_DAYS.filter(d=>d!==ptSelectedDay).map(d=>`
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:400;cursor:pointer">
-              <input type="checkbox" ${ptApplyDays[d]?'checked':''} onchange="ptApplyDays['${d}']=this.checked">
-              ${esc(d.slice(0,3))}
-            </label>
-          `).join('')}
-        </div>
-        <button class="btn secondary small" onclick="applyPeriodTimesToDays()">📋 Apply to selected days</button>
-        <p class="field-hint" style="margin-top:6px">Replaces the picked days' times entirely with ${esc(ptSelectedDay)}'s — including any times you've typed above but haven't saved yet.</p>
-      </div>`:''}
-      <p class="field-hint" style="margin-top:8px">Set separately per day — periods don't run at the same time every day.</p>
-    </details>
+    </div>` : ''}
+    ${isAdmin() ? `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn" onclick="addTimetablePeriod()">+ Add period</button>
+    </div>` : ''}
     <div class="field" style="max-width:280px"><label>Class</label>
-      <select id="ttClassSelect" onchange="capturePendingTimetableEdits();ttSelectedClass=this.value;render();">
+      <select id="ttClassSelect" onchange="capturePendingClassTimetable();ttSelectedClass=this.value;render();">
         ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
     </div>
@@ -15229,7 +15228,6 @@ function clearAllClassTimetables(){
 function saveClassTimetable(){
   if(!isAdmin()) return requireAdmin('edit the class timetable');
   const cls = ttSelectedClass; if(!cls) return;
-  capturePendingPeriodTimes(); // don't let unsaved period-time typing get wiped by this button's render()
   if(!DB.classTimetable) DB.classTimetable = {};
   const dayMap = {};
   $$('.ttCell').forEach(sel=>{
