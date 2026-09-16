@@ -3138,6 +3138,23 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
 .card.panel.section-collapsed .panel-head{ margin-bottom:0;}
 .card.panel.section-collapsed h3.section-toggle .section-caret{ transform:rotate(-90deg);}
 .card.panel.section-collapsed > *:not(.panel-head){ display:none !important;}
+/* Section reordering — an auto-injected toolbar (see enhanceCollapsibleSections) sits above
+   any page with two or more collapsible sections, offering Collapse/Expand all alongside a
+   "Reorder sections" toggle. The drag handle and ▲▼ buttons stay hidden until that toggle is
+   on, so the ordinary click-to-collapse experience is undisturbed for everyone who never
+   touches reordering. Dragging is confined to true DOM siblings (see bindSectionDrag), which
+   is what keeps a two-column pairing (e.g. Shelf locations / Book conditions) reordering
+   within its own row instead of breaking the layout. */
+.section-toolbar{ display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
+.section-reorder-controls{ display:none; align-items:center; gap:2px; margin-left:auto; padding-left:6px;}
+.content.reorder-active .section-reorder-controls{ display:inline-flex;}
+.content.reorder-active .panel-head h3.section-toggle{ cursor:default;}
+.section-drag-handle, .section-move-btn{ border:none; background:transparent; cursor:pointer; font-size:13px; line-height:1; padding:4px 5px; border-radius:4px; color:var(--muted-label); opacity:.75;}
+.section-drag-handle:hover, .section-move-btn:hover{ background:var(--surface-2); opacity:1;}
+.section-drag-handle{ cursor:grab; font-size:15px;}
+.content.reorder-active .card.panel{ transition:box-shadow .12s ease;}
+.card.panel.section-dragging{ opacity:.45;}
+.card.panel.section-drag-over{ box-shadow:0 0 0 2px var(--border-accent, #B8863E) inset;}
 /* Personalization page: one toolbar holding the global Save + Reset buttons, pinned to the
    bottom of the actual browser viewport (position:fixed, not just sticky-within-.content) so it
    stays visible on screen at all times no matter how far down the long list of
@@ -17881,13 +17898,6 @@ function pageSetup(){
   const scheme = DB.setup.termScheme || 'standard';
   const termIdx = DB.setup.termIndex ?? 0;
   return `
-  <div class="panel-head" style="margin-bottom:12px">
-    <div><h3 style="margin:0">Setup</h3><div class="hint">Everything the rest of the app reads from — click any section heading to fold it away</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn secondary small" onclick="toggleAllSections(true)">⊟ Collapse all</button>
-      <button class="btn secondary small" onclick="toggleAllSections(false)">⊞ Expand all</button>
-    </div>
-  </div>
   <div class="card panel">
     <div class="panel-head"><h3>Institution</h3></div>
     <div class="field"><label>Institution / school name</label><input id="setInstitution" value="${esc(DB.setup.institutionName||'')}" placeholder="e.g. Access International School"></div>
@@ -18976,7 +18986,7 @@ function pageAbout(){
       <li><strong>Member &amp; title archive.</strong> Leavers and retired stock move out of the register and the catalogue into an archive of their own, so they stop padding every list, search, filter, picker and count — and can be restored, or deleted for good, from Members → Archive and Catalogue → Archive. Every archived record is stamped with the academic session it left in.</li>
       <li><strong>End-of-session in one step.</strong> Tick the leaving cohort in Members and use "Mark inactive (selected)": pick the reason (graduated, transferred, expelled, resigned, retired, deceased, or your own), confirm the session, and they are marked inactive and archived together. Members still holding books are held back until the loan is closed.</li>
       <li><strong>Forgiving search.</strong> Searches now cover every field on a record and fall back to close spellings when nothing matches exactly, so a mistyped or half-remembered name still finds it — in tables, the topbar search, the scan box and the member/book pickers alike.</li>
-      <li><strong>Collapsible sections.</strong> Click any section heading to fold it away; Setup adds Collapse all / Expand all, and what you fold stays folded next time. Class Timetable's Manage activities, Period times and Periods all fold too.</li>
+      <li><strong>Collapsible, reorderable sections.</strong> Click any section heading to fold it away. Any page with two or more sections gets a small toolbar above them — Collapse all, Expand all, \"↕ Reorder sections\" (drag a section's ⠿ handle or tap ▲▼ to move it) and \"↺ Reset order\". Both the collapsed state and the order you settle on are remembered per page. Class Timetable's Manage activities, Period times and Periods all fold too.</li>
       <li><strong>Class timetable work is faster.</strong> A cell edit can be applied to every other slot holding the same entry — the same class's other days and periods included — and Setup's class subject distribution can be auto-ticked straight from the timetables.</li>
       <li><strong>Truer free periods.</strong> Auto-build now counts a student as free only when none of the real subjects running in that period are in their combination; assembly, sport, break and unrecognised imported labels no longer count as free time.</li>
       <li><strong>Class reach</strong> replaces the old members-by-class doughnut in Analytics: how many members of each class have ever borrowed against how many never have — the classes to target, not just their head count.</li>
@@ -19063,7 +19073,7 @@ const GUIDE_TIPS = [
   'Keyboard shortcuts work from anywhere in the app, not just one page: Ctrl/Cmd+S saves instantly (same as clicking the save icon), and Ctrl/Cmd+Z undoes your most recent change.',
   'A handheld or USB barcode/QR scanner works from any page, not just Circulation — scan a book or member code and it jumps straight to that title\'s or member\'s page.',
   'Searches are forgiving: every field on a record is searched, not just the obvious ones, and a term that matches nothing exactly falls back to close spellings — "achebee", "hibicus" or a half-remembered publisher still find the record. The table footer says when you are looking at near matches rather than exact ones.',
-  'Click any section heading (the ones with a ▾) to fold that section away. Setup also has Collapse all / Expand all, and whatever you fold stays folded next time you open the page.',
+  'Click any section heading (the ones with a ▾) to fold that section away. Any page with two or more sections also gets a small toolbar above them — Collapse all, Expand all, and \'↕ Reorder sections\'. Turn reordering on to drag a section\'s ⠿ handle, or tap its ▲▼, to put it where you want; \'↺ Reset order\' puts a page back to its original layout. Order and collapsed state are both remembered per page.',
   'End of session: tick the leaving cohort in Members, then "🚪 Mark inactive (selected)", choose the reason and confirm the session. They are marked inactive and archived in one step.',
   'Archived members and titles are kept out of every list, search, filter and count in the app — open Members → Archive or Catalogue → Archive to restore one, or to delete it for good.',
   'Setup → Class subject distribution has "🧭 Auto-tick from timetable", which fills each class\'s subject list from its own timetable instead of you ticking dozens of boxes by hand.',
@@ -19503,7 +19513,7 @@ const GUIDE_SECTIONS = [
   {h:'Register', ic:'checklist', b:'Desk sign-ins and class period visits together. Use "Batch check-in" to stage several students (by ID or a whole class) before submitting them all at once with a shared note; "Batch check-out" lists everyone currently signed in so you can check them out together. Edit any entry to add discipline notes and consequences.'},
   {h:'Schedule', ic:'calendar', b:'The weekly library timetable and each student\'s subject combination. Admins can add, edit or delete periods, with a period dropdown, a native time picker, and Library, Free, or Other note types. Class Timetable holds each class\'s week: Manage activities, Period times and Periods each fold away, cell edits can be applied to every other slot holding the same entry at once, and \"Auto-build library schedule\" turns the timetables into the visit schedule — counting a student as free only when none of the real subjects running in that period are in their own combination, so assembly, sport and break are never mistaken for free time.'},
   {h:'Feedback', ic:'chat', b:'Suggestions, complaints and requests from members and staff, with a status workflow (New, In review, Resolved).'},
-  {h:'Setup', ic:'gear', b:'Library configuration, with every section collapsible (and Collapse all / Expand all at the top): classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list — which \"Auto-tick from timetable\" can fill in from the class timetables — fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
+  {h:'Setup', ic:'gear', b:'Library configuration, with every section collapsible and reorderable (Collapse all / Expand all / Reorder sections / Reset order at the top — drag a section\'s ⠿ handle, or use its ▲▼, to put it where you want): classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list — which \"Auto-tick from timetable\" can fill in from the class timetables — fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
   {h:'Personalization', ic:'palette', b:'Everything else: theme and colour palette, clock style and date format (the analogue clock now shows the date on its face), typography, icons, lockscreen appearance and backgrounds — including separate Section and Modal background colours, and a notification bell you can show or hide on the sign-in screen.'},
   {h:'Lockscreen', ic:'lock', b:'Before signing in you can still check your own loans — there\'s a search bar directly above the sign-in box (with live suggestions as you type a name or ID), the notification bell previews what\'s waiting for you, and Create Account opens as a wider card centred over the whole screen so every field fits without excess scrolling.'},
   {h:'My Account', ic:'fingerprint', b:'Your profile photo, name, email, phone, password and security question, and — for admins — your own access level. Also home to Fingerprint &amp; Face ID sign-in: register this device once (needs https:// or localhost, plus a fingerprint/face sensor) to add a one-touch "Sign in with fingerprint / Face ID" button to the sign-in screen. Your username and password always keep working alongside it, and are what you use to register or remove a device.'},
@@ -20803,30 +20813,207 @@ function setSectionCollapsed(panel, key, collapsed){
   if(collapsed) SECTION_COLLAPSE[key] = 1; else delete SECTION_COLLAPSE[key];
   saveSectionCollapse();
 }
+/* ---- section reordering ----
+   SECTION_ORDER remembers, per page and per sibling group, the sequence the person dragged
+   (or arrow-nudged) sections into. A "group" is one parent element's set of reorderable
+   panels — most pages have exactly one (the panels stacked straight down #content), but a
+   two-column pairing (e.g. Setup's Shelf locations / Book conditions) is its own small group,
+   so reordering there swaps the pair rather than pulling a panel out into the single-column
+   flow above or below it and breaking the layout. Groups are keyed by their position in
+   document order (route + a running index over distinct parents) rather than by content, so
+   the key stays stable across renders of the same page. */
+let SECTION_ORDER = (()=>{ try{ return JSON.parse(localStorage.getItem('alib_section_order')||'{}') || {}; }catch(e){ return {}; } })();
+function saveSectionOrder(){ try{ localStorage.setItem('alib_section_order', JSON.stringify(SECTION_ORDER)); }catch(e){} }
+// Reorder mode is a per-page, in-memory toggle (not persisted) — off by default so an ordinary
+// click on a heading always just collapses it; turning "Reorder sections" on is what reveals
+// the drag handle and ▲▼ buttons and switches heading clicks off while it's active.
+let sectionReorderMode = false;
+let __sectionDragPanel = null;
+function sectionGroupSiblings(parent){
+  return [...parent.children].filter(c=> c.classList && c.classList.contains('card') && c.dataset.collapsible==='1');
+}
+function persistSectionGroupOrder(parent){
+  const key = parent.dataset.sectionGroupKey;
+  if(!key) return;
+  const order = sectionGroupSiblings(parent).map(p=> p.dataset.sectionKey);
+  SECTION_ORDER[key] = order;
+  saveSectionOrder();
+}
+/* Trades the DOM positions of two elements outright — using placeholder comment nodes so it
+   works even when a and b aren't adjacent — rather than inserting one next to the other.
+   Some pages lay two sections side by side (a .grid.two-col wrapper isn't itself a
+   reorderable section, so it never moves), and an insert-based reorder would drag a panel
+   across that wrapper and leave it clustered wherever the last move happened to push it.
+   Swapping exact positions instead means every other section — including any two-column
+   pairing — stays exactly where the page put it; only the two chosen sections change places. */
+function swapPanelsInPlace(a, b){
+  if(a===b) return;
+  const parent = a.parentElement;
+  const phA = document.createComment('section-slot'), phB = document.createComment('section-slot');
+  parent.replaceChild(phA, a);
+  parent.replaceChild(phB, b);
+  parent.replaceChild(a, phB);
+  parent.replaceChild(b, phA);
+}
+/* Fills each section's original template slot with the section the stored order says belongs
+   there — a slot-fill, not a sequence of appends, for the same reason swapPanelsInPlace
+   avoids inserts: appending in stored order would relocate every reordered section to be
+   contiguous at the end of the parent, past any two-column pairing sitting between them in
+   the template. Slots are measured fresh from the parent's current (just-rendered, so
+   template-order) children each time this runs, so a page's own layout skeleton — which
+   sections sit side by side and which are full-width — never shifts; only which section
+   occupies which slot does. */
+function applyStoredSectionOrder(parent){
+  const key = parent.dataset.sectionGroupKey;
+  const stored = key && SECTION_ORDER[key];
+  const slots = sectionGroupSiblings(parent);
+  if(!stored || !stored.length || slots.length<2) return;
+  const byKey = new Map(slots.map(p=> [p.dataset.sectionKey, p]));
+  const wanted = stored.filter(k=> byKey.has(k));
+  slots.forEach(p=>{ if(!wanted.includes(p.dataset.sectionKey)) wanted.push(p.dataset.sectionKey); });
+  if(wanted.length !== slots.length) return; // shouldn't happen, but never risk a partial reshuffle
+  const placeholders = slots.map(()=> document.createComment('section-slot'));
+  slots.forEach((p,i)=> parent.replaceChild(placeholders[i], p));
+  wanted.forEach((k,i)=> parent.replaceChild(byKey.get(k), placeholders[i]));
+}
+function moveSectionPanel(panel, dir){
+  const parent = panel.parentElement;
+  const siblings = sectionGroupSiblings(parent);
+  const idx = siblings.indexOf(panel);
+  const target = idx + dir;
+  if(idx===-1 || target<0 || target>=siblings.length) return;
+  swapPanelsInPlace(panel, siblings[target]);
+  persistSectionGroupOrder(parent);
+}
+function bindSectionDrag(panel, parent){
+  panel.addEventListener('dragstart', e=>{
+    if(!sectionReorderMode){ e.preventDefault(); return; }
+    __sectionDragPanel = panel;
+    panel.classList.add('section-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try{ e.dataTransfer.setData('text/plain', panel.dataset.sectionKey||''); }catch(err){}
+  });
+  panel.addEventListener('dragend', ()=>{
+    panel.classList.remove('section-dragging');
+    panel.draggable = false;
+    __sectionDragPanel = null;
+    document.querySelectorAll('.section-drag-over').forEach(el=> el.classList.remove('section-drag-over'));
+  });
+  // Dropping swaps the dragged section with whichever one it's dropped on, rather than
+  // inserting it — see swapPanelsInPlace for why. Only sections that share the same group
+  // (true DOM siblings under the same parent) can be swapped with each other.
+  panel.addEventListener('dragover', e=>{
+    if(!sectionReorderMode || !__sectionDragPanel || __sectionDragPanel===panel) return;
+    if(__sectionDragPanel.parentElement !== parent) return;
+    e.preventDefault();
+  });
+  panel.addEventListener('dragenter', e=>{
+    if(!sectionReorderMode || !__sectionDragPanel || __sectionDragPanel===panel || __sectionDragPanel.parentElement!==parent) return;
+    panel.classList.add('section-drag-over');
+  });
+  panel.addEventListener('dragleave', ()=> panel.classList.remove('section-drag-over'));
+  panel.addEventListener('drop', e=>{
+    if(!sectionReorderMode) return;
+    e.preventDefault();
+    panel.classList.remove('section-drag-over');
+    if(!__sectionDragPanel || __sectionDragPanel===panel || __sectionDragPanel.parentElement!==parent) return;
+    swapPanelsInPlace(__sectionDragPanel, panel);
+    persistSectionGroupOrder(parent);
+  });
+}
+function setSectionReorderMode(on){
+  sectionReorderMode = on;
+  const host = document.getElementById('content');
+  if(host) host.classList.toggle('reorder-active', on);
+  const btn = document.getElementById('sectionReorderToggle');
+  if(btn) btn.textContent = on ? '✓ Done reordering' : '↕ Reorder sections';
+}
+function resetSectionOrderForPage(){
+  Object.keys(SECTION_ORDER).forEach(k=>{ if(k.startsWith(route+'|grp')) delete SECTION_ORDER[k]; });
+  saveSectionOrder();
+  render();
+  toast('Section order reset for this page');
+}
+/* Applied after each render rather than baked into every page's markup: any panel that has a
+   .panel-head with an <h3> becomes collapsible and reorderable, so sections added later get
+   the behaviour for free and no page template has to be rewritten. Panels owned by
+   GenericModule (inside a #mod_* container) are skipped — they re-render their own innerHTML
+   on every search keystroke and filter change, which would strip all of this straight back off.
+   Collapse state is keyed by page + heading; order is keyed by page + sibling group (see
+   SECTION_ORDER above) — both kept in localStorage, so neither touches the library's own
+   data file and both survive navigation and reloads. */
 function enhanceCollapsibleSections(){
   const host = document.getElementById('content');
   if(!host) return;
-  host.querySelectorAll('.card.panel').forEach(panel=>{
-    if(panel.dataset.collapsible) return;
-    if(panel.closest('[id^="mod_"]')) return;
+  host.classList.toggle('reorder-active', sectionReorderMode);
+  const panels = [...host.querySelectorAll('.card.panel')].filter(panel=>{
+    if(panel.closest('[id^="mod_"]')) return false;
     const head = panel.querySelector('.panel-head');
-    if(!head || head.parentElement!==panel) return;
+    if(!head || head.parentElement!==panel) return false;
     const h3 = head.querySelector('h3');
-    if(!h3 || h3.classList.contains('section-toggle')) return;
-    // A panel whose only content is its own head has nothing to fold away.
-    if(![...panel.children].some(el=> el!==head)) return;
+    if(!h3) return false;
+    // A panel whose only content is its own head has nothing to fold away or reorder.
+    return [...panel.children].some(el=> el!==head);
+  });
+  if(!panels.length) return;
+
+  panels.forEach(panel=>{
+    if(panel.dataset.collapsible) return;
+    const head = panel.querySelector('.panel-head');
+    const h3 = head.querySelector('h3');
     panel.dataset.collapsible = '1';
-    const key = route + '|' + h3.textContent.trim().slice(0,60);
+    panel.dataset.sectionKey = route + '|' + h3.textContent.trim().slice(0,60);
+    const key = panel.dataset.sectionKey;
     h3.classList.add('section-toggle');
     h3.setAttribute('role','button');
     h3.setAttribute('tabindex','0');
     h3.title = 'Click to collapse or expand this section';
     h3.insertAdjacentHTML('afterbegin', '<span class="section-caret" aria-hidden="true">▼</span> ');
-    const toggle = ()=> setSectionCollapsed(panel, key, !panel.classList.contains('section-collapsed'));
+    const toggle = ()=>{ if(sectionReorderMode) return; setSectionCollapsed(panel, key, !panel.classList.contains('section-collapsed')); };
     h3.addEventListener('click', toggle);
     h3.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); toggle(); } });
     setSectionCollapsed(panel, key, !!SECTION_COLLAPSE[key]);
+
+    const ctr = document.createElement('span');
+    ctr.className = 'section-reorder-controls';
+    ctr.innerHTML = `<button type="button" class="section-move-btn" data-dir="-1" title="Move up" aria-label="Move section up">▲</button><button type="button" class="section-move-btn" data-dir="1" title="Move down" aria-label="Move section down">▼</button><button type="button" class="section-drag-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</button>`;
+    head.appendChild(ctr);
+    ctr.querySelectorAll('.section-move-btn').forEach(btn=> btn.addEventListener('click', e=>{ e.stopPropagation(); moveSectionPanel(panel, +btn.dataset.dir); }));
+    const handle = ctr.querySelector('.section-drag-handle');
+    const armDrag = ()=>{ panel.draggable = true; };
+    handle.addEventListener('mousedown', armDrag);
+    handle.addEventListener('touchstart', armDrag, {passive:true});
   });
+
+  // Group by true parent element, in document order, so the same page always gets the same
+  // group keys — that's what lets a stored order survive from one visit to the next.
+  const groupIdx = new Map();
+  let counter = 0;
+  panels.forEach(panel=>{
+    const parent = panel.parentElement;
+    if(!groupIdx.has(parent)) groupIdx.set(parent, counter++);
+    if(!parent.dataset.sectionGroupKey) parent.dataset.sectionGroupKey = route + '|grp' + groupIdx.get(parent);
+  });
+  const seenParents = new Set();
+  panels.forEach(panel=>{
+    const parent = panel.parentElement;
+    bindSectionDrag(panel, parent);
+    if(!seenParents.has(parent)){ seenParents.add(parent); applyStoredSectionOrder(parent); }
+  });
+
+  // One toolbar per page, injected fresh each render (the page's own HTML is fully replaced
+  // on every navigation, so there's nothing to reuse) — Collapse/Expand all plus the reorder
+  // toggle and a reset, available wherever there are at least two sections worth arranging.
+  if(panels.length>1 && !host.querySelector('.section-toolbar')){
+    const bar = document.createElement('div');
+    bar.className = 'section-toolbar';
+    bar.innerHTML = `
+      <button type="button" class="btn secondary small" onclick="toggleAllSections(true)">⊟ Collapse all</button>
+      <button type="button" class="btn secondary small" onclick="toggleAllSections(false)">⊞ Expand all</button>
+      <button type="button" class="btn secondary small" id="sectionReorderToggle" onclick="setSectionReorderMode(!sectionReorderMode)">${sectionReorderMode?'✓ Done reordering':'↕ Reorder sections'}</button>
+      <button type="button" class="btn secondary small" onclick="resetSectionOrderForPage()">↺ Reset order</button>`;
+    host.insertBefore(bar, host.firstChild);
+  }
 }
 /* "Collapse all / expand all" for the pages that are mostly stacked sections. */
 function toggleAllSections(collapse){
@@ -20835,8 +21022,7 @@ function toggleAllSections(collapse){
   host.querySelectorAll('.card.panel[data-collapsible]').forEach(panel=>{
     const h3 = panel.querySelector('.panel-head h3.section-toggle');
     if(!h3) return;
-    const key = route + '|' + h3.textContent.trim().slice(0,60);
-    setSectionCollapsed(panel, key, collapse);
+    setSectionCollapsed(panel, panel.dataset.sectionKey, collapse);
   });
 }
 function render(){
@@ -20876,6 +21062,7 @@ function render(){
       try{ history.pushState({navDepth:navStack.length}, '', location.href); }catch(e){}
     }
     lastRenderedRoute = route;
+    sectionReorderMode = false;
   }
   renderNav(); renderBottomNav(); setHeader(); renderAccountChip();
   const el = $('#content');
