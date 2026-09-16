@@ -15950,6 +15950,30 @@ function ttChipsHtml(values){
 function ttFindCellInput(day, period){
   return Array.from(document.querySelectorAll('.ttCell')).find(el=> el.dataset.day===day && el.dataset.period===period) || null;
 }
+/* Every slot — any class, any day, any period — whose cell contains one of `values`.
+   A bad import label rarely lands in just one place: the same ⚠ MATHS is usually sitting
+   in several periods of the same class as well as in other classes, and on different days.
+   `skip` is the cell being edited right now, which is handled separately by the editor.
+   Returns [{cls, day, period, matched:[...]}], current class first so the summary reads
+   naturally ("3 more slots in this class, 5 in other classes"). */
+function ttFlaggedOccurrences(values, skip){
+  const vals = (values||[]).filter(Boolean);
+  if(!vals.length) return [];
+  const out = [];
+  const classes = sortedClasses();
+  const order = skip && skip.cls ? [skip.cls, ...classes.filter(c=> c!==skip.cls)] : classes;
+  order.forEach(c=>{
+    const tt = classTimetableFor(c);
+    Object.keys(tt).forEach(d=>{
+      Object.keys(tt[d]||{}).forEach(p=>{
+        if(skip && c===skip.cls && d===skip.day && p===skip.period) return;
+        const matched = ttCellValues(tt[d][p]).filter(v=> vals.includes(v));
+        if(matched.length) out.push({cls:c, day:d, period:p, matched});
+      });
+    });
+  });
+  return out;
+}
 /* The cell editor. A grid of 35 multi-selects would be unusable, so each cell is a chip
    button that opens this picker: tick every subject running in that period, or tick
    📚 LIBRARY, or tick nothing for a free period. Applying updates the hidden .ttCell
@@ -15959,19 +15983,27 @@ function editTimetableCellModal(day, period){
   const cls = ttSelectedClass;
   const input = ttFindCellInput(day, period);
   if(!input) return;
+  // Fold the on-screen (possibly unsaved) picks into DB before scanning, so the sweep below
+  // sees this class's grid as it actually looks rather than as it was last saved.
+  capturePendingClassTimetable();
   const current = ttCellValues(input.value.split('|'));
   const subjectNames = DB.setup.subjectNames || {};
   const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
   const extras = current.filter(v=> !ttValueIsKnown(v)); // imported/unrecognised entries
-  // "Apply to all classes" only makes sense here when this cell holds an import error
-  // (an unrecognised value) — the same wrong label often gets typed into the same
-  // day/period across many classes when a timetable is imported. It should NOT fire for
-  // an ordinary edit, since two classes can legitimately run two different, correct
-  // subjects in the same period — overwriting every class's slot with this one's new
-  // value would clobber that.
-  const otherClasses = extras.length
-    ? sortedClasses().filter(c=> c!==cls && ttCellAt(c, day, period).some(v=> extras.includes(v)))
-    : [];
+  // "Apply everywhere" only makes sense here when this cell holds an import error (an
+  // unrecognised value). It should NOT fire for an ordinary edit, since two slots can
+  // legitimately run two different, correct subjects — overwriting them all with this
+  // cell's new value would clobber that.
+  // The sweep deliberately isn't limited to this day/period in other classes: one bad
+  // import label repeats down a class's own week too, so it covers every slot carrying
+  // the flagged value — this class's other periods and days included.
+  const occurrences = extras.length ? ttFlaggedOccurrences(extras, {cls, day, period}) : [];
+  const sameClassHits = occurrences.filter(o=> o.cls===cls).length;
+  const otherClassNames = Array.from(new Set(occurrences.filter(o=> o.cls!==cls).map(o=> o.cls)));
+  const occurrenceSummary = [
+    sameClassHits ? `${sameClassHits} other slot${sameClassHits===1?'':'s'} in ${cls}` : '',
+    otherClassNames.length ? `${occurrences.length - sameClassHits} slot(s) across ${otherClassNames.length} other class(es)` : ''
+  ].filter(Boolean).join(' and ');
   const box = (val, label, note)=>`
     <label class="subject-check" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--surface-1);font-size:13px">
       <input type="checkbox" class="ttPick" value="${esc(val)}" ${current.includes(val)?'checked':''}>
@@ -15994,8 +16026,9 @@ function editTimetableCellModal(day, period){
           <input id="ttCustom" placeholder="e.g. FURTHER MATH, TECH DRAWING" autocomplete="off">
           <p class="field-hint">Separate several with commas. These are kept as typed and flagged ⚠ until you add them in Setup.</p>
         </div>
-        ${otherClasses.length? `<label class="subject-check" style="display:flex;align-items:center;gap:8px;margin-top:4px;font-size:13px">
-          <input type="checkbox" id="ttApplyAllClasses"> Also fix this in ${otherClasses.length} other class(es) with the same flagged entr${extras.length===1?'y':'ies'} (⚠ ${esc(extras.join(', '))}) at ${esc(day.slice(0,3))} ${esc(period)}
+        ${occurrences.length? `<label class="subject-check" style="display:flex;align-items:flex-start;gap:8px;margin-top:4px;font-size:13px">
+          <input type="checkbox" id="ttApplyAllClasses" style="margin-top:2px">
+          <span>Also fix this everywhere else the same flagged entr${extras.length===1?'y':'ies'} (⚠ ${esc(extras.join(', '))}) appear${extras.length===1?'s':''} — ${esc(occurrenceSummary)}<span class="field-hint" style="display:block;margin-top:2px">Every day and period is checked, not just ${esc(day.slice(0,3))} ${esc(period)}. Other subjects already in those cells are kept.</span></span>
         </label>`:''}
       </div>
       <div class="modal-foot">
@@ -16014,30 +16047,30 @@ function editTimetableCellModal(day, period){
     const btn = input.parentElement && input.parentElement.querySelector('.ttCellBtn');
     if(btn) btn.innerHTML = ttChipsHtml(stored);
     close();
-    if(applyAll && otherClasses.length){
-      // otherClasses was already filtered, above, to classes whose cell here shares one of
-      // this cell's *flagged* (unrecognised) values — the same import error repeated across
-      // classes. Fix it there too, but only strip out the matched flagged value(s) and merge
-      // in this cell's new resolution; anything else already in that class's cell (a subject
-      // of theirs that happens to share the period, or a different flagged value) is left
-      // alone rather than being wiped out by a blanket overwrite.
-      // Touches other classes' saved data directly (they're not on screen to edit via the
-      // grid), so — like the flagged-entries "apply to all classes" option — this persists
-      // immediately rather than waiting on this class's own "Save timetable" button.
+    if(applyAll && occurrences.length){
+      // `occurrences` is every slot — this class's other periods and days as well as other
+      // classes' — whose cell carries one of this cell's *flagged* (unrecognised) values,
+      // i.e. the same import error repeated. Fix it in all of them, but only strip out the
+      // matched flagged value(s) and merge in this cell's new resolution; anything else
+      // already in that cell (a real subject sharing the period, or a different flagged
+      // value) is left alone rather than being wiped by a blanket overwrite.
+      // Touches saved data directly — most of these slots aren't on screen to edit via the
+      // grid — so this persists immediately rather than waiting on "Save timetable".
       capturePendingClassTimetable(); // fold this class's on-screen picks (incl. this one) into DB first
-      otherClasses.forEach(other=>{
-        const existing = ttCellAt(other, day, period).filter(v=> !extras.includes(v));
+      if(!DB.classTimetable) DB.classTimetable = {};
+      occurrences.forEach(o=>{
+        const existing = ttCellAt(o.cls, o.day, o.period).filter(v=> !extras.includes(v));
         const merged = ttCellValues([...existing, ...stored]);
         const storeVal = ttCellStore(merged);
-        if(!DB.classTimetable) DB.classTimetable = {};
-        if(!DB.classTimetable[other]) DB.classTimetable[other] = {};
-        if(!DB.classTimetable[other][day]) DB.classTimetable[other][day] = {};
-        if(storeVal==null) delete DB.classTimetable[other][day][period];
-        else DB.classTimetable[other][day][period] = storeVal;
+        if(!DB.classTimetable[o.cls]) DB.classTimetable[o.cls] = {};
+        if(!DB.classTimetable[o.cls][o.day]) DB.classTimetable[o.cls][o.day] = {};
+        if(storeVal==null) delete DB.classTimetable[o.cls][o.day][o.period];
+        else DB.classTimetable[o.cls][o.day][o.period] = storeVal;
       });
-      saveDB(`Timetable entry corrected for ${otherClasses.length+1} class(es) sharing it at ${day} ${period}`);
+      const classCount = new Set(occurrences.map(o=> o.cls)).add(cls).size;
+      saveDB(`Flagged timetable entry corrected in ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
       render();
-      toast(`Applied to ${otherClasses.length+1} class(es) with the same flagged entry`);
+      toast(`Fixed ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
     } else {
       // Single-class edit stays "pending" like before (folded into DB but not yet saved to
       // storage) — just refresh the unknown-entries banner in place so it reflects this edit
