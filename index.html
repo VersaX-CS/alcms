@@ -15293,7 +15293,10 @@ async function importClassTimetableFromExcel(){
 }
 
 /* ============ EXCEL IMPORT: Full Timetable (one file, one button) ============
-   One file per class does it all. Requires:
+   Imports into the class currently chosen in the "Class" dropdown above the grid — no
+   second "which class?" prompt, so what you see selected is what gets written.
+
+   Requires:
    Column A: Period (1ST, 2ND, BREAK, etc.)
    Column B: Start time (HH:MM) — optional
    Column C: End time (HH:MM) — optional (Start & End must both be present to apply)
@@ -15302,11 +15305,87 @@ async function importClassTimetableFromExcel(){
    If Start/End are present, this also updates the shared period times (used by
    ALL classes) in the same step, so you don't need a separate import for that.
 
+   Anything in the file that isn't already in Setup is still imported rather than dropped:
+   unknown periods are added to the period list so their row actually appears, and unknown
+   subjects/activities are kept verbatim and flagged with ⚠ in the grid (plus a banner
+   offering to add them to Setup in one click). Nothing silently becomes blank.
+
    Example:
    Period | Start | End   | MONDAY | TUESDAY | WEDNESDAY | THURSDAY | FRIDAY
    1ST    | 08:00 | 08:50 | MATH   | MATH    | MATH      | MATH     | MATH
    BREAK  | 11:20 | 11:30 | Free   | Free    | Free      | Free     | Free
 */
+
+/* Excel hands times back in whatever shape the person happened to type them: a plain
+   "08:00" string, "8:00 AM", "08:00:00", a real Date object, or a raw Excel serial
+   fraction (0.3333… = 08:00). Normalising all of those to "HH:MM" is what stops a
+   perfectly good file from being rejected as "invalid time". Returns null if unusable. */
+function ttNormalizeTime(raw){
+  if(raw==null) return null;
+  const p2 = n=> String(n).padStart(2,'0');
+  // Duck-typed rather than `instanceof Date`: SheetJS may hand back a Date from another
+  // realm. Seconds are rounded away because Excel stores 08:50 as 08:49:59.999 often enough.
+  if(typeof raw === 'object' && raw && typeof raw.getTime === 'function' && !isNaN(raw.getTime())){
+    const d = new Date(Math.round(raw.getTime()/60000)*60000);
+    return p2(d.getHours())+':'+p2(d.getMinutes());
+  }
+  if(typeof raw === 'number' && isFinite(raw)){
+    const frac = raw - Math.floor(raw);
+    let mins = Math.round(frac*24*60);
+    if(mins>=1440) mins -= 1440;
+    return p2(Math.floor(mins/60))+':'+p2(mins%60);
+  }
+  const s = String(raw).trim();
+  if(!s) return null;
+  const m = /^(\d{1,2})[:.](\d{2})(?::\d{2})?\s*(a\.?m\.?|p\.?m\.?)?$/i.exec(s);
+  if(!m) return null;
+  let h = +m[1]; const mm = +m[2]; const ap = (m[3]||'').toLowerCase().replace(/\./g,'');
+  if(mm>59) return null;
+  if(ap==='pm' && h<12) h += 12;
+  if(ap==='am' && h===12) h = 0;
+  if(h>23) return null;
+  return p2(h)+':'+p2(mm);
+}
+/* Loose key used to match spreadsheet text against things already in Setup — ignores case,
+   spacing, punctuation and the decorative bits ("📚 LIBRARY", "— Free —") so "1st", "1ST"
+   and "1 ST" all land on the same period, and "Maths" doesn't get treated as brand new
+   just because the file wrote it with different spacing. */
+function ttLooseKey(v){ return String(v==null?'':v).toUpperCase().replace(/[^A-Z0-9]/g,''); }
+const TT_FREE_KEYS = ['','FREE','NIL','NONE','N/A','NA','-','--','—','.'];
+/* Works out what a single spreadsheet cell means, against what Setup currently knows.
+   Returns {kind:'free'|'library'|'known'|'unknown', value}. An unrecognised value is
+   NEVER discarded — it comes back as kind:'unknown' with the text preserved, so the
+   caller can import it and flag it instead of leaving the slot blank. */
+function ttResolveCellValue(raw){
+  const text = String(raw==null?'':raw).trim();
+  const key = ttLooseKey(text);
+  if(TT_FREE_KEYS.includes(text.toUpperCase()) || key==='' || key==='FREE') return {kind:'free', value:''};
+  if(key==='LIBRARY' || key==='LIB') return {kind:'library', value:'LIBRARY'};
+  const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const act = activities.find(a=> ttLooseKey(a)===key);
+  if(act) return {kind:'known', value:act};
+  const codes = DB.setup.subjects || [];
+  const code = codes.find(c=> ttLooseKey(c)===key);
+  if(code) return {kind:'known', value:code};
+  // Also accept a subject's full name ("MATHEMATICS") and map it back to its code ("MATH")
+  const names = DB.setup.subjectNames || {};
+  const byName = Object.keys(names).find(c=> ttLooseKey(names[c])===key);
+  if(byName && codes.includes(byName)) return {kind:'known', value:byName};
+  return {kind:'unknown', value: text.toUpperCase()};
+}
+/* The header row isn't always row 1 — files often carry a school name or a "TIMETABLE FOR
+   JSS1" banner above it. Scan the first few rows for the one that actually looks like a
+   header (a Period column plus at least one day column) instead of assuming row 1. */
+function ttFindHeaderRow(rows){
+  const limit = Math.min(rows.length, 12);
+  for(let i=0;i<limit;i++){
+    const row = rows[i] || [];
+    const hasPeriod = row.some(h=> h && /period|time ?table|^p$/i.test(String(h).trim()));
+    const dayCount = row.filter(h=> h && TIMETABLE_DAYS.some(d=> ttLooseKey(h)===d || ttLooseKey(h)===d.slice(0,3))).length;
+    if(dayCount) return {idx:i, hasPeriod};
+  }
+  return {idx:-1, hasPeriod:false};
+}
 async function importFullTimetableFromExcel(){
   if(!isAdmin()) return requireAdmin('import timetable');
 
@@ -15315,89 +15394,111 @@ async function importFullTimetableFromExcel(){
     return;
   }
 
-  const classOptions = DB.setup.userClasses;
-  const selectedClass = prompt(`Import timetable for which class?\n\nAvailable:\n${classOptions.join('\n')}`, classOptions[0]);
-  if(!selectedClass || !classOptions.includes(selectedClass)){
-    toast('Invalid class selection');
-    return;
-  }
+  // The class is whatever the dropdown on this page is showing — no second prompt.
+  const classes = sortedClasses();
+  const selectedClass = (ttSelectedClass && classes.includes(ttSelectedClass)) ? ttSelectedClass : classes[0];
+  if(!selectedClass){ toast('Pick a class first'); return; }
 
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.xlsx,.xls';
+  fileInput.accept = '.xlsx,.xls,.csv';
   fileInput.onchange = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
 
     try{
+      if(typeof XLSX === 'undefined'){ toast('Spreadsheet reader not loaded — refresh and try again'); return; }
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, {type:'array'});
+      const workbook = XLSX.read(data, {type:'array', cellDates:true});
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(worksheet, {header:1});
+      if(!worksheet){ toast('That file has no readable sheet'); return; }
+      const rows = XLSX.utils.sheet_to_json(worksheet, {header:1, raw:true, defval:null, blankrows:false});
 
       if(!rows.length || rows.length < 2){
         toast('Excel file must have at least 2 rows (header + data)');
         return;
       }
 
-      const header = rows[0];
-      const periodColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('period'));
-      const startColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('start'));
-      const endColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('end'));
-      const hasTimes = startColIdx!==-1 && endColIdx!==-1;
-
-      if(periodColIdx===-1){
-        toast('Excel must have a "Period" column');
+      const found = ttFindHeaderRow(rows);
+      if(found.idx===-1){
+        toast(`Couldn't find a header row with day columns (${TIMETABLE_DAYS.join(', ')})`);
         return;
       }
+      const header = rows[found.idx] || [];
+      const norm = header.map(h=> h==null ? '' : String(h).trim());
+
+      let periodColIdx = norm.findIndex(h=> h && /period/i.test(h));
+      const startColIdx = norm.findIndex(h=> h && /start/i.test(h));
+      const endColIdx   = norm.findIndex(h=> h && /end|finish|stop/i.test(h));
+      const hasTimes = startColIdx!==-1 && endColIdx!==-1;
 
       const dayColumns = {};
       TIMETABLE_DAYS.forEach(day=>{
-        const idx = header.findIndex(h=> h && String(h).toUpperCase() === day);
+        const idx = norm.findIndex(h=>{ const k = ttLooseKey(h); return k===day || k===day.slice(0,3); });
         if(idx!==-1) dayColumns[day] = idx;
       });
-
-      if(!Object.keys(dayColumns).length){
+      const foundDays = Object.keys(dayColumns);
+      if(!foundDays.length){
         toast(`Excel must have day columns: ${TIMETABLE_DAYS.join(', ')}`);
         return;
       }
 
+      // No explicit "Period" header? Fall back to the first column that isn't a day or a
+      // time column — that's where period labels live in most hand-made timetables.
+      if(periodColIdx===-1){
+        const taken = [startColIdx, endColIdx, ...Object.values(dayColumns)];
+        for(let c=0;c<norm.length;c++){ if(!taken.includes(c)){ periodColIdx = c; break; } }
+      }
+      if(periodColIdx===-1 || periodColIdx==null){
+        toast('Excel must have a "Period" column');
+        return;
+      }
+
+      const knownPeriods = timetablePeriods();
+      const periodByKey = {};
+      knownPeriods.forEach(p=> periodByKey[ttLooseKey(p)] = p);
+
       const timetable = {};
       const periodTimes = {};
-      const errors = [];
+      const newPeriods = [];       // period labels in the file that Setup doesn't have yet
+      const unknownValues = {};    // subject/activity text not in Setup -> how many cells
+      const timeWarnings = [];
+      let cellCount = 0;
 
-      for(let i=1; i<rows.length; i++){
-        const row = rows[i];
+      for(let i=found.idx+1; i<rows.length; i++){
+        const row = rows[i] || [];
         const period = row[periodColIdx];
-        if(!period) continue; // skip empty rows
+        if(period==null || String(period).trim()==='') continue; // skip empty rows
 
-        const periodStr = String(period).trim();
+        const rawPeriod = String(period).trim();
+        const pKey = ttLooseKey(rawPeriod);
+        if(!pKey) continue;
+        let periodStr = periodByKey[pKey];
+        if(!periodStr){
+          periodStr = rawPeriod.toUpperCase();
+          periodByKey[pKey] = periodStr;
+          newPeriods.push(periodStr);
+        }
+
         let start = null, end = null;
-
         if(hasTimes){
-          const rawStart = row[startColIdx];
-          const rawEnd = row[endColIdx];
-          const hasRawTime = rawStart!=null && rawEnd!=null && String(rawStart).trim()!=='' && String(rawEnd).trim()!=='';
+          const rawStart = row[startColIdx], rawEnd = row[endColIdx];
+          const hasRawTime = (rawStart!=null && String(rawStart).trim()!=='') || (rawEnd!=null && String(rawEnd).trim()!=='');
           if(hasRawTime){
-            const sOk = String(rawStart).match(/^\d{1,2}:\d{2}$/);
-            const eOk = String(rawEnd).match(/^\d{1,2}:\d{2}$/);
-            if(!sOk) errors.push(`Row ${i+1}: Invalid start time "${rawStart}" (use HH:MM format)`);
-            if(!eOk) errors.push(`Row ${i+1}: Invalid end time "${rawEnd}" (use HH:MM format)`);
-            if(sOk && eOk){ start = String(rawStart).trim(); end = String(rawEnd).trim(); }
+            const s = ttNormalizeTime(rawStart), en = ttNormalizeTime(rawEnd);
+            if(s && en){ start = s; end = en; }
+            else timeWarnings.push(`${periodStr}: couldn't read "${rawStart==null?'':rawStart} – ${rawEnd==null?'':rawEnd}" as a time`);
           }
         }
 
-        Object.keys(dayColumns).forEach(day=>{
-          const dayColIdx = dayColumns[day];
-          let subject = row[dayColIdx];
-          if(!subject) subject = 'Free';
-          subject = String(subject).trim();
-          if(subject.toLowerCase() === 'free' || subject === '—' || subject === '') subject = 'Free';
-          if(subject.toUpperCase() === 'LIBRARY') subject = 'LIBRARY';
-
+        foundDays.forEach(day=>{
+          const resolved = ttResolveCellValue(row[dayColumns[day]]);
           if(!timetable[day]) timetable[day] = {};
-          if(subject !== 'Free') timetable[day][periodStr] = subject;
-
+          if(resolved.kind!=='free'){
+            timetable[day][periodStr] = resolved.value;
+            cellCount++;
+            if(resolved.kind==='unknown') unknownValues[resolved.value] = (unknownValues[resolved.value]||0)+1;
+          }
           if(start && end){
             if(!periodTimes[day]) periodTimes[day] = {};
             periodTimes[day][periodStr] = {start, end};
@@ -15405,47 +15506,88 @@ async function importFullTimetableFromExcel(){
         });
       }
 
-      if(errors.length){
-        toast(`${errors.length} time error(s) found — subjects were not imported:\n${errors.slice(0,3).join('\n')}${errors.length>3?'\n...':''}`, {duration:5000});
+      if(!cellCount){
+        toast('No subjects found in that file — check the day columns have entries');
         return;
       }
 
-      if(!Object.keys(timetable).length){
-        toast('No valid timetable data found in Excel');
-        return;
-      }
+      const unknownList = Object.keys(unknownValues);
+      const hasPeriodTimes = Object.keys(periodTimes).length>0;
+      const lines = [
+        `Import this timetable into "${selectedClass}"? It replaces that class's current timetable.`,
+        `${cellCount} period slot(s) across ${foundDays.length} day(s): ${foundDays.map(d=>d.slice(0,3)).join(', ')}.`,
+      ];
+      if(newPeriods.length) lines.push(`⚠ ${newPeriods.length} new period(s) will be added to the period list: ${newPeriods.join(', ')}`);
+      if(unknownList.length) lines.push(`⚠ ${unknownList.length} entr(y/ies) are not in Setup: ${unknownList.slice(0,8).join(', ')}${unknownList.length>8?'…':''}. They'll be imported and flagged with ⚠ in the grid so you can add them to Setup afterwards.`);
+      if(hasPeriodTimes) lines.push('This file also sets period start/end times, which apply to ALL classes.');
+      if(timeWarnings.length) lines.push(`⚠ ${timeWarnings.length} time cell(s) were skipped: ${timeWarnings.slice(0,3).join('; ')}${timeWarnings.length>3?'…':''}. Subjects still import.`);
 
-      const preview = Object.keys(timetable).slice(0,3).map(day=>{
-        const entries = Object.keys(timetable[day]).map(p=>`${p}: ${timetable[day][p]}`).join(', ');
-        return `${day}: ${entries}`;
-      }).join('\n');
-
-      const hasPeriodTimes = hasTimes && Object.keys(periodTimes).length;
-      const timesNote = hasPeriodTimes
-        ? `\n\nThis file also sets period start/end times, which apply to ALL classes.`
-        : '';
-
-      confirmModal(`Import timetable for "${selectedClass}"?\n\n${preview}${Object.keys(timetable).length>3?'\n...':''}${timesNote}`, async ()=>{
+      confirmModal(lines.join('\n'), async ()=>{
         if(!DB.classTimetable) DB.classTimetable = {};
+        if(!DB.setup) DB.setup = {};
+        // Unknown periods are registered so their row actually shows up in the grid —
+        // otherwise the data would be saved but invisible, which reads as a failed import.
+        if(newPeriods.length){
+          if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
+          newPeriods.forEach(p=>{ if(!DB.setup.periods.includes(p)) DB.setup.periods.push(p); });
+        }
         DB.classTimetable[selectedClass] = timetable;
         if(hasPeriodTimes){
-          if(!DB.setup) DB.setup = {};
           if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
           Object.keys(periodTimes).forEach(day=>{
             DB.setup.periodTimes[day] = Object.assign({}, DB.setup.periodTimes[day]||{}, periodTimes[day]);
           });
         }
         await saveDB(`Timetable imported for ${selectedClass}`);
+        ttSelectedClass = selectedClass;
         render();
-        toast(`✓ Imported timetable for ${selectedClass}${hasPeriodTimes?' (and period times)':''}`);
+        toast(`✓ Imported ${cellCount} slot(s) for ${selectedClass}${unknownList.length?` — ${unknownList.length} flagged`:''}`);
+        if(unknownList.length){
+          alertModal(
+            `${unknownList.length} entr(y/ies) from that file aren't in Setup yet: ${unknownList.join(', ')}.\n`+
+            `They were imported as-is and are marked ⚠ in the grid. Use "Add to subjects" in the yellow banner above the table to register them, or edit those cells by hand.`,
+            {title:'Imported with flagged entries'}
+          );
+        }
       }, {confirmLabel:'Import', danger:false});
 
     }catch(err){
       console.error('Import error:', err);
       toast('Error reading Excel file: '+err.message);
+    }finally{
+      fileInput.value = '';
     }
   };
   fileInput.click();
+}
+/* Values sitting in a class's saved timetable that Setup no longer (or never did) know
+   about — imported subject codes, mostly. These are what get the ⚠ treatment in the grid. */
+function ttUnknownValuesFor(cls){
+  const tt = classTimetableFor(cls);
+  const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const codes = DB.setup.subjects || [];
+  const out = [];
+  Object.keys(tt).forEach(day=>{
+    Object.keys(tt[day]||{}).forEach(period=>{
+      const v = tt[day][period];
+      if(!v || v==='LIBRARY') return;
+      if(activities.includes(v) || codes.includes(v)) return;
+      if(!out.includes(v)) out.push(v);
+    });
+  });
+  return out;
+}
+function addUnknownTimetableValuesToSetup(cls){
+  if(!isAdmin()) return requireAdmin('add subjects');
+  const vals = ttUnknownValuesFor(cls);
+  if(!vals.length) return toast('Nothing to add');
+  confirmModal(`Add ${vals.length} flagged entr(y/ies) to Setup as subject codes?\n${vals.join(', ')}`, ()=>{
+    if(!DB.setup.subjects) DB.setup.subjects = [];
+    vals.forEach(v=>{ if(!DB.setup.subjects.includes(v)) DB.setup.subjects.push(v); });
+    saveDB(`Subjects added from timetable import: ${vals.join(', ')}`);
+    render();
+    toast(`Added ${vals.length} subject(s) to Setup`);
+  }, {confirmLabel:'Add to subjects', danger:false});
 }
 
 function addTimetablePeriod(){
@@ -15588,7 +15730,16 @@ function pageClassTimetable(){
         ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
     </div>
-    ${isAdmin()? `<button class="btn small" style="margin-top:20px;width:fit-content" onclick="importFullTimetableFromExcel()">📥 Import Timetable (Excel)</button>`:''}
+    ${isAdmin()? `<div style="margin-top:12px">
+      <button class="btn small" style="width:fit-content" onclick="importFullTimetableFromExcel()">📥 Import timetable for ${esc(cls)} (Excel)</button>
+      <p class="field-hint" style="margin:6px 0 0">Imports straight into the class selected above — switch the dropdown first to import for a different class.</p>
+    </div>`:''}
+    ${(()=>{ const unk = ttUnknownValuesFor(cls); return unk.length ? `<div style="margin-top:10px;padding:10px 12px;border-radius:6px;background:var(--bg-accent,rgba(255,196,0,.12));border:1px solid rgba(200,150,0,.45)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-size:12.5px"><strong>⚠ ${unk.length} entr${unk.length===1?'y':'ies'} not in Setup:</strong> ${unk.map(v=>esc(v)).join(', ')}<div class="field-hint" style="margin-top:4px">These came in from an import and are kept as typed. Add them as subjects so they behave like the rest, or change those cells by hand.</div></div>
+        ${isAdmin()? `<button class="btn secondary small" onclick="addUnknownTimetableValuesToSetup('${esc(cls).replace(/'/g,"\\'")}')">+ Add to subjects</button>`:''}
+      </div>
+    </div>` : ''; })()}
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
       <thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
       <tbody>
@@ -15604,6 +15755,8 @@ function pageClassTimetable(){
             return `<td style="${overrideTime?'background:var(--bg-accent);border-radius:6px;':''}">${timeLbl? `<div style="font-size:10px;${overrideTime?'color:var(--text-accent)':' color:var(--muted-label)'}margin-bottom:2px">${timeLbl}</div>`:''}<select class="ttCell" data-day="${esc(day)}" data-period="${esc(period)}" ${isAdmin()?'':'disabled'} style="width:100%;margin-bottom:4px">
               <option value="" ${val===''?'selected':''}>— Free —</option>
               <option value="LIBRARY" ${val==='LIBRARY'?'selected':''}>📚 LIBRARY</option>
+              ${(val && val!=='LIBRARY' && !(DB.scheduleActivities || DEFAULT_ACTIVITIES).includes(val) && !subjectCodes.includes(val))
+                ? `<option value="${esc(val)}" selected>⚠ ${esc(val)} (not in setup)</option>` : ''}
               ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map(act=>`<option value="${esc(act)}" ${val===act?'selected':''}>${esc(act)}</option>`).join('')}
               ${subjectCodes.map(code=>`<option value="${esc(code)}" ${val===code?'selected':''}>${esc(code)}${subjectNames[code]?' – '+esc(subjectNames[code]):''}</option>`).join('')}
             </select>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${buttonLabel}</button>`:''}
