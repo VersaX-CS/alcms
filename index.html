@@ -14924,7 +14924,7 @@ let ptSelectedDay = 'MONDAY';
 let ptApplyDays = {}; // which OTHER days are checked to receive a copy of ptSelectedDay's times
 async function savePeriodTimes(){
   if(!isAdmin()) return requireAdmin('edit period times');
-  capturePendingPeriodTimes();
+  capturePendingTimetableEdits();
   await saveDB('Period times updated for '+ptSelectedDay); render(); toast('Period times saved for '+ptSelectedDay);
 }
 /* Copies whatever is currently set (including any not-yet-saved typing, via
@@ -14932,7 +14932,7 @@ async function savePeriodTimes(){
    Each target day's own times are fully replaced by the source day's times. */
 async function applyPeriodTimesToDays(){
   if(!isAdmin()) return requireAdmin('edit period times');
-  capturePendingPeriodTimes();
+  capturePendingTimetableEdits();
   const sourceDay = ptSelectedDay;
   const targets = TIMETABLE_DAYS.filter(d=> d!==sourceDay && ptApplyDays[d]);
   if(!targets.length){ toast('Pick at least one day to copy to'); return; }
@@ -14964,13 +14964,43 @@ function capturePendingPeriodTimes(){
   });
   DB.setup.periodTimes[day] = dayMap;
 }
+/* Grabs whatever is currently selected in the class subject-timetable dropdowns (the
+   "Free / LIBRARY / subject" cells) for the currently-selected class — including selections
+   the user made but hasn't clicked "Save timetable for {class}" for yet — and folds them into
+   DB.classTimetable. Mirrors capturePendingPeriodTimes above, and exists for the same reason:
+   so that switching the period-times day, adding/renaming/removing a period, or clicking
+   "Save times" (all of which re-render this page) don't silently wipe out subject entries the
+   admin already picked in the grid but hadn't separately saved. No-op if the subject timetable
+   grid isn't currently rendered (e.g. no classes set up yet). */
+function capturePendingClassTimetable(){
+  const cls = (typeof ttSelectedClass!=='undefined') ? ttSelectedClass : null;
+  if(!cls) return;
+  const cells = document.querySelectorAll('.ttCell');
+  if(!cells.length) return;
+  if(!DB.classTimetable) DB.classTimetable = {};
+  const dayMap = {};
+  cells.forEach(sel=>{
+    const day = sel.dataset.day, period = sel.dataset.period, val = sel.value;
+    if(val){ (dayMap[day] = dayMap[day] || {})[period] = val; }
+  });
+  DB.classTimetable[cls] = dayMap;
+}
+/* Captures every kind of in-progress, not-yet-saved edit on the Class timetable page (both the
+   period Start/End time boxes and the per-class subject dropdowns) in one call. Use this instead
+   of calling capturePendingPeriodTimes/capturePendingClassTimetable individually before any
+   action on this page that triggers a re-render, so neither kind of unsaved entry ever gets
+   silently cleared by the other's save button. */
+function capturePendingTimetableEdits(){
+  capturePendingPeriodTimes();
+  capturePendingClassTimetable();
+}
 function addTimetablePeriod(){
   if(!isAdmin()) return requireAdmin('add a period');
   const label = (prompt('New period label (e.g. 11TH, or a name like "ASSEMBLY"):')||'').trim();
   if(!label) return;
   if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
   if(DB.setup.periods.includes(label)){ toast('That period already exists'); return; }
-  capturePendingPeriodTimes();
+  capturePendingTimetableEdits();
   DB.setup.periods.push(label);
   saveDB('Period added: '+label); render(); toast('Period added');
 }
@@ -14986,7 +15016,7 @@ function renameTimetablePeriod(period){
   if(!label || label===period) return;
   const periods = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : [...PERIOD_OPTIONS];
   if(periods.includes(label)){ toast('That period already exists'); return; }
-  capturePendingPeriodTimes();
+  capturePendingTimetableEdits();
   if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
   const idx = DB.setup.periods.indexOf(period);
   if(idx===-1) DB.setup.periods.push(label); else DB.setup.periods[idx] = label;
@@ -15026,7 +15056,7 @@ function renameTimetablePeriod(period){
 function removeTimetablePeriod(period){
   if(!isAdmin()) return requireAdmin('remove a period');
   confirmModal(`Remove period "${esc(period)}"? Existing timetable entries using it are left as-is.`, ()=>{
-    capturePendingPeriodTimes();
+    capturePendingTimetableEdits();
     if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
     DB.setup.periods = DB.setup.periods.filter(p=>p!==period);
     if(DB.setup.periodTimes){ Object.keys(DB.setup.periodTimes).forEach(d=>{ if(DB.setup.periodTimes[d]) delete DB.setup.periodTimes[d][period]; }); }
@@ -15080,7 +15110,7 @@ function pageClassTimetable(){
     <details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times ${isAdmin()?'(edit)':''}</summary>
       <div class="field" style="max-width:220px;margin-top:8px"><label>Day</label>
-        <select onchange="ptSelectedDay=this.value;ptApplyDays={};render();">
+        <select onchange="capturePendingTimetableEdits();ptSelectedDay=this.value;ptApplyDays={};render();">
           ${TIMETABLE_DAYS.map(d=>`<option value="${esc(d)}" ${d===ptSelectedDay?'selected':''}>${esc(d)}</option>`).join('')}
         </select>
       </div>
@@ -15114,7 +15144,7 @@ function pageClassTimetable(){
       <p class="field-hint" style="margin-top:8px">Set separately per day — periods don't run at the same time every day.</p>
     </details>
     <div class="field" style="max-width:280px"><label>Class</label>
-      <select id="ttClassSelect" onchange="ttSelectedClass=this.value;render();">
+      <select id="ttClassSelect" onchange="capturePendingTimetableEdits();ttSelectedClass=this.value;render();">
         ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
     </div>
@@ -15199,6 +15229,7 @@ function clearAllClassTimetables(){
 function saveClassTimetable(){
   if(!isAdmin()) return requireAdmin('edit the class timetable');
   const cls = ttSelectedClass; if(!cls) return;
+  capturePendingPeriodTimes(); // don't let unsaved period-time typing get wiped by this button's render()
   if(!DB.classTimetable) DB.classTimetable = {};
   const dayMap = {};
   $$('.ttCell').forEach(sel=>{
