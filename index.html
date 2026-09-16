@@ -3129,6 +3129,15 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
 
 .panel{ padding:18px 20px; margin-bottom:18px;}
 .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;}
+/* Collapsible sections. Every panel with its own heading gets a caret on that heading; clicking
+   it folds the panel down to just its head. Long pages (Setup especially) are a lot easier to
+   move around when the six sections you aren't using are one line each, and the open/closed
+   state is remembered per page so the layout you settle on is the one you come back to. */
+.panel-head h3.section-toggle{ cursor:pointer; user-select:none; display:inline-flex; align-items:center; gap:6px;}
+.panel-head h3.section-toggle .section-caret{ font-size:10px; line-height:1; opacity:.55; transition:transform .15s ease;}
+.card.panel.section-collapsed .panel-head{ margin-bottom:0;}
+.card.panel.section-collapsed h3.section-toggle .section-caret{ transform:rotate(-90deg);}
+.card.panel.section-collapsed > *:not(.panel-head){ display:none !important;}
 /* Personalization page: one toolbar holding the global Save + Reset buttons, pinned to the
    bottom of the actual browser viewport (position:fixed, not just sticky-within-.content) so it
    stays visible on screen at all times no matter how far down the long list of
@@ -8328,7 +8337,7 @@ function bindQuickPicker(id, {items, formatSuggestion, formatPicked, onPick}){
     let matches;
     if(exact){ matches=[exact]; }
     else{
-      matches = items.filter(it=> it.id.toLowerCase().includes(q) || it.label.toLowerCase().includes(q)).slice(0,25);
+      matches = smartFilter(items, q, it=> it.id+' '+it.label, 25);
     }
     if(!matches.length){ sugg.innerHTML = `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`; openSuggestions(); return; }
     sugg.innerHTML = matches.map(it=>`<div class="sugg-item" data-id="${esc(it.id)}"><b>${esc(it.id)}</b> — ${esc(it.label)}</div>`).join('');
@@ -8389,7 +8398,7 @@ function GenericModule(cfg){
           : `<tr><td colspan="${cfg.columns.length+(cfg.rowActions?1:0)+(cfg.selectable?1:0)}"><div class="empty"><div class="big">·</div>No matching records</div></td></tr>`}
         </tbody>
       </table></div>
-      <div class="table-count">${cfg.selectable? `<label class="mobile-selall"><input type="checkbox" id="selallmobile_${cfg.key}" ${rows.length && selCount===rows.length?'checked':''}> Select all</label>`:''}${capped? `Showing first ${CAP} of ${total} matches — refine your search to narrow it down` : `${total} of ${cfg.data().length} records`}${cfg.selectable && selCount? ` · ${selCount} selected`:''}</div>`;
+      <div class="table-count">${cfg.selectable? `<label class="mobile-selall"><input type="checkbox" id="selallmobile_${cfg.key}" ${rows.length && selCount===rows.length?'checked':''}> Select all</label>`:''}${state.__fuzzySearch? `Nothing matched "${esc(state.q)}" exactly — showing ${total} close match(es) · ` : ''}${capped? `Showing first ${CAP} of ${total} matches — refine your search to narrow it down` : `${total} of ${cfg.data().length} records`}${cfg.selectable && selCount? ` · ${selCount} selected`:''}</div>`;
   }
   function selectedRows(){
     if(!cfg.selectable) return [];
@@ -8604,6 +8613,82 @@ function GenericModule(cfg){
     }
   };
 }
+/* ---- forgiving search ----
+   Searching used to be an exact substring test over a short list of named fields, so "achebe"
+   found nothing if the record said "Achebee", and a title matched on its title but never on its
+   publisher or notes. Two changes: every field on the record is searchable, not a chosen few,
+   and a term that finds nothing exactly falls back to approximate matching — close spellings,
+   transpositions, a missing letter — so a half-remembered or mistyped name still lands.
+   The exact pass runs first and alone whenever it finds anything, so normal typing stays fast
+   and precise; the fuzzy pass is what rescues a search that would otherwise come back empty. */
+const SEARCH_SKIP_KEYS = new Set(['photo','avatar','image','logo','cover','qr','barcode','data','history','conditionCounts','classTimings','password','pin','apiKey','token']);
+function rowSearchText(r){
+  if(!r || typeof r!=='object') return String(r||'').toLowerCase();
+  const parts = [];
+  Object.keys(r).forEach(k=>{
+    if(SEARCH_SKIP_KEYS.has(k)) return;
+    const v = r[k];
+    if(v===null || v===undefined) return;
+    const t = typeof v;
+    if(t==='string'){ if(v.length<=300 && !v.startsWith('data:')) parts.push(v); }
+    else if(t==='number' || t==='boolean') parts.push(String(v));
+    else if(Array.isArray(v)) parts.push(v.filter(x=> typeof x==='string' || typeof x==='number').join(' '));
+  });
+  return parts.join(' ').toLowerCase();
+}
+/* Levenshtein distance, abandoned as soon as it can't come in under `max` — the early exit is
+   what keeps the fuzzy pass affordable over a few thousand records. */
+function editDistanceWithin(a, b, max){
+  if(a===b) return 0;
+  if(Math.abs(a.length-b.length) > max) return max+1;
+  let prev = Array.from({length:b.length+1}, (_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+    const cur = [i];
+    let best = i;
+    for(let j=1;j<=b.length;j++){
+      const cost = a[i-1]===b[j-1] ? 0 : 1;
+      cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost);
+      if(cur[j]<best) best = cur[j];
+    }
+    if(best>max) return max+1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function fuzzyTolerance(term){ return term.length<=3 ? 0 : term.length<=5 ? 1 : term.length<=8 ? 2 : 3; }
+/* One search term against one record's text: a prefix or substring hit on any word, or a close
+   enough spelling of one. Words are compared individually so "ahcebe things fall" still works. */
+function textMatchesTermFuzzy(text, term){
+  if(text.includes(term)) return true;
+  const tol = fuzzyTolerance(term);
+  if(!tol) return false;
+  const words = text.split(/[^a-z0-9]+/);
+  for(let i=0;i<words.length;i++){
+    const w = words[i];
+    if(!w) continue;
+    if(w.length > term.length + tol + 2){
+      // Long field value (a title, a note): compare the same-length window at its start as well,
+      // so "hings fal" style typos inside a longer phrase still match its opening words.
+      if(editDistanceWithin(term, w.slice(0, term.length+tol), tol) <= tol) return true;
+      continue;
+    }
+    if(editDistanceWithin(term, w, tol) <= tol) return true;
+  }
+  return false;
+}
+function searchTerms(q){ return String(q||'').toLowerCase().split(/\s+/).map(t=>t.trim()).filter(Boolean); }
+/* Exact-first, near-miss-second filtering for the lists that don't go through filterRows —
+   the global search, the scan suggestions, the member/book pickers. Same bargain as above:
+   precise while what you typed exists, forgiving the moment it doesn't. */
+function smartFilter(list, q, textFn, limit){
+  const terms = searchTerms(q);
+  if(!terms.length) return [];
+  const cache = new Map();
+  const textOf = r=>{ let t = cache.get(r); if(t===undefined){ t = String(textFn(r)||'').toLowerCase(); cache.set(r, t); } return t; };
+  const exact = list.filter(r=> { const t = textOf(r); return terms.every(term=> t.includes(term)); });
+  const out = exact.length ? exact : list.filter(r=>{ const t = textOf(r); return terms.every(term=> textMatchesTermFuzzy(t, term)); });
+  return limit ? out.slice(0, limit) : out;
+}
 function filterRows(data, state, searchKeys){
   let rows = data;
   Object.entries(state.filters||{}).forEach(([k,v])=>{
@@ -8613,9 +8698,19 @@ function filterRows(data, state, searchKeys){
     rows = rows.filter(r=> (r[k]||'')===v);
   });
   if(state.q){
-    const q = state.q.toLowerCase();
-    rows = rows.filter(r=> (searchKeys||Object.keys(r)).some(k=> String(r[k]||'').toLowerCase().includes(q)));
-  }
+    const terms = searchTerms(state.q);
+    if(terms.length){
+      const texts = new Map();
+      const textOf = r=>{ let t = texts.get(r); if(t===undefined){ t = rowSearchText(r); texts.set(r, t); } return t; };
+      const exact = rows.filter(r=>{ const t = textOf(r); return terms.every(term=> t.includes(term)); });
+      if(exact.length){ state.__fuzzySearch = false; rows = exact; }
+      else {
+        const near = rows.filter(r=>{ const t = textOf(r); return terms.every(term=> textMatchesTermFuzzy(t, term)); });
+        state.__fuzzySearch = near.length>0;
+        rows = near;
+      }
+    }
+  } else state.__fuzzySearch = false;
   return rows;
 }
 const MODULE_CONTAINERS = {};
@@ -10020,7 +10115,7 @@ function pageAnalytics(){
   </div>
   <div class="grid charts-row">
     <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
-    <div class="card chart-box"><h4>Members by class / role / designation</h4><div class="chart-canvas-wrap"><canvas id="chMemberClass"></canvas></div></div>
+    <div class="card chart-box"><h4>Class reach — members who have borrowed vs never</h4><div class="chart-canvas-wrap"><canvas id="chClassReach"></canvas></div></div>
   </div>
   <div class="grid charts-row">
     ${analyticsChartBoxHtml('chAnMonthly','Monthly circulation trend')}
@@ -10193,6 +10288,20 @@ function printAnalyticsReport(){
 /* Chart data as plain tables (heading/columns/rows), independent of whether the Chart.js
    canvases have actually been drawn yet — used for CSV/Excel/PDF export, which can't embed the
    chart images themselves the way the printed report does. */
+/* Members who have ever appeared as a borrower, per class — shared by the Class reach chart and
+   its export section so the two can never drift apart. */
+function classReachRows(){
+  const u = DB.users;
+  const ever = new Set();
+  DB.circulation.forEach(x=>{ if(x.userId) ever.add(x.userId); else if(x.name) ever.add('name:'+x.name); });
+  return [...sortedClasses(), ...(DB.setup.staffDesignations||[])].map(cls=>{
+    const members = u.filter(m=> (m.cls||'')===cls);
+    if(!members.length) return null;
+    const borrowed = members.filter(m=> ever.has(m.id) || ever.has('name:'+m.name)).length;
+    return {cls, members: members.length, borrowed, never: members.length - borrowed,
+      pct: members.length ? Math.round(borrowed/members.length*100) : 0};
+  }).filter(Boolean).sort((a,b)=> b.never - a.never);
+}
 function analyticsChartDataSections(){
   const c = DB.catalogue, t = DB.circulation.map(x=>({...x, status:txnStatus(x)})), u = DB.users, reg = DB.registerLog;
   const byMonth = {};
@@ -10211,6 +10320,10 @@ function analyticsChartDataSections(){
     { heading:'Members by category', columns:[{label:'Category',get:r=>r[0]},{label:'Count',get:r=>r[1]}], rows:Object.entries(byMemberCat) },
     { heading:'Borrowing by class', columns:[{label:'Class',get:r=>r[0]},{label:'Loans',get:r=>r[1]}], rows:topClasses },
     { heading:'Register visit purpose', columns:[{label:'Purpose',get:r=>r[0]},{label:'Visits',get:r=>r[1]}], rows:topPurpose },
+    { heading:'Class reach', columns:[
+      {label:'Class / Designation',get:r=>r.cls},{label:'Members',get:r=>r.members},
+      {label:'Has borrowed',get:r=>r.borrowed},{label:'Never borrowed',get:r=>r.never},{label:'Reach %',get:r=>r.pct+'%'},
+    ], rows:classReachRows() },
   ];
 }
 function exportAnalyticsAll(){
@@ -10219,7 +10332,7 @@ function exportAnalyticsAll(){
   // only read .columns/.rows) so exporting still gets the full chart+data pairing where the
   // output format supports it.
   const chartData = analyticsChartDataSections().map(sec=>{
-    const inst = Object.entries({chAnMonthly:'Monthly circulation trend', chCondition:'Book condition analysis', chLoanStatus:'Loan status breakdown', chMemberCat:'Members by category', chClassBorrow:'Borrowing by class', chPurpose:'Register visit purpose'})
+    const inst = Object.entries({chAnMonthly:'Monthly circulation trend', chCondition:'Book condition analysis', chLoanStatus:'Loan status breakdown', chMemberCat:'Members by category', chClassBorrow:'Borrowing by class', chPurpose:'Register visit purpose', chClassReach:'Class reach'})
       .find(([id,heading])=>heading===sec.heading);
     const chart = inst && chartInstances[inst[0]];
     return chart ? {...sec, image: chart.toBase64Image()} : sec;
@@ -10248,10 +10361,18 @@ function drawAnalyticsCharts(){
   makeChart('chMainClass',{type:'doughnut', data:{labels:classEntries.map(e=>e[0]), datasets:[{data:classEntries.map(e=>e[1]), backgroundColor:PALETTE}]},
     options:{plugins:{legend:{position:'right', labels:{boxWidth:10,font:{size:10}}}}}});
 
-  const byMemberClass = groupCount(u, x=>x.cls||'UNSPECIFIED');
-  const memberClassEntries = Object.entries(byMemberClass).sort((a,b)=>b[1]-a[1]);
-  makeChart('chMemberClass',{type:'doughnut', data:{labels:memberClassEntries.map(e=>e[0]), datasets:[{data:memberClassEntries.map(e=>e[1]), backgroundColor:PALETTE}]},
-    options:{plugins:{legend:{position:'right', labels:{boxWidth:10,font:{size:10}}}}}});
+  // Replaces the old "Members by class" doughnut, which only restated the register — a head
+  // count per class is already on screen in Members and tells you nothing you can act on.
+  // Reach does: for each class, how many of its members have ever borrowed against how many
+  // never have. The never-borrowed bar is the list of classes to target for a library visit,
+  // a book talk or a class teacher conversation, which is the question this page exists for.
+  const reachClasses = classReachRows().slice(0,12);
+  makeChart('chClassReach',{type:'bar',
+    data:{labels:reachClasses.map(e=>e.cls), datasets:[
+      {label:'Has borrowed', data:reachClasses.map(e=>e.borrowed), backgroundColor:'#4C7C5E'},
+      {label:'Never borrowed', data:reachClasses.map(e=>e.never), backgroundColor:'#A8452F'},
+    ]},
+    options:{indexAxis:'y', scales:{x:{stacked:true}, y:{stacked:true}}, plugins:{legend:{position:'bottom', labels:{boxWidth:10,font:{size:10}}}}}});
 
   const byMonth = {};
   t.forEach(x=>{ const d=parseAnyDate(x.dateBorrowed); if(!d) return; const k=d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'}); byMonth[k]=(byMonth[k]||0)+1; });
@@ -10953,7 +11074,8 @@ function pageUsers(){
     extraActions:[
       {label:'🪪 Member ID cards', alwaysShow:true, onClick:()=> openAllMemberCardsModal()},
       {label:'🏫 Reassign class (selected)', onClick:()=> bulkReassignClass()},
-      {label:'🗄 Archive selected (inactive)', onClick:()=> bulkArchiveUsers()},
+      {label:'🚪 Mark inactive (selected)', onClick:()=> bulkMarkInactive()},
+      {label:'🗄 Archive selected (already inactive)', onClick:()=> bulkArchiveUsers()},
       {label: ()=> `🗄 Archive (${archiveCount('users')})`, alwaysShow:true, onClick:()=> openArchiveModal('users')},
       {label:'🗑 Delete selected', onClick:()=> bulkDeleteUsers(), danger:true},
       {label:'⚠ Clear all strikes', onClick:clearAllStrikes},
@@ -11170,7 +11292,7 @@ const ARCHIVE_KINDS = {
     idOf: d=> d.id,
     label: d=> d.name || d.id,
     sub: d=> [d.id, d.cls, d.category, d.status].filter(Boolean).join(' · '),
-    search: d=> [d.id, d.name, d.cls, d.category, d.status].join(' ').toUpperCase(),
+    search: d=> [d.id, d.name, d.cls, d.category, d.status, d.inactiveReason, d.inactiveSession].join(' ').toUpperCase(),
     live: ()=> DB.users,
     logKey: 'members',
   },
@@ -11184,7 +11306,7 @@ const ARCHIVE_KINDS = {
     logKey: 'catalogue',
   },
 };
-function archiveRecords(kind, records, note){
+function archiveRecords(kind, records, note, meta){
   const cfg = ARCHIVE_KINDS[kind];
   const bucket = archiveBucket(kind);
   const stamp = new Date().toISOString();
@@ -11193,6 +11315,11 @@ function archiveRecords(kind, records, note){
       id: 'ARC-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6),
       archivedAt: stamp,
       archivedBy: (typeof SESSION!=='undefined' && SESSION && SESSION.fullName) || '',
+      // The session is stamped on every archived record, whichever route it came in by, so the
+      // archive can be read back a cohort at a time rather than by date guesswork.
+      session: (meta && meta.session) || currentAcademicSession(),
+      reason: (meta && meta.reason) || '',
+      note: (meta && meta.note) || '',
       data: JSON.parse(JSON.stringify(d)),
     });
   });
@@ -11204,6 +11331,86 @@ function archiveRecords(kind, records, note){
 /* Only members already marked INACTIVE can be archived — archiving is for people who have
    left, not a shortcut for hiding an active or merely suspended account — and never one who
    still has a book out, since their loan would lose its borrower. */
+/* The session an archived record belongs to. Archiving is nearly always an end-of-year job —
+   a whole cohort graduating, a handful of transfers — so which session it happened in is the
+   thing you need when you go looking years later. Setup holds the current one; the archive
+   modal asks the person to confirm it rather than stamping it silently, because it's easy for
+   Setup to still say last session in the first week of a new one. */
+function currentAcademicSession(){ return (DB.setup && DB.setup.currentSession) || ''; }
+function academicSessionLabel(){ return (DB.setup && DB.setup.sessionLabel) || 'Academic Session'; }
+const MEMBER_INACTIVE_REASONS = ['GRADUATED','TRANSFERRED','EXPELLED','RESIGNED','RETIRED','DECEASED','OTHER'];
+/* Marking members inactive in bulk — the end-of-session job. The reason matters (a graduate and
+   an expelled student are not the same record to look back on), so it's asked for up front, and
+   because an inactive member is by definition off the register, they go straight to the archive
+   in the same step rather than lingering in the members list until someone remembers to archive
+   them. Members still holding books are held back — their loan needs a borrower. */
+function bulkMarkInactive(){
+  if(!isAdmin()) return requireAdmin('change member status');
+  const ids = [...(usersModuleState.selected||[])];
+  if(!ids.length){ toast('Tick one or more members first'); return; }
+  const picked = DB.users.filter(u=> ids.includes(u.id));
+  const onLoan = picked.filter(u=> u.borrowed>0);
+  const eligible = picked.filter(u=> !(u.borrowed>0));
+  if(!eligible.length) return alertModal(`All ${picked.length} selected member(s) still have book(s) on loan. Take those back first — a member can't be retired from the register while a loan is open in their name.`, {title:'Nothing to do'});
+  const sessionOpts = academicSessionOptions();
+  const cur = currentAcademicSession();
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Mark ${eligible.length} member(s) inactive</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <p class="field-hint" style="margin:0 0 12px">They are marked INACTIVE and moved straight into the member archive, stamped with the reason and session below. They stop appearing in lists, searches, filters, pickers and counts everywhere in the app, and can be restored from Members → Archive at any time.</p>
+        ${onLoan.length? `<p class="field-hint" style="margin:0 0 12px;color:var(--text-accent)">⚠ ${onLoan.length} of the selected member(s) still hold book(s) and will be skipped.</p>`:''}
+        <div class="field"><label>Reason *</label>
+          <select id="inactReason">${MEMBER_INACTIVE_REASONS.map(r=>`<option value="${esc(r)}">${esc(r.charAt(0)+r.slice(1).toLowerCase())}</option>`).join('')}</select>
+        </div>
+        <div class="field" id="inactOtherWrap" style="display:none"><label>Say what happened *</label>
+          <input id="inactOther" placeholder="e.g. Left the country" autocomplete="off">
+        </div>
+        <div class="field"><label>${esc(academicSessionLabel())} this happened in *</label>
+          <select id="inactSession">${sessionOpts.map(o=>`<option ${o===cur?'selected':''}>${esc(o)}</option>`).join('')}${cur && !sessionOpts.includes(cur)? `<option selected>${esc(cur)}</option>`:''}</select>
+          <p class="field-hint">${cur? `Setup currently says <strong>${esc(cur)}</strong> — check it's right before archiving, especially early in a new session.` : 'No session is set in Setup yet — pick the right one here, then set it in Setup → Academic term &amp; session.'}</p>
+        </div>
+        <div class="field"><label>Note (optional)</label><input id="inactNote" placeholder="Anything worth recording" autocomplete="off"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="inactCancel">Cancel</button>
+        <button class="btn" id="inactGo">Mark inactive &amp; archive</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#inactCancel').onclick = close;
+  const reasonSel = wrap.querySelector('#inactReason');
+  reasonSel.onchange = ()=>{ wrap.querySelector('#inactOtherWrap').style.display = reasonSel.value==='OTHER' ? '' : 'none'; };
+  wrap.querySelector('#inactGo').onclick = ()=>{
+    const reason = reasonSel.value;
+    const other = (wrap.querySelector('#inactOther').value||'').trim();
+    if(reason==='OTHER' && !other) return toast('Say what the reason is');
+    const session = wrap.querySelector('#inactSession').value;
+    if(!session) return toast('Pick a session');
+    const note = (wrap.querySelector('#inactNote').value||'').trim();
+    const reasonText = reason==='OTHER' ? other : reason;
+    close();
+    confirmModal(`Mark ${eligible.length} member(s) inactive (${reasonText}, ${session}) and archive them?${onLoan.length? ` ${onLoan.length} skipped — still holding books.`:''}\nThey leave the members register immediately. Restorable from Members → Archive.`, ()=>{
+      eligible.forEach(u=>{
+        u.status = 'INACTIVE';
+        u.inactiveReason = reasonText;
+        u.inactiveSession = session;
+        if(note) u.inactiveNote = note;
+        touchMemberStatusDate(u);
+      });
+      archiveRecords('users', eligible, `Marked ${eligible.length} member(s) inactive (${reasonText}, ${session}) and archived them`, {reason:reasonText, session, note});
+      usersModuleState.selected.clear();
+      saveDB(`${eligible.length} member(s) marked inactive (${reasonText}) and archived`); render();
+      toast(`${eligible.length} member(s) archived — ${reasonText}, ${session}`);
+    }, {confirmLabel:'Mark inactive & archive', danger:false});
+  };
+  setTimeout(()=> reasonSel.focus(), 30);
+}
 function bulkArchiveUsers(){
   if(!isAdmin()) return requireAdmin('archive members');
   const ids = [...(usersModuleState.selected||[])];
@@ -11280,7 +11487,7 @@ function openArchiveModal(kind){
         <span style="min-width:0">
           <strong style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(cfg.label(rec.data))}</strong>
           <span style="color:var(--muted);font-size:11.5px">${esc(cfg.sub(rec.data))}</span>
-          <span class="field-hint" style="display:block;margin-top:2px">Archived ${esc(new Date(rec.archivedAt).toLocaleDateString('en-GB'))}${rec.archivedBy? ` by ${esc(rec.archivedBy)}`:''}</span>
+          <span class="field-hint" style="display:block;margin-top:2px">Archived ${esc(new Date(rec.archivedAt).toLocaleDateString('en-GB'))}${rec.archivedBy? ` by ${esc(rec.archivedBy)}`:''}${rec.reason? ` · ${esc(rec.reason)}`:''}${rec.session? ` · ${esc(rec.session)}`:''}${rec.note? ` · ${esc(rec.note)}`:''}</span>
         </span>
       </label>`).join('')
       : `<div class="empty" style="padding:22px 12px;text-align:center;color:var(--muted);font-size:13px">${archiveCount(kind)? 'Nothing matches that search' : `No archived ${esc(cfg.nounPlural)} yet`}</div>`;
@@ -13205,11 +13412,14 @@ function collectSearchMatches(q){
   if(!DB || !query) return {query, isNumeric:false, books:[], members:[], txns:[], reservations:[], reminders:[]};
   const isNumeric = /^\d+$/.test(query);
   const limit = isNumeric ? 10 : 6;
-  const books = DB.catalogue.filter(b=> (b.title||'').toLowerCase().includes(query) || (b.author||'').toLowerCase().includes(query) || (b.acc||'').toLowerCase().includes(query)).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,limit);
-  const members = DB.users.filter(u=> (u.name||'').toLowerCase().includes(query) || (u.id||'').toLowerCase().includes(query) || (isNumeric && (u.teacher||'').toLowerCase().includes(query))).sort((a,b)=>(a.name||'').localeCompare(b.name||'')).slice(0,limit);
-  const txns = isNumeric ? [] : DB.circulation.filter(t=> (t.title||'').toLowerCase().includes(query) || (t.name||'').toLowerCase().includes(query) || (t.acc||'').toLowerCase().includes(query)).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,6);
-  const reservations = isNumeric ? [] : DB.reservations.filter(r=> (r.title||'').toLowerCase().includes(query) || (r.name||'').toLowerCase().includes(query) || (r.acc||'').toLowerCase().includes(query)).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,6);
-  const reminders = isNumeric ? [] : (DB.reminders||[]).filter(r=> (r.title||'').toLowerCase().includes(query) || (r.name||'').toLowerCase().includes(query) || (r.acc||'').toLowerCase().includes(query) || (r.userId||'').toLowerCase().includes(query)).sort((a,b)=>String(b.dateSent||'').localeCompare(String(a.dateSent||''))).slice(0,6);
+  // Every field on the record is searchable here, not just title/author/name — a half-remembered
+  // publisher, shelf, note or class now finds the record — and a mistyped term still lands via
+  // the same exact-first, near-miss-second rule the table searches use.
+  const books = smartFilter(DB.catalogue, query, rowSearchText).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,limit);
+  const members = smartFilter(DB.users, query, rowSearchText).sort((a,b)=>(a.name||'').localeCompare(b.name||'')).slice(0,limit);
+  const txns = isNumeric ? [] : smartFilter(DB.circulation, query, rowSearchText).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,6);
+  const reservations = isNumeric ? [] : smartFilter(DB.reservations, query, rowSearchText).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,6);
+  const reminders = isNumeric ? [] : smartFilter(DB.reminders||[], query, rowSearchText).sort((a,b)=>String(b.dateSent||'').localeCompare(String(a.dateSent||''))).slice(0,6);
   return {query, isNumeric, books, members, txns, reservations, reminders};
 }
 function buildGlobalSearchHTML(q){
@@ -13987,8 +14197,8 @@ function openScanModal(mode){
     if(isIsbnMode){ closeSuggest(); return; }
     const q = input.value.trim().toLowerCase();
     if(!q){ closeSuggest(); return; }
-    const bookMatches = DB.catalogue.filter(b=> b.acc.toLowerCase().includes(q) || String(b.title||'').toLowerCase().includes(q)).slice(0,5);
-    const userMatches = DB.users.filter(u=> u.id.toLowerCase().includes(q) || String(u.name||'').toLowerCase().includes(q)).slice(0,5);
+    const bookMatches = smartFilter(DB.catalogue, q, b=> `${b.acc} ${b.title||''} ${b.author||''}`, 5);
+    const userMatches = smartFilter(DB.users, q, u=> `${u.id} ${u.name||''} ${u.cls||''}`, 5);
     if(!bookMatches.length && !userMatches.length){ closeSuggest(); return; }
     suggestEl.innerHTML = [
       ...bookMatches.map(b=>`<div class="scan-suggest-row" data-code="${esc(b.acc)}"><span class="ss-ic">📖</span><span class="ss-main"><strong>${esc(b.title)}</strong><span class="ss-sub">${esc(b.acc)} · ${esc(b.available)}</span></span></div>`),
@@ -16087,6 +16297,8 @@ function removeTimetablePeriod(period){
 }
 let ttSelectedClass = null;
 let ttManageActivitiesOpen = false;
+let ttPeriodTimesOpen = false;
+let ttPeriodsOpen = false;
 function classTimetableFor(cls){ return (DB.classTimetable && DB.classTimetable[cls]) || {}; }
 /* ---- Multi-subject periods -------------------------------------------------
    Senior classes routinely run several subjects in the same period — the class splits
@@ -16319,17 +16531,19 @@ function pageClassTimetable(){
         ${isAdmin()?`<button class="btn secondary" onclick="addScheduleActivity()" style="margin-top:8px">+ Add activity</button>`:''}
       </div>
     </details>
-    ${isAdmin() ? `<div style="margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:6px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div><strong style="font-size:13px">🕐 Period times</strong><p class="field-hint" style="margin:4px 0 0">Set start/end times for each period on each day</p></div>
+    ${isAdmin() ? `<details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
+      <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times</summary>
+      <div style="margin-top:10px;padding:10px;background:var(--surface-1);border-radius:6px">
+        <p class="field-hint" style="margin:0 0 8px">Start and end times for each period, per day. These fill in automatically wherever a period is shown, printed or exported.</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn secondary small" onclick="editPeriodTimeModal()">Edit times</button>
         </div>
       </div>
-    </div>` : ''}
-    ${isAdmin() ? `<div style="margin-bottom:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <strong style="font-size:13px">📋 Periods</strong>
+    </details>` : ''}
+    ${isAdmin() ? `<details style="margin-bottom:12px" ${ttPeriodsOpen?'open':''} ontoggle="ttPeriodsOpen=this.open">
+      <summary style="cursor:pointer;font-weight:600;font-size:13px">📋 Periods</summary>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px">
+        <p class="field-hint" style="margin:0">Rename, add or remove the periods every class timetable is built from.</p>
         <button class="btn small" onclick="addTimetablePeriod()">+ Add period</button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -16341,16 +16555,17 @@ function pageClassTimetable(){
           </div>
         `).join('')}
       </div>
-    </div>` : ''}
-    <div class="field" style="max-width:280px"><label>Class</label>
-      <select id="ttClassSelect" onchange="capturePendingClassTimetable();ttSelectedClass=this.value;render();">
-        ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
-      </select>
+    </details>` : ''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="max-width:280px;margin-bottom:0"><label>Class</label>
+        <select id="ttClassSelect" onchange="capturePendingClassTimetable();ttSelectedClass=this.value;render();">
+          ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+      ${isAdmin()? `<button class="btn small" onclick="importFullTimetableFromExcel()">📥 Import for ${esc(cls)} (Excel)</button>
+      <button class="btn secondary small" onclick="saveClassTimetable()">💾 Save timetable for ${esc(cls)}</button>`:''}
     </div>
-    ${isAdmin()? `<div style="margin-top:12px">
-      <button class="btn small" style="width:fit-content" onclick="importFullTimetableFromExcel()">📥 Import timetable for ${esc(cls)} (Excel)</button>
-      <p class="field-hint" style="margin:6px 0 0">Imports straight into the class selected above — switch the dropdown first to import for a different class.</p>
-    </div>`:''}
+    ${isAdmin()? `<p class="field-hint" style="margin:6px 0 0">Import and save both act on the class selected above — switch the dropdown first to work on a different class.</p>`:''}
     <div id="ttUnknownBanner">${ttUnknownBannerHtml(cls)}</div>
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
       <thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
@@ -16372,7 +16587,7 @@ function pageClassTimetable(){
           </tr>`).join('')}
       </tbody>
     </table></div>
-    ${isAdmin()? `<button class="btn secondary" style="margin-top:10px" onclick="saveClassTimetable()">Save timetable for ${esc(cls)}</button>`:''}
+    ${isAdmin()? `<button class="btn secondary" style="margin-top:10px" onclick="saveClassTimetable()">💾 Save timetable for ${esc(cls)}</button>`:''}
     <p class="field-hint" style="margin-top:8px">Click a cell to pick what runs in that period. A period can hold more than one subject — for senior classes that split by subject combination, tick every subject running at that time, and auto-build will count a student as free only if their own combination includes none of them. Mark "📚 LIBRARY" on the period(s) a class visits the library; leave a period empty for "— Free —".</p>
     `}
   </div>`;
@@ -17666,6 +17881,13 @@ function pageSetup(){
   const scheme = DB.setup.termScheme || 'standard';
   const termIdx = DB.setup.termIndex ?? 0;
   return `
+  <div class="panel-head" style="margin-bottom:12px">
+    <div><h3 style="margin:0">Setup</h3><div class="hint">Everything the rest of the app reads from — click any section heading to fold it away</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn secondary small" onclick="toggleAllSections(true)">⊟ Collapse all</button>
+      <button class="btn secondary small" onclick="toggleAllSections(false)">⊞ Expand all</button>
+    </div>
+  </div>
   <div class="card panel">
     <div class="panel-head"><h3>Institution</h3></div>
     <div class="field"><label>Institution / school name</label><input id="setInstitution" value="${esc(DB.setup.institutionName||'')}" placeholder="e.g. Access International School"></div>
@@ -18751,6 +18973,13 @@ function pageAbout(){
   <div class="card panel">
     <div class="panel-head"><h3>What's new</h3><button class="btn secondary small" onclick="downloadUserGuidePDF()">📄 Download comprehensive PDF guide</button></div>
     <ul style="font-size:13px;line-height:1.9;color:var(--muted);padding-left:20px">
+      <li><strong>Member &amp; title archive.</strong> Leavers and retired stock move out of the register and the catalogue into an archive of their own, so they stop padding every list, search, filter, picker and count — and can be restored, or deleted for good, from Members → Archive and Catalogue → Archive. Every archived record is stamped with the academic session it left in.</li>
+      <li><strong>End-of-session in one step.</strong> Tick the leaving cohort in Members and use "Mark inactive (selected)": pick the reason (graduated, transferred, expelled, resigned, retired, deceased, or your own), confirm the session, and they are marked inactive and archived together. Members still holding books are held back until the loan is closed.</li>
+      <li><strong>Forgiving search.</strong> Searches now cover every field on a record and fall back to close spellings when nothing matches exactly, so a mistyped or half-remembered name still finds it — in tables, the topbar search, the scan box and the member/book pickers alike.</li>
+      <li><strong>Collapsible sections.</strong> Click any section heading to fold it away; Setup adds Collapse all / Expand all, and what you fold stays folded next time. Class Timetable's Manage activities, Period times and Periods all fold too.</li>
+      <li><strong>Class timetable work is faster.</strong> A cell edit can be applied to every other slot holding the same entry — the same class's other days and periods included — and Setup's class subject distribution can be auto-ticked straight from the timetables.</li>
+      <li><strong>Truer free periods.</strong> Auto-build now counts a student as free only when none of the real subjects running in that period are in their combination; assembly, sport, break and unrecognised imported labels no longer count as free time.</li>
+      <li><strong>Class reach</strong> replaces the old members-by-class doughnut in Analytics: how many members of each class have ever borrowed against how many never have — the classes to target, not just their head count.</li>
       <li>Optional fingerprint / Face ID sign-in: register your device once from My Account, then use it alongside your username and password to sign in with a touch — no biometric data ever leaves your device. Needs the page served over https:// (or localhost); it won't appear if this file is opened directly from disk. See My Account → Fingerprint &amp; Face ID sign-in.</li>
       <li>Member and catalogue cards: generate a printable ID card (photo icon, name, ID/accession number, class or category, and a barcode or QR code) for one member/title, or every member/title at once — with a one-click 10-up A4 export ready to print and cut.</li>
       <li>Choose barcode or QR code generation for every card, from Setup → Codes. QR codes render entirely offline — no internet connection needed.</li>
@@ -18833,6 +19062,11 @@ const GUIDE_TIPS = [
   'On mobile, tap the page title in the topbar to open a scrollable list of every destination — no need to open the full sidebar drawer first.',
   'Keyboard shortcuts work from anywhere in the app, not just one page: Ctrl/Cmd+S saves instantly (same as clicking the save icon), and Ctrl/Cmd+Z undoes your most recent change.',
   'A handheld or USB barcode/QR scanner works from any page, not just Circulation — scan a book or member code and it jumps straight to that title\'s or member\'s page.',
+  'Searches are forgiving: every field on a record is searched, not just the obvious ones, and a term that matches nothing exactly falls back to close spellings — "achebee", "hibicus" or a half-remembered publisher still find the record. The table footer says when you are looking at near matches rather than exact ones.',
+  'Click any section heading (the ones with a ▾) to fold that section away. Setup also has Collapse all / Expand all, and whatever you fold stays folded next time you open the page.',
+  'End of session: tick the leaving cohort in Members, then "🚪 Mark inactive (selected)", choose the reason and confirm the session. They are marked inactive and archived in one step.',
+  'Archived members and titles are kept out of every list, search, filter and count in the app — open Members → Archive or Catalogue → Archive to restore one, or to delete it for good.',
+  'Setup → Class subject distribution has "🧭 Auto-tick from timetable", which fills each class\'s subject list from its own timetable instead of you ticking dozens of boxes by hand.',
 ];
 /* ================= comprehensive PDF user guide ================= */
 function stripHtmlTags(s){
@@ -19261,15 +19495,15 @@ function downloadUserGuidePDF(){
 const GUIDE_SECTIONS = [
   {h:'Home', ic:'home', b:'Your landing page: a hero banner with the live weather scene and a centred, middle-left "Good Morning/Afternoon/Evening" greeting, plus the day\'s KPI snapshot (issued, returned, visits, overdue). On smaller screens this weather/KPI strip stays pinned to the top as you scroll, so the "Due today & overdue" alert (dismissible for the rest of the day once handled) and the quick-link shortcuts to every part of the desk scroll underneath it.'},
   {h:'Dashboard', ic:'bars', b:'The full library overview — collection size, availability, active loans, recent circulation activity, today\'s schedule, and two headline charts. Use "Generate comprehensive report" here for a printable report over any period, with no wasted blank space on the page (a new page only starts when a new heading needs one).'},
-  {h:'Analytics', ic:'linechart', b:'Deeper trends: top borrowers and titles, monthly circulation, book condition, loan status, members by category, borrowing by class, and visit purpose. "Print" produces a full printable report including the actual chart images; "Export" downloads everything — the summary tables, every chart\'s underlying data, and the overdue detail — as one CSV, Excel or PDF file.'},
-  {h:'Catalogue', ic:'book', b:'Search and browse every title. Click "Details" on any title to see its full record plus its complete transaction history, and to generate its catalogue card (barcode or QR, per Setup → Codes). Admins can add, edit, delete, export the current view as CSV/Excel/PDF, and generate every catalogue card at once — "🪪 Catalogue cards" — with a one-click 10-up A4 export ready to print and cut.'},
-  {h:'Members', ic:'person', b:'Every student and staff member. A member\'s Profile page is now tabbed — Loans, Subjects, Visits, and (where relevant) Fines and Reservations — plus buttons to generate that member\'s ID card or print their full profile and loan history. From the Members list, "🪪 Member ID cards" generates every member\'s card at once, exportable 10-up on A4.'},
+  {h:'Analytics', ic:'linechart', b:'Deeper trends: top borrowers and titles, monthly circulation, book condition, loan status, members by category, borrowing by class, visit purpose, and Class reach — how many members of each class have ever borrowed against how many never have, which is the list of classes to target for a visit or a book talk. "Print" produces a full printable report including the actual chart images; "Export" downloads everything — the summary tables, every chart\'s underlying data, and the overdue detail — as one CSV, Excel or PDF file.'},
+  {h:'Catalogue', ic:'book', b:'Search and browse every title — search is forgiving of spelling and covers every field on the record, not just title and author. Withdrawn titles can be archived out of the catalogue entirely and restored later from \"Archive\". Click "Details" on any title to see its full record plus its complete transaction history, and to generate its catalogue card (barcode or QR, per Setup → Codes). Admins can add, edit, delete, export the current view as CSV/Excel/PDF, and generate every catalogue card at once — "🪪 Catalogue cards" — with a one-click 10-up A4 export ready to print and cut.'},
+  {h:'Members', ic:'person', b:'Every student and staff member. At the end of a session, tick the leavers and use \"Mark inactive (selected)\" — you pick a reason (graduated, transferred, expelled, resigned, retired, deceased, or your own) and confirm the academic session, and they are marked inactive and moved into the member archive in one step. Archived members are kept out of every list, search, filter, picker and count in the app; \"Archive\" reopens them for restoring or permanent deletion. A member\'s Profile page is now tabbed — Loans, Subjects, Visits, and (where relevant) Fines and Reservations — plus buttons to generate that member\'s ID card or print their full profile and loan history. From the Members list, "🪪 Member ID cards" generates every member\'s card at once, exportable 10-up on A4.'},
   {h:'Circulation', ic:'swap', b:'Issue and return titles. Type a member ID or accession number — or a partial number/name — and pick from the filtered suggestions; no need to type a code exactly, and no more waiting for an exact match. Scanning with a mobile camera, a dedicated code scanner, or typing all work the same way, and a successful match shows a ✓ Verified badge with a running scan counter. Returning a title as "Missing" marks both the book and the loan as Missing, not Available or Returned. Print a report for one member, one item, a date range, or everything. "Clear all" wipes the circulation log for a fresh session (admin only).'},
   {h:'Reminder Log', ic:'bell', b:'Every loan currently overdue, with a one-click "Log reminder" and — where a phone number is on file — a WhatsApp reminder button that renders a clean designed image (or PDF) of the reminder and shares it to the borrower (staff) or the class teacher (students).'},
   {h:'Register', ic:'checklist', b:'Desk sign-ins and class period visits together. Use "Batch check-in" to stage several students (by ID or a whole class) before submitting them all at once with a shared note; "Batch check-out" lists everyone currently signed in so you can check them out together. Edit any entry to add discipline notes and consequences.'},
-  {h:'Schedule', ic:'calendar', b:'The weekly library timetable and each student\'s subject combination. Admins can add, edit or delete periods, with a period dropdown, a native time picker, and Library, Free, or Other note types.'},
+  {h:'Schedule', ic:'calendar', b:'The weekly library timetable and each student\'s subject combination. Admins can add, edit or delete periods, with a period dropdown, a native time picker, and Library, Free, or Other note types. Class Timetable holds each class\'s week: Manage activities, Period times and Periods each fold away, cell edits can be applied to every other slot holding the same entry at once, and \"Auto-build library schedule\" turns the timetables into the visit schedule — counting a student as free only when none of the real subjects running in that period are in their own combination, so assembly, sport and break are never mistaken for free time.'},
   {h:'Feedback', ic:'chat', b:'Suggestions, complaints and requests from members and staff, with a status workflow (New, In review, Resolved).'},
-  {h:'Setup', ic:'gear', b:'Library configuration: classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list, fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
+  {h:'Setup', ic:'gear', b:'Library configuration, with every section collapsible (and Collapse all / Expand all at the top): classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list — which \"Auto-tick from timetable\" can fill in from the class timetables — fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
   {h:'Personalization', ic:'palette', b:'Everything else: theme and colour palette, clock style and date format (the analogue clock now shows the date on its face), typography, icons, lockscreen appearance and backgrounds — including separate Section and Modal background colours, and a notification bell you can show or hide on the sign-in screen.'},
   {h:'Lockscreen', ic:'lock', b:'Before signing in you can still check your own loans — there\'s a search bar directly above the sign-in box (with live suggestions as you type a name or ID), the notification bell previews what\'s waiting for you, and Create Account opens as a wider card centred over the whole screen so every field fits without excess scrolling.'},
   {h:'My Account', ic:'fingerprint', b:'Your profile photo, name, email, phone, password and security question, and — for admins — your own access level. Also home to Fingerprint &amp; Face ID sign-in: register this device once (needs https:// or localhost, plus a fingerprint/face sensor) to add a one-touch "Sign in with fingerprint / Face ID" button to the sign-in screen. Your username and password always keep working alongside it, and are what you use to register or remove a device.'},
@@ -20552,6 +20786,59 @@ function restoreScrollPositions(root, map){
     if(map[key]) elx.scrollTop = map[key];
   });
 }
+/* ---- collapsible sections ----
+   Applied after each render rather than baked into every page's markup: any panel that has a
+   .panel-head with an <h3> becomes collapsible, so sections added later get the behaviour for
+   free and no page template has to be rewritten. Panels owned by GenericModule (inside a
+   #mod_* container) are skipped — they re-render their own innerHTML on every search keystroke
+   and filter change, which would strip the caret straight back off again.
+   State is keyed by page + heading and kept in localStorage, so it survives navigation and
+   reloads without touching the library's own data file. */
+let SECTION_COLLAPSE = (()=>{ try{ return JSON.parse(localStorage.getItem('alib_section_collapse')||'{}') || {}; }catch(e){ return {}; } })();
+function saveSectionCollapse(){ try{ localStorage.setItem('alib_section_collapse', JSON.stringify(SECTION_COLLAPSE)); }catch(e){} }
+function setSectionCollapsed(panel, key, collapsed){
+  panel.classList.toggle('section-collapsed', collapsed);
+  const h3 = panel.querySelector('.panel-head h3.section-toggle');
+  if(h3) h3.setAttribute('aria-expanded', String(!collapsed));
+  if(collapsed) SECTION_COLLAPSE[key] = 1; else delete SECTION_COLLAPSE[key];
+  saveSectionCollapse();
+}
+function enhanceCollapsibleSections(){
+  const host = document.getElementById('content');
+  if(!host) return;
+  host.querySelectorAll('.card.panel').forEach(panel=>{
+    if(panel.dataset.collapsible) return;
+    if(panel.closest('[id^="mod_"]')) return;
+    const head = panel.querySelector('.panel-head');
+    if(!head || head.parentElement!==panel) return;
+    const h3 = head.querySelector('h3');
+    if(!h3 || h3.classList.contains('section-toggle')) return;
+    // A panel whose only content is its own head has nothing to fold away.
+    if(![...panel.children].some(el=> el!==head)) return;
+    panel.dataset.collapsible = '1';
+    const key = route + '|' + h3.textContent.trim().slice(0,60);
+    h3.classList.add('section-toggle');
+    h3.setAttribute('role','button');
+    h3.setAttribute('tabindex','0');
+    h3.title = 'Click to collapse or expand this section';
+    h3.insertAdjacentHTML('afterbegin', '<span class="section-caret" aria-hidden="true">▼</span> ');
+    const toggle = ()=> setSectionCollapsed(panel, key, !panel.classList.contains('section-collapsed'));
+    h3.addEventListener('click', toggle);
+    h3.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); toggle(); } });
+    setSectionCollapsed(panel, key, !!SECTION_COLLAPSE[key]);
+  });
+}
+/* "Collapse all / expand all" for the pages that are mostly stacked sections. */
+function toggleAllSections(collapse){
+  const host = document.getElementById('content');
+  if(!host) return;
+  host.querySelectorAll('.card.panel[data-collapsible]').forEach(panel=>{
+    const h3 = panel.querySelector('.panel-head h3.section-toggle');
+    if(!h3) return;
+    const key = route + '|' + h3.textContent.trim().slice(0,60);
+    setSectionCollapsed(panel, key, collapse);
+  });
+}
 function render(){
   hideAnalyticsHoverTip();
   if(appearancePreviewDirty && route!=='settings'){
@@ -20654,6 +20941,7 @@ function render(){
   if(route==='dashboard') requestAnimationFrame(drawDashboardCharts);
   if(route==='analytics') requestAnimationFrame(drawAnalyticsCharts);
   applyIconPack();
+  enhanceCollapsibleSections();
   restoreScrollPositions(el, __scrollSnapshot);
 }
 
