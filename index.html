@@ -9940,9 +9940,15 @@ function pageDashboard(){
         const vals = ttCellValues(raw);
         if(!vals.length) return '<span style="color:var(--muted-label)">—</span>';
         // A period can carry several subjects at once (senior classes splitting by combination)
+        const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+        const subjects = DB.setup.subjects || [];
         return vals.map(val=>{
           if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
-          if(val==='BREAK') return '<span style="color:var(--muted-label);font-style:italic">Break</span>';
+          // Anything that's an activity rather than a subject (BREAK, ASSEMBLY, SPORTS…)
+          // reads as an aside, not a lesson — muted italics, in caps.
+          if(activities.includes(val) && !subjects.includes(val)){
+            return `<span style="color:var(--muted-label);font-style:italic;text-transform:uppercase">${esc(val.toUpperCase())}</span>`;
+          }
           return esc(val);
         }).join('<span style="color:var(--muted-label)"> / </span>');
       };
@@ -15043,6 +15049,16 @@ function capturePendingClassTimetable(){
   });
   DB.classTimetable[cls] = dayMap;
 }
+/* The period add/rename/remove actions all call capturePendingTimetableEdits() before they
+   touch DB — it was never defined anywhere, so every one of them threw a ReferenceError and
+   silently did nothing. It means exactly what capturePendingClassTimetable does: fold the
+   on-screen (possibly unsaved) grid selections into DB first, so a structural change doesn't
+   discard them. Defined conditionally in case another bundle provides its own. */
+if(typeof capturePendingTimetableEdits !== 'function'){
+  window.capturePendingTimetableEdits = function(){
+    try{ capturePendingClassTimetable(); }catch(e){ console.warn('capturePendingTimetableEdits:', e); }
+  };
+}
 /* ============ EXCEL IMPORT: Period Times ============
    Requires Excel structure:
    
@@ -15616,6 +15632,126 @@ function addUnknownTimetableValuesToSetup(cls){
     toast(`Added ${vals.length} subject(s) to Setup`);
   }, {confirmLabel:'Add to subjects', danger:false});
 }
+/* Per-entry cleanup for imported values Setup doesn't recognise. "Add to subjects" above is
+   the bulk shortcut for when every flagged entry is a real subject; this is for the messier
+   case — "MATHS" should become the existing MATH, "P.E." is really an activity, "N/A" was
+   never a subject at all. One row per flagged value, each with its own decision. */
+function resolveFlaggedEntriesModal(cls){
+  if(!isAdmin()) return requireAdmin('edit the class timetable');
+  capturePendingClassTimetable();
+  const vals = ttUnknownValuesFor(cls);
+  if(!vals.length) return toast('Nothing flagged for this class');
+  const subjectNames = DB.setup.subjectNames || {};
+  const subjects = DB.setup.subjects || [];
+  const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const otherClasses = Object.keys(DB.classTimetable||{}).filter(c=> c!==cls && ttUnknownValuesFor(c).some(v=> vals.includes(v)));
+
+  const row = (v,i)=>`
+    <div style="display:grid;grid-template-columns:minmax(90px,1fr) minmax(150px,1.4fr);gap:8px;align-items:center;padding:8px;border-radius:6px;background:var(--surface-1);margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600">⚠ ${esc(v)}</div>
+      <div>
+        <select class="flagAction" data-value="${esc(v)}" style="width:100%">
+          <option value="">Keep as typed (stays flagged)</option>
+          <option value="__ADD__">Add "${esc(v)}" to Setup as a subject</option>
+          <option value="__ACTIVITY__">Add "${esc(v)}" to Setup as an activity</option>
+          <option value="__REMOVE__">Remove it (period becomes free)</option>
+          <option value="LIBRARY">Replace with 📚 LIBRARY</option>
+          ${subjects.length? `<optgroup label="Replace with subject">${subjects.map(c=>`<option value="${esc(c)}">${esc(c)}${subjectNames[c]?' – '+esc(subjectNames[c]):''}</option>`).join('')}</optgroup>`:''}
+          ${activities.length? `<optgroup label="Replace with activity">${activities.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}</optgroup>`:''}
+        </select>
+        <input class="flagRename" data-value="${esc(v)}" placeholder="…or type a different label" autocomplete="off" style="width:100%;margin-top:6px;font-size:12px">
+      </div>
+    </div>`;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Review flagged entries — ${esc(cls)}</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <p class="field-hint" style="margin:0 0 12px">${vals.length} entr${vals.length===1?'y':'ies'} in this timetable ${vals.length===1?'is':'are'} not in Setup. Decide what each one should be. Typing a label in the box overrides the dropdown for that row.</p>
+        ${vals.map(row).join('')}
+        ${otherClasses.length? `<label class="subject-check" style="display:flex;align-items:center;gap:8px;margin-top:4px;font-size:13px">
+          <input type="checkbox" id="flagAllClasses"> Apply to all classes (${otherClasses.length} other class(es) carry the same flagged entries)
+        </label>`:''}
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="flagCancel">Cancel</button>
+        <button class="btn" id="flagApply">Apply changes</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#flagCancel').onclick = close;
+  wrap.querySelector('#flagApply').onclick = ()=>{
+    const mapping = {};          // old value -> new value, or '' to drop it
+    const addSubjects = [], addActivities = [];
+    const actionEls = Array.from(wrap.querySelectorAll('.flagAction'));
+    const renameEls = Array.from(wrap.querySelectorAll('.flagRename'));
+    vals.forEach(v=>{
+      // Matched on dataset rather than a built selector — a flagged label can contain
+      // anything the spreadsheet had in it, quotes included.
+      const sel = actionEls.find(el=> el.dataset.value===v);
+      const txt = renameEls.find(el=> el.dataset.value===v);
+      const typed = (txt && txt.value || '').trim().toUpperCase();
+      if(typed){ mapping[v] = typed; return; }              // typed label wins
+      const action = sel ? sel.value : '';
+      if(action === '') return;                              // keep as typed
+      if(action === '__ADD__'){ addSubjects.push(v); return; }
+      if(action === '__ACTIVITY__'){ addActivities.push(v); return; }
+      if(action === '__REMOVE__'){ mapping[v] = ''; return; }
+      mapping[v] = action;
+    });
+    const applyAll = !!(wrap.querySelector('#flagAllClasses') && wrap.querySelector('#flagAllClasses').checked);
+    const changed = Object.keys(mapping).length + addSubjects.length + addActivities.length;
+    if(!changed){ close(); return toast('Nothing to change'); }
+    close();
+    if(addSubjects.length){
+      if(!DB.setup.subjects) DB.setup.subjects = [];
+      addSubjects.forEach(v=>{ if(!DB.setup.subjects.includes(v)) DB.setup.subjects.push(v); });
+    }
+    if(addActivities.length){
+      if(!DB.scheduleActivities) DB.scheduleActivities = [...DEFAULT_ACTIVITIES];
+      addActivities.forEach(v=>{ if(!DB.scheduleActivities.includes(v)) DB.scheduleActivities.push(v); });
+    }
+    const targets = applyAll ? Object.keys(DB.classTimetable||{}) : [cls];
+    const touched = applyTimetableValueMapping(targets, mapping);
+    saveDB(`Flagged timetable entries resolved for ${applyAll? 'all classes' : cls}`);
+    render();
+    toast(`Updated ${touched} cell(s)${addSubjects.length? `, ${addSubjects.length} added to subjects`:''}${addActivities.length? `, ${addActivities.length} added to activities`:''}`);
+  };
+  setTimeout(()=> wrap.querySelector('#flagApply').focus(), 30);
+}
+/* Rewrites cell values across the given classes: mapping[old] = new label, or '' to drop
+   the value entirely. Multi-subject cells are handled value by value, and a cell left with
+   nothing is deleted outright so it reads as a free period rather than an empty array. */
+function applyTimetableValueMapping(classes, mapping){
+  let touched = 0;
+  classes.forEach(cls=>{
+    const dayMap = (DB.classTimetable||{})[cls];
+    if(!dayMap) return;
+    Object.keys(dayMap).forEach(day=>{
+      const periodMap = dayMap[day];
+      if(!periodMap) return;
+      Object.keys(periodMap).forEach(period=>{
+        const before = ttCellValues(periodMap[period]);
+        if(!before.some(v=> Object.prototype.hasOwnProperty.call(mapping, v))) return;
+        const after = [];
+        before.forEach(v=>{
+          const mapped = Object.prototype.hasOwnProperty.call(mapping, v) ? mapping[v] : v;
+          if(mapped && !after.includes(mapped)) after.push(mapped);
+        });
+        const stored = ttCellStore(after);
+        if(stored) periodMap[period] = stored; else delete periodMap[period];
+        touched++;
+      });
+      if(!Object.keys(periodMap).length) delete dayMap[day];
+    });
+  });
+  return touched;
+}
 
 function addTimetablePeriod(){
   if(!isAdmin()) return requireAdmin('add a period');
@@ -15676,15 +15812,62 @@ function renameTimetablePeriod(period){
   render();
   toast('Period renamed to '+label);
 }
+/* Removing a period takes it out everywhere, for every class — the period list, its
+   start/end times on every day, each class's saved subject entries for it, and any
+   per-class time overrides. Leaving orphaned entries behind (the old behaviour) meant a
+   deleted period's data would silently reappear the moment someone re-added a period
+   with the same label. Library schedule rows already generated from it are left alone;
+   they're a record of what was built, not live timetable data. */
 function removeTimetablePeriod(period){
   if(!isAdmin()) return requireAdmin('remove a period');
-  confirmModal(`Remove period "${esc(period)}"? Existing timetable entries using it are left as-is.`, ()=>{
+  capturePendingTimetableEdits();
+  // Count what will actually be lost so the confirmation is specific rather than vague.
+  let affectedClasses = 0, entryCount = 0;
+  Object.keys(DB.classTimetable||{}).forEach(cls=>{
+    const dayMap = DB.classTimetable[cls] || {};
+    let n = 0;
+    Object.keys(dayMap).forEach(day=>{
+      const pm = dayMap[day];
+      if(pm && Object.prototype.hasOwnProperty.call(pm, period)) n += ttCellValues(pm[period]).length || 1;
+    });
+    if(n){ affectedClasses++; entryCount += n; }
+  });
+  const scheduleRows = (DB.scheduleDays||[]).filter(r=> r[1]===period).length;
+  const lines = [`Remove period "${period}" from every class?`];
+  lines.push(entryCount
+    ? `This clears ${entryCount} timetable entr${entryCount===1?'y':'ies'} across ${affectedClasses} class(es), plus this period's start/end times on every day and any per-class time overrides.`
+    : `No class has anything entered for this period, so only the period itself and its times are removed.`);
+  if(scheduleRows) lines.push(`${scheduleRows} library schedule row(s) already built for this period are left as they are — remove them from the Schedule tab if you don't want them.`);
+  confirmModal(lines.join('\n'), ()=>{
     capturePendingTimetableEdits();
     if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
     DB.setup.periods = DB.setup.periods.filter(p=>p!==period);
-    if(DB.setup.periodTimes){ Object.keys(DB.setup.periodTimes).forEach(d=>{ if(DB.setup.periodTimes[d]) delete DB.setup.periodTimes[d][period]; }); }
-    saveDB('Period removed: '+period); render(); toast('Period removed');
-  }, {danger:true});
+    if(DB.setup.periodTimes){
+      Object.keys(DB.setup.periodTimes).forEach(d=>{ if(DB.setup.periodTimes[d]) delete DB.setup.periodTimes[d][period]; });
+    }
+    // Every class's subject entries for this period
+    Object.keys(DB.classTimetable||{}).forEach(cls=>{
+      const dayMap = DB.classTimetable[cls];
+      if(!dayMap) return;
+      Object.keys(dayMap).forEach(day=>{
+        if(dayMap[day]) delete dayMap[day][period];
+        if(dayMap[day] && !Object.keys(dayMap[day]).length) delete dayMap[day];
+      });
+    });
+    // Per-class start/end overrides for this period
+    Object.keys(DB.classTimings||{}).forEach(cls=>{
+      const dayMap = DB.classTimings[cls];
+      if(!dayMap) return;
+      Object.keys(dayMap).forEach(day=>{
+        if(dayMap[day]) delete dayMap[day][period];
+        if(dayMap[day] && !Object.keys(dayMap[day]).length) delete dayMap[day];
+      });
+      if(!Object.keys(dayMap).length) delete DB.classTimings[cls];
+    });
+    saveDB('Period removed everywhere: '+period);
+    render();
+    toast(entryCount? `Period "${period}" removed — ${entryCount} entr${entryCount===1?'y':'ies'} cleared` : `Period "${period}" removed`);
+  }, {confirmLabel:'Remove everywhere', danger:true});
 }
 let ttSelectedClass = null;
 let ttManageActivitiesOpen = false;
@@ -15876,7 +16059,10 @@ function pageClassTimetable(){
     ${(()=>{ const unk = ttUnknownValuesFor(cls); return unk.length ? `<div style="margin-top:10px;padding:10px 12px;border-radius:6px;background:var(--bg-accent,rgba(255,196,0,.12));border:1px solid rgba(200,150,0,.45)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="font-size:12.5px"><strong>⚠ ${unk.length} entr${unk.length===1?'y':'ies'} not in Setup:</strong> ${unk.map(v=>esc(v)).join(', ')}<div class="field-hint" style="margin-top:4px">These came in from an import and are kept as typed. Add them as subjects so they behave like the rest, or change those cells by hand.</div></div>
-        ${isAdmin()? `<button class="btn secondary small" onclick="addUnknownTimetableValuesToSetup('${esc(cls).replace(/'/g,"\\'")}')">+ Add to subjects</button>`:''}
+        ${isAdmin()? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn secondary small" onclick="addUnknownTimetableValuesToSetup('${esc(cls).replace(/'/g,"\\'")}')">+ Add to subjects</button>
+          <button class="btn secondary small" onclick="resolveFlaggedEntriesModal('${esc(cls).replace(/'/g,"\\'")}')">✎ Review &amp; replace</button>
+        </div>`:''}
       </div>
     </div>` : ''; })()}
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
