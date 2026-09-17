@@ -20955,6 +20955,7 @@ function enhanceCollapsibleSections(){
     // A panel whose only content is its own head has nothing to fold away or reorder.
     return [...panel.children].some(el=> el!==head);
   });
+  console.log('[sections] route='+route+' — sections found:', panels.length);
   if(!panels.length) return;
 
   panels.forEach(panel=>{
@@ -21128,7 +21129,7 @@ function render(){
   if(route==='dashboard') requestAnimationFrame(drawDashboardCharts);
   if(route==='analytics') requestAnimationFrame(drawAnalyticsCharts);
   applyIconPack();
-  enhanceCollapsibleSections();
+  try{ enhanceCollapsibleSections(); }catch(e){ console.error('Collapsible/reorderable sections failed to attach:', e); }
   restoreScrollPositions(el, __scrollSnapshot);
 }
 
