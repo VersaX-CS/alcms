@@ -6733,7 +6733,15 @@ function checkScheduleAlerts(){
   const due = DB.scheduleDays.filter(r=> r[0]===weekday && (r[2]||'').slice(0,5)===hm);
   if(!due.length) return;
   scheduleAlertedSlots.add(slotKey);
-  const bodyHtml = due.map(r=>`<div style="margin:0 0 8px"><strong>${esc(r[1])} period</strong> — ${esc(scheduleRowClassSummary(r))}${r[4]?` <span style="color:var(--muted)">(${esc(r[4])})</span>`:''}${renderIndividualFreeHtml(r[5])}</div>`).join('');
+  // Whole-class periods still show the plain class list; a period that's only free for some
+  // individual students (nothing in `classes`) shows just their breakdown — not both, which used
+  // to duplicate the same info as a plain line above the interactive one.
+  const bodyHtml = due.map(r=>{
+    const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const individualHtml = renderIndividualFreeHtml(r[5]);
+    const classesLabel = classes.length ? esc(classes.join(', ')) : (individualHtml ? '' : 'No class assigned');
+    return `<div style="margin:0 0 8px"><strong>${esc(r[1])} period</strong>${classesLabel? ` — ${classesLabel}`:''}${r[4]?` <span style="color:var(--muted)">(${esc(r[4])})</span>`:''}${individualHtml}</div>`;
+  }).join('');
   pushNotification({type:'schedule', title:'Class period starting now', body:due.map(r=>r[1]+' — '+scheduleRowClassSummary(r)).join(', '), route:'schedule'});
   openTimedAlert({title:'Class period starting now', bodyHtml, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; render(); }}]});
 }
@@ -10019,9 +10027,14 @@ function pageDashboard(){
   return `
   <div class="panel-head" style="margin-bottom:14px">
     <div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn secondary" onclick="generateSummaryReport()">🧾 Generate summary report</button>
-      <button class="btn secondary" onclick="openReportModal()">📋 Generate comprehensive report</button>
+    <div class="panel-head-actions">
+      <button class="btn secondary small" onclick="generateSummaryReport()">🧾 Generate summary report</button>
+      <div class="dropdown-wrap">
+        <button class="btn secondary small" data-dropdown-toggle="moremenu_dashboard">⋯ More</button>
+        <div class="dropdown-menu" id="moremenu_dashboard">
+          <a onclick="openReportModal()">📋 Generate comprehensive report</a>
+        </div>
+      </div>
     </div>
   </div>
   <div class="grid kpis">
