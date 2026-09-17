@@ -10716,10 +10716,22 @@ function isbn13to10(isbn13){
    Fills Title/Author/Publisher/Year, pulls in whatever subject/edition/classification data is
    available, then runs the same Dewey suggestion as a normal title entry. Shelf is left as
    "UNASSIGNED" so a fresh title never blocks on a physical location nobody's picked yet. */
+let isbnLookupInFlight = null;
 async function lookupBookByIsbn(){
   const isbnEl = document.getElementById('f_isbn');
   const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
   if(!isbn){ toast('Enter an ISBN first'); return; }
+  // The "Look up" button and the auto-lookup-on-blur listener (bindIsbnAutoLookup) can both fire
+  // for the same code within the same instant: clicking the button first blurs the field (firing
+  // the blur handler), then the button's own click handler runs right after. That silently
+  // doubled every real lookup — two openlibrary.org requests and two googleapis.com requests per
+  // scan — which alone is enough to burn through Google Books' unauthenticated rate limit and
+  // turn a working lookup into a string of 429 "Too Many Requests" errors after just one or two
+  // scans. Guard here, in the one function every entry point (button, blur, Enter, scanner modal)
+  // funnels through, rather than trying to patch every caller separately.
+  if(isbnLookupInFlight === isbn) return;
+  isbnLookupInFlight = isbn;
+  try{
   const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
 
   const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val && !el.value) el.value = String(val).toUpperCase(); };
@@ -10735,17 +10747,17 @@ async function lookupBookByIsbn(){
   };
 
   // Both sources swallow their own errors and return null on ANY failure — a genuine "this ISBN
-  // isn't in the catalog" and "couldn't even reach openlibrary.org / googleapis.com" used to look
-  // identical to the librarian, both ending in the same "No match found" toast. That's the usual
-  // cause when EVERY isbn comes back not-found (a blocked/offline network, an ad-blocker, or a
-  // DNS filter on those two domains) rather than the lookup genuinely having no record. reachable
-  // tracks whether at least one fetch actually completed, so the two cases get different toasts.
-  let reachable = false;
+  // isn't in the catalog", a rate limit, and "couldn't even reach openlibrary.org / googleapis.com"
+  // used to all look identical to the librarian, ending in the same "No match found" toast.
+  // reachable/rateLimited track what actually happened so the final message can say which one it
+  // was, instead of always implying the book just isn't in either database.
+  let reachable = false, rateLimited = false;
   // Source 1: Open Library
   const tryOpenLibrary = async (code)=>{
     try{
       const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
       reachable = true;
+      if(res.status===429) rateLimited = true;
       if(!res.ok) return null;
       const data = await res.json();
       return data['ISBN:'+code] || null;
@@ -10756,6 +10768,7 @@ async function lookupBookByIsbn(){
     try{
       const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
       reachable = true;
+      if(res.status===429) rateLimited = true;
       if(!res.ok) return null;
       const data = await res.json();
       return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
@@ -10809,9 +10822,11 @@ async function lookupBookByIsbn(){
     let vol = await tryGoogleBooks(isbn);
     if(!vol && altIsbn) vol = await tryGoogleBooks(altIsbn);
     if(!vol){
-      toast(reachable
-        ? 'No match found on Open Library or Google Books — enter details manually'
-        : "Couldn't reach either lookup service — check your internet connection, or that openlibrary.org and googleapis.com aren't blocked on this network. Enter details manually for now.");
+      toast(rateLimited
+        ? "Lookup services are rate-limiting these requests (Too Many Requests) — wait a few seconds and try again, or enter details manually."
+        : reachable
+          ? 'No match found on Open Library or Google Books — enter details manually'
+          : "Couldn't reach either lookup service — check your internet connection, or that openlibrary.org and googleapis.com aren't blocked on this network. Enter details manually for now.");
       return;
     }
 
@@ -10837,6 +10852,9 @@ async function lookupBookByIsbn(){
     toast('Filled in from Google Books — check it over before saving');
   } catch(e){
     toast('Lookup failed — check your connection, or enter details manually');
+  }
+  } finally {
+    isbnLookupInFlight = null;
   }
 }
 /* Maps a Dewey Decimal number (e.g. "612.1" or "813") to one of the library's ten main-class
