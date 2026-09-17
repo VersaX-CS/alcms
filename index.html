@@ -3129,6 +3129,12 @@ html[data-theme="dark"] .kpi .val{ color:var(--brass-light);}
 
 .panel{ padding:18px 20px; margin-bottom:18px;}
 .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;}
+/* Dashboard header buttons must always stay on one row, at every screen width — overrides the
+   generic .panel-head responsive stacking (which is fine for headers with a visible title, but
+   would otherwise push the dashboard's action buttons onto their own line below an empty title
+   slot on narrower screens). */
+.panel-head.panel-head-row{ flex-wrap:nowrap !important; flex-direction:row !important; align-items:center !important;}
+.panel-head.panel-head-row .panel-head-actions{ width:auto !important;}
 /* Collapsible sections. Every panel with its own heading gets a caret on that heading; clicking
    it folds the panel down to just its head. Long pages (Setup especially) are a lot easier to
    move around when the six sections you aren't using are one line each, and the open/closed
@@ -10037,7 +10043,7 @@ function pageDashboard(){
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
   const todaysPeriods = (DB.scheduleDays||[]).filter(r=>r[0]===weekday);
   return `
-  <div class="panel-head" style="margin-bottom:14px">
+  <div class="panel-head panel-head-row" style="margin-bottom:14px">
     <div></div>
     <div class="panel-head-actions">
       <button class="btn secondary small" onclick="generateSummaryReport()">🧾 Generate summary report</button>
