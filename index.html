@@ -10082,9 +10082,20 @@ function pageDashboard(){
         return sorted.map(r=>{
           const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
           const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
+          // A period can be free for a handful of individual students (their own subject
+          // combination excludes whatever's running) without the whole class being free — that
+          // case has no entry in `classes` at all, so it used to fall through to a flat "No
+          // class assigned". Show it the same way the Schedule page does instead: which class,
+          // how many of its students are free, and the subject they're not offered — with the
+          // actual names tucked behind a hint (renderIndividualFreeHtml's own <details>) rather
+          // than crowding the dashboard row.
+          const individualHtml = renderIndividualFreeHtml(r[5]);
+          const classesLabel = classes.length ? esc(classes.join(', '))
+            : (individualHtml ? '' : 'No class assigned');
           return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
-            <div style="flex:1"><strong>${esc(r[1]||'')}</strong> — <em>${esc(classes.join(', ')||'No class assigned')}</em>
-            <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div></div>
+            <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
+            <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
+            ${individualHtml}</div>
             ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
         }).join('');
       })()}
