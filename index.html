@@ -6733,8 +6733,8 @@ function checkScheduleAlerts(){
   const due = DB.scheduleDays.filter(r=> r[0]===weekday && (r[2]||'').slice(0,5)===hm);
   if(!due.length) return;
   scheduleAlertedSlots.add(slotKey);
-  const bodyHtml = due.map(r=>`<p style="margin:0 0 8px"><strong>${esc(r[1])} period</strong> — ${esc(r[3])}${r[4]?` <span style="color:var(--muted)">(${esc(r[4])})</span>`:''}</p>`).join('');
-  pushNotification({type:'schedule', title:'Class period starting now', body:due.map(r=>r[1]+' — '+r[3]).join(', '), route:'schedule'});
+  const bodyHtml = due.map(r=>`<div style="margin:0 0 8px"><strong>${esc(r[1])} period</strong> — ${esc(scheduleRowClassSummary(r))}${r[4]?` <span style="color:var(--muted)">(${esc(r[4])})</span>`:''}${renderIndividualFreeHtml(r[5])}</div>`).join('');
+  pushNotification({type:'schedule', title:'Class period starting now', body:due.map(r=>r[1]+' — '+scheduleRowClassSummary(r)).join(', '), route:'schedule'});
   openTimedAlert({title:'Class period starting now', bodyHtml, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; render(); }}]});
 }
 let reminderAlertedIds = new Set();
@@ -7940,7 +7940,7 @@ function openScheduleModalFromCalendar(){
     <div style="margin-bottom:14px">
       <h4 style="margin:0 0 8px;font-size:12px;color:var(--muted-label);letter-spacing:.5px;font-weight:700">${d}</h4>
       <div class="table-wrap"><table class="datatable" style="font-size:13px"><thead><tr><th>Period</th><th>Time</th><th>Class(es)</th><th>Notes</th></tr></thead>
-      <tbody>${byDay[d].map(r=>`<tr><td>${esc(r[1]||'')}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td style="color:var(--muted);font-size:12px">${esc(r[4]||'')}</td></tr>`).join('')}</tbody></table></div>
+      <tbody>${byDay[d].map(r=>`<tr><td>${esc(r[1]||'')}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td style="color:var(--muted);font-size:12px">${esc(r[4]||'')}${renderIndividualFreeHtml(r[5])}</td></tr>`).join('')}</tbody></table></div>
     </div>
   `).join('');
 
@@ -16800,6 +16800,20 @@ function removeScheduleActivity(act){
   });
 }
 function classStudents(cls){ return DB.users.filter(u=>u.category==='STUDENT' && u.cls===cls); }
+/* Plain-text version of the same "class — free count — subject not offered" info
+   renderIndividualFreeHtml shows as an interactive hint, for contexts that can't render HTML
+   (the notification list/preview, which always uses textContent/esc()). Falls back to the
+   ordinary expected-class list, or 'No class assigned' only when a period truly has neither. */
+function scheduleRowClassSummary(r){
+  const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(classes.length) return classes.join(', ');
+  if(r[5] && typeof r[5]==='object'){
+    const parts = Object.entries(r[5]).filter(([,info])=>info && info.students && info.students.length)
+      .map(([cls,info])=>`${cls}: ${info.students.length} free (not offering ${info.subject})`);
+    if(parts.length) return parts.join('; ');
+  }
+  return 'No class assigned';
+}
 function renderIndividualFreeHtml(breakdown){
   if(!breakdown || typeof breakdown!=='object') return '';
   const parts = Object.entries(breakdown).filter(([,info])=>info && info.students && info.students.length);
