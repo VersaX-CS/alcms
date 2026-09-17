@@ -10734,10 +10734,18 @@ async function lookupBookByIsbn(){
     if(shelfEl && !shelfEl.value) shelfEl.value = 'UNASSIGNED';
   };
 
+  // Both sources swallow their own errors and return null on ANY failure — a genuine "this ISBN
+  // isn't in the catalog" and "couldn't even reach openlibrary.org / googleapis.com" used to look
+  // identical to the librarian, both ending in the same "No match found" toast. That's the usual
+  // cause when EVERY isbn comes back not-found (a blocked/offline network, an ad-blocker, or a
+  // DNS filter on those two domains) rather than the lookup genuinely having no record. reachable
+  // tracks whether at least one fetch actually completed, so the two cases get different toasts.
+  let reachable = false;
   // Source 1: Open Library
   const tryOpenLibrary = async (code)=>{
     try{
       const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
+      reachable = true;
       if(!res.ok) return null;
       const data = await res.json();
       return data['ISBN:'+code] || null;
@@ -10747,6 +10755,7 @@ async function lookupBookByIsbn(){
   const tryGoogleBooks = async (code)=>{
     try{
       const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
+      reachable = true;
       if(!res.ok) return null;
       const data = await res.json();
       return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
@@ -10799,7 +10808,12 @@ async function lookupBookByIsbn(){
     // Library doesn't carry.
     let vol = await tryGoogleBooks(isbn);
     if(!vol && altIsbn) vol = await tryGoogleBooks(altIsbn);
-    if(!vol){ toast('No match found on Open Library or Google Books — enter details manually'); return; }
+    if(!vol){
+      toast(reachable
+        ? 'No match found on Open Library or Google Books — enter details manually'
+        : "Couldn't reach either lookup service — check your internet connection, or that openlibrary.org and googleapis.com aren't blocked on this network. Enter details manually for now.");
+      return;
+    }
 
     setIfEmpty('title', vol.subtitle? `${vol.title}: ${vol.subtitle}` : vol.title);
     setIfEmpty('author', (vol.authors||[]).join(', '));
