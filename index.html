@@ -4437,6 +4437,52 @@ const $ = (sel,root=document)=>root.querySelector(sel);
 const $$ = (sel,root=document)=>Array.from(root.querySelectorAll(sel));
 const esc = s => (s===null||s===undefined) ? '' : String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = p => p+'-'+Math.random().toString(36).slice(2,8).toUpperCase();
+/* ================= Reusable "Select all / Deselect all + counter" toolbar =================
+   Wires a small toolbar (two links + a live count) to any group of checkboxes, scoped to a
+   container element so several independent groups (e.g. one grid per class) can each get their
+   own toolbar without interfering with one another. Call this again after any re-render that
+   regenerates the toolbar/checkbox markup — it only binds what currently exists in the DOM.
+   Markup expected inside `container`:
+     <div class="sac-toolbar"><a class="sac-all">Select all</a><a class="sac-none">Deselect all</a><span class="sac-count"></span></div>
+     ...checkboxes matching checkboxSelector...
+   `toolbarSelector` defaults to '.sac-toolbar' and can be narrowed (e.g. by a data attribute)
+   when a single container holds more than one independent checkbox group. */
+function wireSelectAllToolbar(container, checkboxSelector, opts){
+  if(!container) return;
+  opts = opts || {};
+  const toolbar = opts.toolbar || container.querySelector(opts.toolbarSelector || '.sac-toolbar');
+  if(!toolbar) return;
+  const getBoxes = ()=> Array.from(container.querySelectorAll(checkboxSelector)).filter(cb=>!cb.disabled);
+  const countEl = toolbar.querySelector('.sac-count');
+  const update = ()=>{
+    const all = getBoxes();
+    const n = all.filter(cb=>cb.checked).length;
+    if(countEl) countEl.textContent = all.length ? `${n} of ${all.length} selected` : '';
+    if(opts.onUpdate) opts.onUpdate(n, all.length);
+  };
+  const allLink = toolbar.querySelector('.sac-all');
+  const noneLink = toolbar.querySelector('.sac-none');
+  if(allLink) allLink.onclick = e=>{
+    e.preventDefault();
+    getBoxes().forEach(cb=>{ if(!cb.checked){ cb.checked = true; cb.dispatchEvent(new Event('change',{bubbles:true})); } });
+    update();
+  };
+  if(noneLink) noneLink.onclick = e=>{
+    e.preventDefault();
+    getBoxes().forEach(cb=>{ if(cb.checked){ cb.checked = false; cb.dispatchEvent(new Event('change',{bubbles:true})); } });
+    update();
+  };
+  container.addEventListener('change', e=>{ if(e.target.matches && e.target.matches(checkboxSelector)) update(); });
+  update();
+}
+/* Shared markup for a select-all/deselect-all toolbar row, sized for use above a checkbox grid. */
+function selectAllToolbarHtml(extraStyle){
+  return `<div class="sac-toolbar" style="display:flex;align-items:center;gap:12px;margin-bottom:6px;font-size:12px;${extraStyle||''}">
+    <a href="#" class="sac-all" style="color:var(--accent,#2E6B4F);text-decoration:none;font-weight:600">Select all</a>
+    <a href="#" class="sac-none" style="color:var(--muted);text-decoration:none;font-weight:600">Deselect all</a>
+    <span class="sac-count" style="margin-left:auto;color:var(--muted)"></span>
+  </div>`;
+}
 function nextSequentialId(prefix, existingIds){
   let max = 0;
   existingIds.forEach(id=>{
@@ -11590,6 +11636,7 @@ function viewSubjects(userId){
       <div class="modal-head"><h3>Subjects — ${memberNameHtml(u.name, u.id)}</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <p class="field-hint">${esc(u.id)} · ${esc(u.cls)} ${isOverridden? '· <strong>custom selection</strong>' : '· using class default'}</p>
+        ${admin && DB.setup.subjects.length>1? selectAllToolbarHtml() : ''}
         <div class="subject-pill-grid" id="subjectGrid">
           ${DB.setup.subjects.map(s=>`
             <label class="subject-check"><input type="checkbox" class="subjChk" value="${esc(s)}" ${active.includes(s)?'checked':''} ${admin?'':'disabled'}> ${esc(s)}</label>
@@ -11608,6 +11655,7 @@ function viewSubjects(userId){
   const close = ()=> $('#modalRoot').innerHTML='';
   $('#mClose').onclick=close; $('#mCancel').onclick=close;
   $('#mb').addEventListener('click', e=>{ if(e.target.id==='mb') close(); });
+  if(admin) wireSelectAllToolbar($('#modalRoot'), '.subjChk');
   const printBtn = $('#mPrintSubj');
   if(printBtn) printBtn.onclick = ()=>{
     const rows = active.map((s,i)=>({n:i+1, subject:s}));
@@ -11693,6 +11741,7 @@ function pageMemberProfile(){
     const admin = isAdmin();
     tabBody = `
       <div class="field-hint" style="margin-bottom:10px">${esc(u.cls||'—')} ${isOverridden? '· <strong>custom selection</strong>' : '· using class default'}</div>
+      ${admin && DB.setup.subjects.length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid" id="subjectGridProfile">
         ${DB.setup.subjects.map(s=>`<label class="subject-check"><input type="checkbox" class="subjChkProfile" value="${esc(s)}" ${subjActive.includes(s)?'checked':''} ${admin?'':'disabled'}> ${esc(s)}</label>`).join('')}
       </div>
@@ -16439,6 +16488,7 @@ function editTimetableCellModal(day, period){
       <div class="modal-head"><h3>${esc(cls)} — ${esc(day.slice(0,3))} ${esc(period)}</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body">
         <p class="field-hint" style="margin:0 0 12px">Tick every subject running in this period. Senior classes often split across two or three at once — tick them all, and students are matched to whichever one their own combination includes.</p>
+        ${selectAllToolbarHtml('margin-bottom:12px')}
         ${group('Library', box('LIBRARY','📚 LIBRARY'))}
         ${group('Subjects', (DB.setup.subjects||[]).map(c=> box(c, c, subjectNames[c]||'')).join(''))}
         ${group('Activities', activities.map(a=> box(a, a)).join(''))}
@@ -16458,6 +16508,7 @@ function editTimetableCellModal(day, period){
       </div>
     </div>`;
   document.body.appendChild(wrap);
+  wireSelectAllToolbar(wrap, '.ttPick');
   const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
   wrap.onclick = e=>{ if(e.target===wrap) close(); };
   wrap.querySelector('#mClose').onclick = close;
@@ -16866,6 +16917,7 @@ function openScheduleForm(index){
     classSection.innerHTML = `
       <label>Expected class(es) *</label>
       <p class="field-hint" style="margin-bottom:6px">Tick every class that shares this day, time and period.</p>
+      ${sortedClasses().length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid" id="schedClassGrid">
         ${sortedClasses().map(c=>`<label class="subject-check"><input type="checkbox" class="schedClsChk" value="${esc(c)}" ${existingClasses.includes(c)?'checked':''}> ${esc(c)}</label>`).join('')}
       </div>`;
@@ -16889,6 +16941,7 @@ function openScheduleForm(index){
     activitiesSection.style.marginTop = '14px';
     activitiesSection.innerHTML = `
       <label>Activities</label>
+      ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid" id="schedActivityGrid">
         ${(DB.scheduleActivities || DEFAULT_ACTIVITIES).map(act=>`<label class="subject-check"><input type="checkbox" class="schedActivityChk" value="${esc(act)}"> ${esc(act)}</label>`).join('')}
       </div>`;
@@ -16900,6 +16953,7 @@ function openScheduleForm(index){
     subjectsSection.innerHTML = `
       <label>Subject free periods</label>
       <p class="field-hint" style="margin-bottom:6px">Tick subject codes not offered to this class (their students get a free period).</p>
+      ${knownCodes.length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid" id="schedSubjectGrid">
         ${knownCodes.map(code=>`<label class="subject-check"><input type="checkbox" class="schedSubjectChk" value="${esc(code)}" ${existingCodes.includes(code)?'checked':''}> ${esc(code)}</label>`).join('')}
       </div>`;
@@ -16927,6 +16981,9 @@ function openScheduleForm(index){
     
     $$('.schedClsChk').forEach(chk=>chk.addEventListener('change', updateClassTimeGrid));
     updateClassTimeGrid();
+    wireSelectAllToolbar(classSection, '.schedClsChk');
+    wireSelectAllToolbar(activitiesSection, '.schedActivityChk');
+    wireSelectAllToolbar(subjectsSection, '.schedSubjectChk');
   }
   $('#mSave').onclick = ()=>{
     const day = $('#f_day').value, period = $('#f_period').value, time = $('#f_time').value;
@@ -19606,9 +19663,11 @@ function renderPromoteSourceList(){
   const already = new Set(promoteBatch.map(s=>s.id));
   const students = DB.users.filter(u=>u.cls===from && u.category==='STUDENT' && !already.has(u.id));
   if(!students.length){ el.innerHTML = `<div class="stage-empty">No unstaged students left in ${esc(from)}.</div>`; return; }
+  const selectedCount = students.filter(u=>promoteSourceChecked[u.id]).length;
   el.innerHTML = `
+  ${selectAllToolbarHtml()}
   <table class="stage-table">
-    <thead><tr><th><input type="checkbox" id="promoteSelectAll"></th><th>ID</th><th>Name</th></tr></thead>
+    <thead><tr><th><input type="checkbox" id="promoteSelectAll" ${students.length && selectedCount===students.length?'checked':''}></th><th>ID</th><th>Name</th></tr></thead>
     <tbody>${students.map(u=>`<tr${isMemberInactive(u.id)?' class="row-muted"':''}>
       <td><input type="checkbox" class="promoteSrcCheck" data-id="${esc(u.id)}" ${promoteSourceChecked[u.id]?'checked':''}></td>
       <td>${esc(u.id)}</td><td>${memberNameHtml(u.name, u.id)}</td>
@@ -19617,7 +19676,13 @@ function renderPromoteSourceList(){
   const selAll = document.getElementById('promoteSelectAll');
   if(selAll) selAll.onchange = e=>{ students.forEach(u=>promoteSourceChecked[u.id]=e.target.checked); renderPromoteSourceList(); };
   document.querySelectorAll('.promoteSrcCheck').forEach(cb=>{
-    cb.onchange = e=>{ promoteSourceChecked[e.target.dataset.id]=e.target.checked; };
+    cb.onchange = e=>{
+      promoteSourceChecked[e.target.dataset.id]=e.target.checked;
+      if(selAll) selAll.checked = students.every(u=>promoteSourceChecked[u.id]);
+    };
+  });
+  wireSelectAllToolbar(el, '.promoteSrcCheck', {
+    onUpdate: ()=>{ if(selAll) selAll.checked = students.length>0 && students.every(u=>promoteSourceChecked[u.id]); }
   });
 }
 function addSelectedToPromoteBatch(){
@@ -19710,8 +19775,9 @@ function renderShelfMapHtml(){
   const realShelves = DB.setup.shelves.filter(s=>s!=='UNASSIGNED');
   return DB.setup.mainClasses.map(c=>{
     const chosen = map[c] || [];
-    return `<div style="margin-bottom:14px">
+    return `<div class="shelf-class-group" style="margin-bottom:14px">
       <p class="field-hint" style="margin-bottom:6px"><strong>${esc(c)}</strong></p>
+      ${realShelves.length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid">
         ${realShelves.map(s=>`
           <label class="subject-check"><input type="checkbox" class="shelfMapChk" data-cls="${esc(c)}" value="${esc(s)}" ${chosen.includes(s)?'checked':''} onchange="enforceShelfMapUnique(this)"> ${esc(s)}</label>
@@ -19725,7 +19791,7 @@ function renderShelfMapHtml(){
 function enforceShelfMapUnique(cb){
   if(!cb.checked) return;
   $$('.shelfMapChk').forEach(other=>{
-    if(other!==cb && other.value===cb.value) other.checked = false;
+    if(other!==cb && other.value===cb.value && other.checked){ other.checked = false; other.dispatchEvent(new Event('change',{bubbles:true})); }
   });
 }
 /* Proposes a shelf split proportional to how many items each main class already has in the
@@ -19820,8 +19886,9 @@ function renderSubjectsHtml(){
 }
 function renderClassSubjectGridHtml(){
   return sortedClasses().map(c=>`
-    <div style="margin-bottom:14px">
+    <div class="subject-class-group" style="margin-bottom:14px">
       <p class="field-hint" style="margin-bottom:6px"><strong>${esc(c)}</strong></p>
+      ${DB.setup.subjects.length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid">
         ${DB.setup.subjects.map(s=>`
           <label class="subject-check"><input type="checkbox" class="classSubjChk" data-cls="${esc(c)}" value="${esc(s)}" ${(DB.setup.classSubjects[c]||[]).includes(s)?'checked':''}> ${esc(s)}</label>
@@ -19829,7 +19896,12 @@ function renderClassSubjectGridHtml(){
       </div>
     </div>`).join('');
 }
-function refreshSetupSection(id, htmlFn){ const el=document.getElementById(id); if(el) el.innerHTML = htmlFn(); }
+function refreshSetupSection(id, htmlFn){
+  const el=document.getElementById(id); if(!el) return;
+  el.innerHTML = htmlFn();
+  if(id==='classSubjectGrid') $$('.subject-class-group', el).forEach(group=> wireSelectAllToolbar(group, '.classSubjChk'));
+  if(id==='shelfMapGrid') $$('.shelf-class-group', el).forEach(group=> wireSelectAllToolbar(group, '.shelfMapChk'));
+}
 function addDesignation(){
   if(!isAdmin()) return requireAdmin('add designations');
   const el = $('#newDesignation'); const s = el.value.trim().toUpperCase();
@@ -21121,6 +21193,11 @@ function render(){
   if(route==='schedule'){ $('#mod_roster').innerHTML = pageRosterTable(); MODULE_CONTAINERS.roster={host:{render:()=>{ $('#mod_roster').innerHTML=pageRosterTable(); rosterModule.bind(); }}}; rosterModule.bind(); }
   if(route==='setup' && isAdmin()){ renderPromoteSourceList(); renderPromoteStaging(); }
   if((route==='settings'||route==='setup') && isAdmin()){ bindSettingsUploaders(); }
+  if(route==='memberProfile' && memberProfileTab==='subjects' && isAdmin()){ wireSelectAllToolbar(el, '.subjChkProfile'); }
+  if(route==='setup' && isAdmin()){
+    $$('.subject-class-group').forEach(group=> wireSelectAllToolbar(group, '.classSubjChk'));
+    $$('.shelf-class-group').forEach(group=> wireSelectAllToolbar(group, '.shelfMapChk'));
+  }
   if(route==='account'){ bindAccountPage(); }
   if(route==='security'){ bindSecurityPage(); }
   if(route==='circulation'){ bindCirculationPickers(); renderIssueStaging(); renderReturnStaging(); }
