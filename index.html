@@ -10637,7 +10637,7 @@ function bookFields(b={}, isNew){
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
     {row:[
-      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
+      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN (checks Open Library, Google Books, then Wikidata)"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
       {key:'acc',label:'Accession No.',required:true, default:b.acc || nextSequentialId('ACC', DB.catalogue.map(x=>x.acc))},
     ]},
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
@@ -10707,15 +10707,28 @@ function isbn13to10(isbn13){
   let check = (11 - (sum%11)) % 11;
   return core + (check===10? 'X' : String(check));
 }
-/* ISBN lookup: tries Open Library first (free, keyless, CORS-enabled), then falls back to the
-   Google Books API (also free/keyless/CORS-enabled) if Open Library has no record — Open
-   Library's catalog is thin for a lot of non-US/UK editions and locally-published textbooks, so
-   relying on it alone meant plenty of real-world scans came back "no match" even though the book
-   is perfectly findable online. Each source is also retried with the other ISBN-10/13 form before
-   giving up, since sources sometimes index only one form for older titles.
+/* ISBN lookup: chains three independent, free, keyless, CORS-enabled catalog sources so a miss
+   on one doesn't mean giving up — Open Library first, then Google Books, then Wikidata's SPARQL
+   query service. No single one of these has full coverage: Open Library is thin for a lot of
+   non-US/UK editions and locally-published textbooks, Google Books is strong for anything
+   commercially in print but weak for older/academic titles, and Wikidata fills in some of the
+   remaining gap for notable works (especially ones with a genre/classification already recorded
+   there) even when neither bibliographic API has heard of them. Each source is also retried with
+   the other ISBN-10/13 form before moving on, since sources sometimes index only one form for
+   older titles. Every request is time-boxed (isbnFetchTimeout) so one slow/hanging host can't
+   stall the whole chain — the remaining sources still get a chance within a normal click.
    Fills Title/Author/Publisher/Year, pulls in whatever subject/edition/classification data is
    available, then runs the same Dewey suggestion as a normal title entry. Shelf is left as
    "UNASSIGNED" so a fresh title never blocks on a physical location nobody's picked yet. */
+// Wraps fetch() with an abortable timeout — without this, a source that hangs (rather than
+// erroring or rate-limiting) would block the rest of the chain indefinitely instead of failing
+// over to the next service within a reasonable time.
+async function isbnFetchTimeout(url, ms=7000){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
+  try{ return await fetch(url, {signal: ctrl.signal}); }
+  finally{ clearTimeout(t); }
+}
 let isbnLookupInFlight = null;
 async function lookupBookByIsbn(){
   const isbnEl = document.getElementById('f_isbn');
@@ -10755,7 +10768,7 @@ async function lookupBookByIsbn(){
   // Source 1: Open Library
   const tryOpenLibrary = async (code)=>{
     try{
-      const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
+      const res = await isbnFetchTimeout(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
       reachable = true;
       if(res.status===429) rateLimited = true;
       if(!res.ok) return null;
@@ -10766,12 +10779,49 @@ async function lookupBookByIsbn(){
   // Source 2: Google Books
   const tryGoogleBooks = async (code)=>{
     try{
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
+      const res = await isbnFetchTimeout(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
       reachable = true;
       if(res.status===429) rateLimited = true;
       if(!res.ok) return null;
       const data = await res.json();
       return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+    }catch(e){ return null; }
+  };
+  // Source 3: Wikidata (SPARQL query service) — a fundamentally different kind of catalog than
+  // the two above: a structured knowledge graph rather than a library/bookseller database. Books
+  // there carry ISBN-13 as property P212 and ISBN-10 as P957, usually with hyphens, so the query
+  // strips punctuation on both sides (REPLACE) rather than requiring an exact-string match. Tried
+  // last since its book coverage skews toward notable/well-known works rather than every printed
+  // edition, but it fills real gaps — including some older or academic titles neither
+  // bibliographic API carries a record for.
+  const tryWikidata = async (isbn13code, isbn10code)=>{
+    try{
+      const filters = [];
+      if(isbn13code) filters.push(`{ ?book wdt:P212 ?i13 . FILTER(REPLACE(STR(?i13), "[^0-9Xx]", "") = "${isbn13code}") }`);
+      if(isbn10code) filters.push(`{ ?book wdt:P957 ?i10 . FILTER(REPLACE(STR(?i10), "[^0-9Xx]", "") = "${isbn10code}") }`);
+      if(!filters.length) return null;
+      const query = `SELECT ?bookLabel ?authorLabel ?publisherLabel ?pubdate ?genreLabel WHERE {
+        { ${filters.join(' } UNION { ')} }
+        OPTIONAL { ?book wdt:P50 ?author. }
+        OPTIONAL { ?book wdt:P123 ?publisher. }
+        OPTIONAL { ?book wdt:P577 ?pubdate. }
+        OPTIONAL { ?book wdt:P136 ?genre. }
+        SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+      } LIMIT 1`;
+      const res = await isbnFetchTimeout(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(query)}`);
+      reachable = true;
+      if(res.status===429) rateLimited = true;
+      if(!res.ok) return null;
+      const data = await res.json();
+      const row = data.results && data.results.bindings && data.results.bindings[0];
+      if(!row || !row.bookLabel) return null;
+      return {
+        title: row.bookLabel.value,
+        author: row.authorLabel ? row.authorLabel.value : '',
+        publisher: row.publisherLabel ? row.publisherLabel.value : '',
+        pubdate: row.pubdate ? row.pubdate.value : '',
+        genre: row.genreLabel ? row.genreLabel.value : ''
+      };
     }catch(e){ return null; }
   };
 
@@ -10821,35 +10871,53 @@ async function lookupBookByIsbn(){
     // Library doesn't carry.
     let vol = await tryGoogleBooks(isbn);
     if(!vol && altIsbn) vol = await tryGoogleBooks(altIsbn);
-    if(!vol){
-      toast(rateLimited
-        ? "Lookup services are rate-limiting these requests (Too Many Requests) — wait a few seconds and try again, or enter details manually."
-        : reachable
-          ? 'No match found on Open Library or Google Books — enter details manually'
-          : "Couldn't reach either lookup service — check your internet connection, or that openlibrary.org and googleapis.com aren't blocked on this network. Enter details manually for now.");
+    if(vol){
+      setIfEmpty('title', vol.subtitle? `${vol.title}: ${vol.subtitle}` : vol.title);
+      setIfEmpty('author', (vol.authors||[]).join(', '));
+      setIfEmpty('publisher', vol.publisher);
+      const yearMatch = String(vol.publishedDate||'').match(/\d{4}/);
+      setIfEmpty('year', yearMatch? yearMatch[0] : '');
+      if((vol.categories||[]).length) setIfEmpty('category', vol.categories.slice(0,3).join(' / '));
+      const volMatch = String(vol.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
+      if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
+
+      const catalogingNotes = [];
+      if(vol.pageCount) catalogingNotes.push(`${vol.pageCount} PAGES`);
+      if(vol.printType) catalogingNotes.push(String(vol.printType).toUpperCase());
+      if(vol.language) catalogingNotes.push('LANGUAGE: '+String(vol.language).toUpperCase());
+      if(catalogingNotes.length){
+        const infoEl = document.getElementById('f_info');
+        if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
+      }
+
+      finishCommon(null);
+      toast('Filled in from Google Books — check it over before saving');
       return;
     }
 
-    setIfEmpty('title', vol.subtitle? `${vol.title}: ${vol.subtitle}` : vol.title);
-    setIfEmpty('author', (vol.authors||[]).join(', '));
-    setIfEmpty('publisher', vol.publisher);
-    const yearMatch = String(vol.publishedDate||'').match(/\d{4}/);
-    setIfEmpty('year', yearMatch? yearMatch[0] : '');
-    if((vol.categories||[]).length) setIfEmpty('category', vol.categories.slice(0,3).join(' / '));
-    const volMatch = String(vol.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
-    if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
-
-    const catalogingNotes = [];
-    if(vol.pageCount) catalogingNotes.push(`${vol.pageCount} PAGES`);
-    if(vol.printType) catalogingNotes.push(String(vol.printType).toUpperCase());
-    if(vol.language) catalogingNotes.push('LANGUAGE: '+String(vol.language).toUpperCase());
-    if(catalogingNotes.length){
-      const infoEl = document.getElementById('f_info');
-      if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
+    // Last resort: Wikidata. Pass whichever forms we have (both isbn13/isbn10, stripped of
+    // hyphens) so a single query can match on either property.
+    const isbn13 = isbn.length===13 ? isbn : (altIsbn && altIsbn.length===13 ? altIsbn : null);
+    const isbn10 = isbn.length===10 ? isbn : (altIsbn && altIsbn.length===10 ? altIsbn : null);
+    const wd = await tryWikidata(isbn13, isbn10);
+    if(!wd){
+      toast(rateLimited
+        ? "Lookup services are rate-limiting these requests (Too Many Requests) — wait a few seconds and try again, or enter details manually."
+        : reachable
+          ? 'No match found on Open Library, Google Books, or Wikidata — enter details manually'
+          : "Couldn't reach any lookup service — check your internet connection, or that openlibrary.org, googleapis.com, and query.wikidata.org aren't blocked on this network. Enter details manually for now.");
+      return;
     }
 
+    setIfEmpty('title', wd.title);
+    setIfEmpty('author', wd.author);
+    setIfEmpty('publisher', wd.publisher);
+    const yearMatch = String(wd.pubdate||'').match(/\d{4}/);
+    setIfEmpty('year', yearMatch? yearMatch[0] : '');
+    if(wd.genre) setIfEmpty('category', wd.genre);
+
     finishCommon(null);
-    toast('Filled in from Google Books — check it over before saving');
+    toast('Filled in from Wikidata — check it over before saving');
   } catch(e){
     toast('Lookup failed — check your connection, or enter details manually');
   }
