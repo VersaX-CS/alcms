@@ -4589,9 +4589,19 @@ function fmtDate(v){
 }
 function fmtTime(v){
   if(!v) return '—';
-  if(typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v)) return v.slice(0,5);
+  const is12h = PREFS.clockFormat==='12h';
+  if(typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v)){
+    const hm = v.slice(0,5);
+    if(!is12h) return hm;
+    const [h,m] = hm.split(':').map(Number);
+    const period = h>=12 ? 'PM' : 'AM';
+    const h12 = ((h%12)||12);
+    return `${h12}:${String(m).padStart(2,'0')} ${period}`;
+  }
   const d = parseAnyDate(v);
-  if(d && !isNaN(d)) return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  if(d && !isNaN(d)) return is12h
+    ? d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})
+    : d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   return String(v).slice(0,16);
 }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
@@ -4696,7 +4706,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'24h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -7886,7 +7896,7 @@ function calendarDayDetailsHtml(key){
     });
     pending.sort((a,b)=> (a.period||'').localeCompare(b.period||''));
     classesHtml = pending.length
-      ? pending.map(r=>`<div class="cal-event-row"><span class="badge gold">${esc(r.period)}</span> <strong>${esc(r.cls)}</strong>${r.time?` <span style="color:var(--muted);font-size:12px">· ${esc(r.time)}</span>`:''}</div>`).join('')
+      ? pending.map(r=>`<div class="cal-event-row"><span class="badge gold">${esc(r.period)}</span> <strong>${esc(r.cls)}</strong>${r.time?` <span style="color:var(--muted);font-size:12px">· ${esc(fmtTime(r.time))}</span>`:''}</div>`).join('')
       : (periods.length ? `<div class="cal-empty-note">✓ All expected classes have visited</div>` : `<div class="cal-empty-note">No classes scheduled this day</div>`);
   } else {
     classesHtml = `<div class="cal-empty-note">No classes scheduled — weekend</div>`;
@@ -18711,7 +18721,7 @@ function pageSettings(){
   <div class="card panel">
     <div class="panel-head"><h3>Clock &amp; date</h3><div class="hint">How the clock and date display across the app</div></div>
     <div class="field-row">
-      <div class="field"><label>Clock format</label><select id="setClockFormat" onchange="previewClockDatePrefs()"><option value="24h" ${DB.setup.clockFormat==='24h'?'selected':''}>24-hour</option><option value="12h" ${DB.setup.clockFormat==='12h'?'selected':''}>12-hour (AM/PM)</option></select></div>
+      <div class="field"><label>Clock format</label><select id="setClockFormat" onchange="previewClockDatePrefs()"><option value="12h" ${DB.setup.clockFormat!=='24h'?'selected':''}>12-hour (AM/PM)</option><option value="24h" ${DB.setup.clockFormat==='24h'?'selected':''}>24-hour</option></select></div>
       <div class="field"><label>Date format</label><select id="setDateFormat" onchange="previewClockDatePrefs()">
         ${['DD MMM YYYY','MM-DD-YYYY','DD-MM-YYYY','YYYY-MM-DD','Weekday, DD MMMM YYYY','Wkday, DD MMM YYYY'].map(f=>`<option ${DB.setup.dateFormat===f?'selected':''}>${f}</option>`).join('')}
       </select></div>
@@ -20473,7 +20483,7 @@ function saveAutoBackupForm(){
   AUTO_BACKUP.time = document.getElementById('abTime')?.value || '20:00';
   AUTO_BACKUP.weekday = document.getElementById('abWeekday')?.value || 'SUN';
   saveAutoBackupCfg();
-  toast(AUTO_BACKUP.enabled ? `Scheduled backups enabled — ${AUTO_BACKUP.frequency==='weekly'?('every '+AUTO_BACKUP.weekday+' '):''}at ${AUTO_BACKUP.time}` : 'Scheduled backups turned off');
+  toast(AUTO_BACKUP.enabled ? `Scheduled backups enabled — ${AUTO_BACKUP.frequency==='weekly'?('every '+AUTO_BACKUP.weekday+' '):''}at ${fmtTime(AUTO_BACKUP.time)}` : 'Scheduled backups turned off');
   render();
 }
 const WEEKDAY_CODE = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
