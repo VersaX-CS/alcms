@@ -15163,11 +15163,17 @@ function addClassToBatch(clsOverride){
   if(!cls){ toast('Select a class first'); return; }
   const members = DB.users.filter(u=>u.cls===cls);
   if(!members.length){ toast('No members found in that class'); return; }
-  let added = 0;
+  // A student who's already signed in at the desk (in currentlyInLibrary() — checked in but not
+  // yet checked out) must not be pulled into a second check-in batch; they stay off-limits here
+  // until their existing register entry gets a timeOut.
+  const inLibraryIds = new Set(currentlyInLibrary().map(r=>r.id));
+  let added = 0, skipped = 0;
   members.forEach(u=>{
+    if(inLibraryIds.has(u.id)){ skipped++; return; }
     if(!batchStaging.some(s=>s.id===u.id)){ batchStaging.push({id:u.id,name:u.name,cls:u.cls,category:u.category}); batchChecked[u.id]=true; added++; }
   });
-  mountBatchStaging(); toast(`Added ${added} student(s) from ${cls}`);
+  mountBatchStaging();
+  toast(`Added ${added} student(s) from ${cls}${skipped? ` — ${skipped} already checked in, skipped`:''}`);
 }
 function removeFromBatch(id){ batchStaging = batchStaging.filter(s=>s.id!==id); delete batchChecked[id]; mountBatchStaging(); }
 function clearBatch(){ batchStaging=[]; batchChecked={}; mountBatchStaging(); }
@@ -15255,12 +15261,18 @@ function mountBatchStaging(){
 }
 function bindBatchStagingEvents(){
   if(!isAdmin()) return;
+  // Same rule as addClassToBatch(): anyone already signed in at the desk today (checked in, no
+  // timeOut yet) is left out of the picker entirely, so they can't be "called up" into a second
+  // check-in until they're checked out.
+  const inLibraryIds = new Set(currentlyInLibrary().map(r=>r.id));
   batchPicker = bindQuickPicker('batchAdd', {
-    items: DB.users.map(u=>({id:u.id, label:u.name+' — '+u.cls})),
+    items: DB.users.filter(u=>!inLibraryIds.has(u.id)).map(u=>({id:u.id, label:u.name+' — '+u.cls})),
     formatPicked: it=>`<strong>${esc(it.id)}</strong> — ${esc(it.label)}`,
     onPick: (it)=>{
       const u = DB.users.find(x=>x.id===it.id);
-      if(u && !batchStaging.some(s=>s.id===u.id)){ batchStaging.push({id:u.id,name:u.name,cls:u.cls,category:u.category}); batchChecked[u.id]=true; mountBatchStaging(); }
+      if(!u) return;
+      if(inLibraryIds.has(u.id)){ toast(`${u.name} is already checked in today`); return; }
+      if(!batchStaging.some(s=>s.id===u.id)){ batchStaging.push({id:u.id,name:u.name,cls:u.cls,category:u.category}); batchChecked[u.id]=true; mountBatchStaging(); }
     }
   });
   const selAll = document.getElementById('batchSelectAll');
