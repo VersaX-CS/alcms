@@ -10705,16 +10705,15 @@ function isbn13to10(isbn13){
   let check = (11 - (sum%11)) % 11;
   return core + (check===10? 'X' : String(check));
 }
-/* ROBUST ISBN Lookup: tries multiple free library/book databases in fallback sequence:
-   1. Open Library (free, keyless, CORS-enabled) - Best for comprehensive cataloging data
+/* ISBN lookup: tries multiple free library/book APIs in fallback sequence:
+   1. Open Library (free, keyless, CORS-enabled) - Best for detailed cataloging
    2. Google Books (free, keyless, CORS-enabled) - Broad coverage for newer titles
-   3. ISBNdb (free tier via web scrape) - Direct ISBN database
-   4. Goodreads (via web scrape) - Large community catalog
-   5. WorldCat (via web scrape) - Largest library catalog, best for older/rare titles
+   3. Crossref Metadata (free, keyless, CORS-enabled) - Academic & publisher records
+   4. Wikidata (free, keyless, CORS-enabled) - Community-maintained knowledge base
    
-   Each source is retried with ISBN-10/13 alternate form before moving to next source.
+   Each source is retried with ISBN-10/13 alternate form before moving to next.
    Fills Title/Author/Publisher/Year, pulls in subject/edition/classification data,
-   then runs the same Dewey suggestion as normal title entry. Shelf = "UNASSIGNED". */
+   then runs the same Dewey suggestion as a normal title entry. Shelf = "UNASSIGNED". */
 async function lookupBookByIsbn(){
   const isbnEl = document.getElementById('f_isbn');
   const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
@@ -10722,7 +10721,7 @@ async function lookupBookByIsbn(){
   const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
 
   const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val && !el.value) el.value = String(val).toUpperCase(); };
-  const finishCommon = (dewey, source)=>{
+  const finishCommon = (dewey)=>{
     if(dewey){
       const bucket = deweyToMainClass(dewey);
       const sel = document.getElementById('f_mainClass');
@@ -10733,108 +10732,70 @@ async function lookupBookByIsbn(){
     if(shelfEl && !shelfEl.value) shelfEl.value = 'UNASSIGNED';
   };
 
-  // Source 1: Open Library
+  // Source 1: Open Library (EXACTLY as before - proven to work)
   const tryOpenLibrary = async (code)=>{
     try{
-      const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`, {timeout:5000});
+      const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
       if(!res.ok) return null;
       const data = await res.json();
       return data['ISBN:'+code] || null;
     }catch(e){ return null; }
   };
-
-  // Source 2: Google Books
+  
+  // Source 2: Google Books (EXACTLY as before - proven to work)
   const tryGoogleBooks = async (code)=>{
     try{
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`, {timeout:5000});
+      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
       if(!res.ok) return null;
       const data = await res.json();
       return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
     }catch(e){ return null; }
   };
 
-  // Source 3: ISBNdb (via Crossref metadata)
-  const tryISBNdb = async (code)=>{
+  // Source 3: Crossref Metadata API (academic/publisher records, CORS-enabled)
+  const tryCrossref = async (code)=>{
     try{
-      const res = await fetch(`https://api.crossref.org/works?query.isbn=${code}&rows=1`, {timeout:5000});
+      const res = await fetch(`https://api.crossref.org/works?query.isbn=${code}&rows=1`);
       if(!res.ok) return null;
       const data = await res.json();
       const item = data.message && data.message.items && data.message.items[0];
       if(!item) return null;
       return {
         title: item.title ? item.title[0] : null,
-        authors: item.author ? item.author.map(a=>`${a.given||''} ${a.family||''}`).filter(Boolean) : [],
+        authors: item.author ? item.author.map(a=>`${a.given||''} ${a.family||''}`.trim()).filter(Boolean) : [],
         publisher: item.publisher,
         year: item.issued ? item.issued['date-parts'][0][0] : null,
-        subjects: item['subject'] ? item['subject'] : []
+        subjects: item.subject ? item.subject : []
       };
     }catch(e){ return null; }
   };
 
-  // Source 4: Goodreads (via web scrape)
-  const tryGoodreads = async (code)=>{
+  // Source 4: Wikidata (community knowledge base, CORS-enabled)
+  const tryWikidata = async (code)=>{
     try{
-      const res = await fetch(`https://www.goodreads.com/search?q=isbn:${code}`, {timeout:5000});
+      const res = await fetch(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=isbn:${code}&type=item&format=json&language=en`);
       if(!res.ok) return null;
-      const text = await res.text();
-      const titleMatch = text.match(/<span itemprop="name">([^<]+)<\/span>/);
-      const authorMatch = text.match(/<span itemprop="author"[^>]*>.*?<span itemprop="name">([^<]+)<\/span>/);
-      const pubMatch = text.match(/<span itemprop="publisher">([^<]+)<\/span>/);
-      const yearMatch = text.match(/<span itemprop="datePublished">(\d{4})<\/span>/);
+      const data = await res.json();
+      if(!data.search || !data.search.length) return null;
+      const itemId = data.search[0].id;
       
-      if(!titleMatch) return null;
+      // Fetch full item data
+      const itemRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${itemId}.json`);
+      if(!itemRes.ok) return null;
+      const itemData = await itemRes.json();
+      const entity = itemData.entities[itemId];
+      
       return {
-        title: titleMatch[1],
-        author: authorMatch ? authorMatch[1] : null,
-        publisher: pubMatch ? pubMatch[1] : null,
-        year: yearMatch ? yearMatch[1] : null
+        title: entity.labels?.en?.value || null,
+        author: entity.descriptions?.en?.value || null,
+        publisher: entity.claims?.P123?.[0]?.mainsnak?.datavalue?.value?.id || null
       };
     }catch(e){ return null; }
   };
 
-  // Source 5: WorldCat/OCLC (via web scrape - most comprehensive)
-  const tryWorldCat = async (code)=>{
-    try{
-      const res = await fetch(`https://www.worldcat.org/search?q=isbn:${code}`, {timeout:5000});
-      if(!res.ok) return null;
-      const text = await res.text();
-      const titleMatch = text.match(/<h1[^>]*>([^<]+)<\/h1>/);
-      const authorMatch = text.match(/<span[^>]*class="[^"]*author[^"]*"[^>]*>([^<]+)<\/span>/);
-      const pubMatch = text.match(/<td[^>]*>Published[^<]*<\/td>.*?<td[^>]*>([^<]+)<\/td>/s);
-      
-      if(!titleMatch) return null;
-      return {
-        title: titleMatch[1].trim(),
-        author: authorMatch ? authorMatch[1].trim() : null,
-        publisher: pubMatch ? pubMatch[1].trim() : null,
-        catalog: 'WorldCat (OCLC)'
-      };
-    }catch(e){ return null; }
-  };
-
-  // Source 6: Library of Congress via Z39.50 (via web interface)
-  const tryLibraryOfCongress = async (code)=>{
-    try{
-      const res = await fetch(`https://lccn.loc.gov/search?q=isbn:${code}`, {timeout:5000});
-      if(!res.ok) return null;
-      const text = await res.text();
-      const titleMatch = text.match(/<h1[^>]*>([^<]+)<\/h1>/);
-      const creatorMatch = text.match(/<th[^>]*>Creator.*?<td[^>]*>([^<]+)<\/td>/s);
-      const pubMatch = text.match(/<th[^>]*>Published.*?<td[^>]*>([^<]+)<\/td>/s);
-      
-      if(!titleMatch) return null;
-      return {
-        title: titleMatch[1].trim(),
-        author: creatorMatch ? creatorMatch[1].trim() : null,
-        publisher: pubMatch ? pubMatch[1].trim() : null,
-        catalog: 'Library of Congress'
-      };
-    }catch(e){ return null; }
-  };
-
-  toast('🔍 Looking up ISBN across multiple libraries…');
+  toast('Looking up ISBN across multiple sources…');
   try{
-    // Priority 1: Open Library (best structured data)
+    // Priority 1: Open Library (exactly as before - PROVEN)
     let rec = await tryOpenLibrary(isbn);
     if(!rec && altIsbn) rec = await tryOpenLibrary(altIsbn);
     if(rec){
@@ -10843,11 +10804,14 @@ async function lookupBookByIsbn(){
       setIfEmpty('publisher', (rec.publishers||[]).map(p=>p.name).join(', '));
       const yearMatch = String(rec.publish_date||'').match(/\d{4}/);
       setIfEmpty('year', yearMatch? yearMatch[0] : '');
+
       const subjects = (rec.subjects||[]).map(s=>s.name).filter(Boolean);
       if(subjects.length) setIfEmpty('category', subjects.slice(0,3).join(' / '));
+
       if(rec.edition_name) setIfEmpty('edition', rec.edition_name);
       const volMatch = String(rec.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
       if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
+
       const catalogingNotes = [];
       if(rec.number_of_pages) catalogingNotes.push(`${rec.number_of_pages} PAGES`);
       if(rec.physical_format) catalogingNotes.push(String(rec.physical_format).toUpperCase());
@@ -10860,12 +10824,13 @@ async function lookupBookByIsbn(){
         const infoEl = document.getElementById('f_info');
         if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
       }
-      finishCommon(dewey, 'Open Library');
-      toast('✓ Filled in from Open Library — check it over before saving');
+
+      finishCommon(dewey);
+      toast('Filled in from Open Library — check it over before saving');
       return;
     }
 
-    // Priority 2: Google Books (broader coverage)
+    // Priority 2: Google Books (exactly as before - PROVEN)
     let vol = await tryGoogleBooks(isbn);
     if(!vol && altIsbn) vol = await tryGoogleBooks(altIsbn);
     if(vol){
@@ -10877,6 +10842,7 @@ async function lookupBookByIsbn(){
       if((vol.categories||[]).length) setIfEmpty('category', vol.categories.slice(0,3).join(' / '));
       const volMatch = String(vol.title||'').match(/\bVOL(?:UME)?\.?\s*(\d+)\b/i);
       if(volMatch) setIfEmpty('vol', 'VOL. '+volMatch[1]);
+
       const catalogingNotes = [];
       if(vol.pageCount) catalogingNotes.push(`${vol.pageCount} PAGES`);
       if(vol.printType) catalogingNotes.push(String(vol.printType).toUpperCase());
@@ -10885,65 +10851,41 @@ async function lookupBookByIsbn(){
         const infoEl = document.getElementById('f_info');
         if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
       }
-      finishCommon(null, 'Google Books');
-      toast('✓ Filled in from Google Books — check it over before saving');
+
+      finishCommon(null);
+      toast('Filled in from Google Books — check it over before saving');
       return;
     }
 
-    // Priority 3: Crossref/ISBNdb (academic & publisher metadata)
-    let xref = await tryISBNdb(isbn);
-    if(!xref && altIsbn) xref = await tryISBNdb(altIsbn);
-    if(xref){
+    // Priority 3: Crossref (academic & publisher metadata)
+    let xref = await tryCrossref(isbn);
+    if(!xref && altIsbn) xref = await tryCrossref(altIsbn);
+    if(xref && xref.title){
       setIfEmpty('title', xref.title);
       if(xref.authors.length) setIfEmpty('author', xref.authors.join(', '));
-      setIfEmpty('publisher', xref.publisher);
-      setIfEmpty('year', xref.year);
+      if(xref.publisher) setIfEmpty('publisher', xref.publisher);
+      if(xref.year) setIfEmpty('year', xref.year);
       if(xref.subjects.length) setIfEmpty('category', xref.subjects.slice(0,3).join(' / '));
-      finishCommon(null, 'Crossref');
-      toast('✓ Filled in from Crossref metadata — check it over before saving');
+      finishCommon(null);
+      toast('Filled in from Crossref — check it over before saving');
       return;
     }
 
-    // Priority 4: WorldCat (largest library catalog - best for rare/older titles)
-    let wc = await tryWorldCat(isbn);
-    if(!wc && altIsbn) wc = await tryWorldCat(altIsbn);
-    if(wc){
-      setIfEmpty('title', wc.title);
-      if(wc.author) setIfEmpty('author', wc.author);
-      if(wc.publisher) setIfEmpty('publisher', wc.publisher);
-      finishCommon(null, 'WorldCat');
-      toast('✓ Filled in from WorldCat — check it over before saving');
+    // Priority 4: Wikidata (community knowledge base)
+    let wdata = await tryWikidata(isbn);
+    if(!wdata && altIsbn) wdata = await tryWikidata(altIsbn);
+    if(wdata && wdata.title){
+      setIfEmpty('title', wdata.title);
+      if(wdata.author) setIfEmpty('author', wdata.author);
+      finishCommon(null);
+      toast('Filled in from Wikidata — check it over before saving');
       return;
     }
 
-    // Priority 5: Goodreads (community catalog)
-    let gr = await tryGoodreads(isbn);
-    if(!gr && altIsbn) gr = await tryGoodreads(altIsbn);
-    if(gr){
-      setIfEmpty('title', gr.title);
-      if(gr.author) setIfEmpty('author', gr.author);
-      if(gr.publisher) setIfEmpty('publisher', gr.publisher);
-      if(gr.year) setIfEmpty('year', gr.year);
-      finishCommon(null, 'Goodreads');
-      toast('✓ Filled in from Goodreads — check it over before saving');
-      return;
-    }
-
-    // Priority 6: Library of Congress (authoritative source)
-    let loc = await tryLibraryOfCongress(isbn);
-    if(!loc && altIsbn) loc = await tryLibraryOfCongress(altIsbn);
-    if(loc){
-      setIfEmpty('title', loc.title);
-      if(loc.author) setIfEmpty('author', loc.author);
-      if(loc.publisher) setIfEmpty('publisher', loc.publisher);
-      finishCommon(null, 'Library of Congress');
-      toast('✓ Filled in from Library of Congress — check it over before saving');
-      return;
-    }
-
-    toast('❌ No match found across all library databases — enter details manually');
+    // All sources failed
+    toast('No match found — enter details manually');
   } catch(e){
-    toast('⚠️ Lookup failed — check your connection, or enter details manually');
+    toast('Lookup failed — check your connection, or enter details manually');
     console.error('ISBN lookup error:', e);
   }
 }
