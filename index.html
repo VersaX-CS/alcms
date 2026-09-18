@@ -2997,11 +2997,11 @@ body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--m
    state. */
 #topHomeBtn, #noteBtn, #notifBellBtn{ background:transparent; border:none; font-size:22px;}
 #topHomeBtn:hover, #noteBtn:hover, #notifBellBtn:hover{ background:transparent; border:none;}
-/* #noteBtn is an inline-flex box (inherited from .icon-btn) holding the 📝 icon and this label
-   as two flex items — using flex `gap` instead of a margin on the label keeps a tight, fixed
-   4px seam between icon and text regardless of font metrics, so "Quick Notes" reads as inscribed
-   right next to its icon rather than floating off with leftover centering slack. */
-#noteBtn{ gap:4px;}
+/* #installAppBtn is an inline-flex box (inherited from .icon-btn) holding its icon and this
+   label as two flex items — using flex `gap` instead of a margin on the label keeps a tight,
+   fixed 4px seam between icon and text regardless of font metrics, so "Install" reads as
+   inscribed right next to its icon rather than floating off with leftover centering slack. */
+#installAppBtn{ gap:4px;}
 .note-btn-label{ font-size:12.5px; font-weight:600; color:#EFE8D3; white-space:nowrap; line-height:1;}
 .clock-chip{ font-family:Georgia,serif; font-size:13px; color:var(--brass-light); text-align:right; line-height:1.25;}
 .clock-chip .time{ font-size:15px; font-weight:700; letter-spacing:.5px; font-family:var(--clock-font);}
@@ -3967,7 +3967,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
   }
   .account-chip .av{ width:32px; height:32px; flex:0 0 32px; box-shadow:0 0 0 2px rgba(255,255,255,.18);}
   .account-chip > div:last-child{ display:none;} /* name/role text — Account tab already covers this on mobile */
-  #noteBtn .note-btn-label, #installAppBtn .note-btn-label{ display:none;} /* label is desktop-only; mobile stays a plain round icon button, matching the rest */
+  #installAppBtn .note-btn-label{ display:none;} /* label is desktop-only; mobile stays a plain round icon button, matching the rest */
   .content{ padding:14px 12px 0px;}
   .home-scroll-body{ margin:0 -12px; padding-left:12px; padding-right:12px; padding-bottom:0px;}
   .content.page-transition{ animation:contentFadeIn .2s ease;}
@@ -4372,7 +4372,7 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
         <div class="dropdown-menu" id="undoMenu" style="display:none;position:absolute;right:0;top:100%;width:300px;max-width:min(88vw,320px);max-height:300px;overflow-y:auto;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1)"></div>
         </button>
         <button class="icon-btn" id="installAppBtn" onclick="promptInstallApp()" title="Install app" aria-label="Install app" style="display:none">⬇️<span class="note-btn-label">Install</span></button>
-        <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝<span class="note-btn-label">Quick Notes</span></button>
+        <button class="icon-btn" id="noteBtn" onclick="openNoteModal();" title="Quick Notes" aria-label="Quick Notes">📝</button>
         <button class="icon-btn" id="notifBellBtn" onclick="event.stopPropagation();openNotificationCenter();" title="Notifications" style="position:relative" aria-label="Notifications">
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
           <div id="notifDropdown" style="display:none;position:absolute;right:0;top:100%;width:300px;max-width:min(88vw,320px);max-height:360px;overflow:hidden;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:6px;text-align:left"></div>
