@@ -3444,7 +3444,7 @@ body[data-transition="bounce"] .modal-backdrop.closing .modal{ animation:modalSc
    explicit width and the flex row's content (input + fixed-width buttons) can be wider than
    the field-row's 1fr column, overflowing into the neighbouring field's box. flex:1 + min-width:0
    lets the input/select shrink to fit, and the buttons (flex:none, set inline) hold their size. */
-.field-with-extra > input, .field-with-extra > select{ flex:1; min-width:0;}
+.field-with-extra > input, .field-with-extra > select, .field-with-extra > textarea{ flex:1; min-width:0;}
 .field-row-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
 @media (max-width:900px){ .field-row-3{ grid-template-columns:1fr;} }
 .palette-swatch-row{ display:flex; flex-wrap:wrap; gap:10px;}
@@ -10654,7 +10654,7 @@ function bookFields(b={}, isNew){
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
     {key:'author', label:'Author / Creator', default:b.author},
     {row:[{key:'publisher',label:'Publisher / Source', default:b.publisher},{key:'edition',label:'Edition', default:b.edition}]},
-    {row:[{key:'category',label:'Subject / Category', default:b.category},{key:'vol',label:'Volume', default:b.vol}]},
+    {row:[{key:'category',label:'Subject / Category', default:b.category, subHint:'ISBN lookup fills this from whichever source answered first — sources vary a lot in how specific they are (e.g. Google Books often says just "Bible" where Wikidata might say "Christian calendar"). Use 🔎 Compare sources to see what each one has on file.', extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="compareCategorySources()" title="Check Open Library, Google Books, and Wikidata for this ISBN and compare their subject/category values">🔎 Compare sources</button>`},{key:'vol',label:'Volume', default:b.vol}]},
     {row:[
       {key:'mainClass',label:'Main class (Dewey)', type:'select', required:true, options:DB.setup.mainClasses, default:b.mainClass||'',
         extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`,
@@ -10666,7 +10666,9 @@ function bookFields(b={}, isNew){
       {key:'condition',label:'Condition', type:'select', options:DB.setup.conditions, default:b.condition||'GOOD'},
       {key:'available',label:'Status', type:'select', options:['AVAILABLE','ISSUED','MISSING'], default:b.available||'AVAILABLE'},
     ]},
-    {key:'info', label:'Additional info', type:'textarea', default:b.info},
+    {key:'info', label:'Additional info', type:'textarea', default:b.info,
+      extra:`<button type="button" class="btn secondary small" style="flex:none;align-self:flex-start;margin-top:2px" onclick="compareInfoSources()" title="Check Open Library and Google Books for cataloging details (page count, format, place of publication, Dewey/LC class) not already listed here">🔎 Check other sources</button>`,
+      subHint:'Page count, format, place of publication, and any Dewey/LC classification the winning source had on file. Other sources sometimes carry details this one didn\u2019t — 🔎 Check other sources adds anything missing.'},
   ];
 }
 /* Dewey suggestion: fires once, quietly, the first time the Main class field is still empty
@@ -10990,6 +10992,172 @@ async function lookupBookByIsbn(){
   } finally {
     isbnLookupInFlight = null;
   }
+}
+/* The three sources vary a lot in how specific their subject/category data is for the same
+   book — Google Books' BISAC-style categories tend to be broad ("Bible"), while Open Library's
+   subject tags or Wikidata's genre are often narrower ("Christian calendar"). The main lookup
+   above only fills Category from whichever source answered first, so this lets a librarian who
+   isn't happy with that value check what the other two sources have on file and pick from
+   them — a manual, on-demand check (never run automatically) so it doesn't add to the request
+   volume that can trigger Google Books' rate limit. */
+async function compareCategorySources(){
+  const isbnEl = document.getElementById('f_isbn');
+  const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
+  if(!isbn){ toast('Enter an ISBN first'); return; }
+  const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
+  const hint = document.getElementById('hint_category');
+  if(hint) hint.textContent = 'Checking Open Library, Google Books and Wikidata…';
+  toast('Comparing category/subject across sources…');
+
+  const results = [];
+  try{
+    const tryOL = async (code)=>{
+      const res = await isbnFetchTimeout(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      return data['ISBN:'+code] || null;
+    };
+    let rec = await tryOL(isbn);
+    if(!rec && altIsbn) rec = await tryOL(altIsbn);
+    const subjects = rec && (rec.subjects||[]).map(s=>s.name).filter(Boolean);
+    if(subjects && subjects.length) results.push({source:'Open Library', value: subjects.slice(0,3).join(' / ')});
+  }catch(e){ /* this source just won't have a chip below */ }
+
+  try{
+    const tryGB = async (code)=>{
+      const keyParam = DB.setup.googleBooksApiKey ? `&key=${encodeURIComponent(DB.setup.googleBooksApiKey)}` : '';
+      const res = await isbnFetchTimeout(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}${keyParam}`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+    };
+    let vol = await tryGB(isbn);
+    if(!vol && altIsbn) vol = await tryGB(altIsbn);
+    if(vol && (vol.categories||[]).length) results.push({source:'Google Books', value: vol.categories.slice(0,3).join(' / ')});
+  }catch(e){}
+
+  try{
+    const isbn13 = isbn.length===13 ? isbn : (altIsbn && altIsbn.length===13 ? altIsbn : null);
+    const isbn10 = isbn.length===10 ? isbn : (altIsbn && altIsbn.length===10 ? altIsbn : null);
+    const filters = [];
+    if(isbn13) filters.push(`{ ?book wdt:P212 ?i13 . FILTER(REPLACE(STR(?i13), "[^0-9Xx]", "") = "${isbn13}") }`);
+    if(isbn10) filters.push(`{ ?book wdt:P957 ?i10 . FILTER(REPLACE(STR(?i10), "[^0-9Xx]", "") = "${isbn10}") }`);
+    if(filters.length){
+      const query = `SELECT ?genreLabel WHERE { { ${filters.join(' } UNION { ')} } OPTIONAL { ?book wdt:P136 ?genre. } SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } LIMIT 1`;
+      const res = await isbnFetchTimeout(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(query)}`);
+      if(res.ok){
+        const data = await res.json();
+        const row = data.results && data.results.bindings && data.results.bindings[0];
+        if(row && row.genreLabel && row.genreLabel.value) results.push({source:'Wikidata', value: row.genreLabel.value});
+      }
+    }
+  }catch(e){}
+
+  if(!hint) return;
+  if(!results.length){
+    hint.textContent = 'No subject/category data found on any source for this ISBN.';
+    toast('No category data found on any source');
+    return;
+  }
+  const currentVal = ((document.getElementById('f_category')||{}).value || '').trim().toUpperCase();
+  const distinct = results.filter(r=> r.value.trim().toUpperCase() !== currentVal);
+  hint.innerHTML = distinct.length
+    ? `Also on file: ${distinct.map(r=>`<a href="#" class="pill cat-suggest-chip" data-val="${esc(r.value)}" style="text-decoration:none;cursor:pointer">${esc(r.source)}: ${esc(r.value)}</a>`).join(' ')} — click one to use it instead.`
+    : 'All sources checked agree with what\u2019s already filled in.';
+  hint.querySelectorAll('.cat-suggest-chip').forEach(chip=>{
+    chip.addEventListener('click', e=>{
+      e.preventDefault();
+      const el = document.getElementById('f_category');
+      if(el) el.value = chip.dataset.val;
+    });
+  });
+  toast(`${results.length} source${results.length>1?'s':''} checked`);
+}
+/* Same idea as compareCategorySources, but for the cataloging-detail notes (page count, format,
+   place of publication, Dewey/LC class) that the main lookup packs into Additional info — pulled
+   from whichever source won, so a source that lost the race but happens to carry a detail this
+   one doesn't (e.g. Open Library has a Dewey number but the record came from Google Books) never
+   gets surfaced. Rebuilds each source's note list the same way the main lookup does, then offers
+   only whatever isn't already present in the field as add-on chips — nothing is ever removed or
+   replaced, since these are usually complementary facts rather than competing values. Wikidata is
+   skipped here: the query used for category doesn't carry page count / format / place data, and
+   isn't queried for it since this is deliberately a manual, on-demand check, not something that
+   should add to Google Books' request volume on every lookup. */
+async function compareInfoSources(){
+  const isbnEl = document.getElementById('f_isbn');
+  const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
+  if(!isbn){ toast('Enter an ISBN first'); return; }
+  const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
+  const hint = document.getElementById('hint_info');
+  if(hint) hint.textContent = 'Checking Open Library and Google Books…';
+  toast('Checking other sources for additional details…');
+
+  const notes = []; // {source, text}
+  try{
+    const tryOL = async (code)=>{
+      const res = await isbnFetchTimeout(`https://openlibrary.org/api/books?bibkeys=ISBN:${code}&format=json&jscmd=data`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      return data['ISBN:'+code] || null;
+    };
+    let rec = await tryOL(isbn);
+    if(!rec && altIsbn) rec = await tryOL(altIsbn);
+    if(rec){
+      if(rec.number_of_pages) notes.push({source:'Open Library', text:`${rec.number_of_pages} PAGES`});
+      if(rec.physical_format) notes.push({source:'Open Library', text:String(rec.physical_format).toUpperCase()});
+      if(rec.publish_places && rec.publish_places.length) notes.push({source:'Open Library', text:'PUBLISHED IN '+rec.publish_places.map(p=>p.name).join(', ').toUpperCase()});
+      const dewey = rec.classifications && rec.classifications.dewey_decimal_class && rec.classifications.dewey_decimal_class[0];
+      const lcc = rec.classifications && rec.classifications.lc_classifications && rec.classifications.lc_classifications[0];
+      if(dewey) notes.push({source:'Open Library', text:'DEWEY: '+dewey});
+      if(lcc) notes.push({source:'Open Library', text:'LC CLASS: '+lcc});
+    }
+  }catch(e){}
+
+  try{
+    const tryGB = async (code)=>{
+      const keyParam = DB.setup.googleBooksApiKey ? `&key=${encodeURIComponent(DB.setup.googleBooksApiKey)}` : '';
+      const res = await isbnFetchTimeout(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}${keyParam}`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+    };
+    let vol = await tryGB(isbn);
+    if(!vol && altIsbn) vol = await tryGB(altIsbn);
+    if(vol){
+      if(vol.pageCount) notes.push({source:'Google Books', text:`${vol.pageCount} PAGES`});
+      if(vol.printType) notes.push({source:'Google Books', text:String(vol.printType).toUpperCase()});
+      if(vol.language) notes.push({source:'Google Books', text:'LANGUAGE: '+String(vol.language).toUpperCase()});
+    }
+  }catch(e){}
+
+  if(!hint) return;
+  if(!notes.length){
+    hint.textContent = 'No extra cataloging details found on Open Library or Google Books for this ISBN.';
+    toast('No additional details found');
+    return;
+  }
+  const infoEl = document.getElementById('f_info');
+  const currentVal = ((infoEl && infoEl.value) || '').toUpperCase();
+  const seen = new Set();
+  const distinct = notes.filter(n=>{
+    const key = n.text.toUpperCase();
+    if(currentVal.includes(key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  hint.innerHTML = distinct.length
+    ? `Found on other sources: ${distinct.map(n=>`<a href="#" class="pill info-suggest-chip" data-val="${esc(n.text)}" style="text-decoration:none;cursor:pointer">${esc(n.source)}: ${esc(n.text)}</a>`).join(' ')} — click one to add it.`
+    : 'Nothing found on other sources that isn\u2019t already listed here.';
+  hint.querySelectorAll('.info-suggest-chip').forEach(chip=>{
+    chip.addEventListener('click', e=>{
+      e.preventDefault();
+      const el = document.getElementById('f_info');
+      if(!el) return;
+      el.value = el.value ? `${el.value} · ${chip.dataset.val}` : chip.dataset.val;
+      chip.remove();
+    });
+  });
+  toast(distinct.length ? `${distinct.length} extra detail${distinct.length>1?'s':''} found` : 'Nothing new found');
 }
 /* Maps a Dewey Decimal number (e.g. "612.1" or "813") to one of the library's ten main-class
    buckets (e.g. "600 – TECHNOLOGY & APPLIED SCIENCES"), for classification numbers pulled
