@@ -10648,13 +10648,13 @@ function bookFields(b={}, isNew){
         subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
     ] : []),
     {row:[
-      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN (checks Open Library, Google Books, then Wikidata)"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
+      {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN (checks Open Library, Google Books, Wikidata, then Crossref)"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
       {key:'acc',label:'Accession No.',required:true, default:b.acc || nextSequentialId('ACC', DB.catalogue.map(x=>x.acc))},
     ]},
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
     {key:'author', label:'Author / Creator', default:b.author},
     {row:[{key:'publisher',label:'Publisher / Source', default:b.publisher},{key:'edition',label:'Edition', default:b.edition}]},
-    {row:[{key:'category',label:'Subject / Category', default:b.category, subHint:'ISBN lookup fills this from whichever source answered first — sources vary a lot in how specific they are (e.g. Google Books often says just "Bible" where Wikidata might say "Christian calendar"). Use 🔎 Compare sources to see what each one has on file.', extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="compareCategorySources()" title="Check Open Library, Google Books, and Wikidata for this ISBN and compare their subject/category values">🔎 Compare sources</button>`},{key:'vol',label:'Volume', default:b.vol}]},
+    {row:[{key:'category',label:'Subject / Category', default:b.category, subHint:'ISBN lookup fills this from whichever source answered first — sources vary a lot in how specific they are (e.g. Google Books often says just "Bible" where Wikidata might say "Christian calendar"). Use 🔎 Compare sources to see what each one has on file.', extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="compareCategorySources()" title="Check Open Library, Google Books, Wikidata, and Crossref for this ISBN and compare their subject/category values">🔎 Compare sources</button>`},{key:'vol',label:'Volume', default:b.vol}]},
     {row:[
       {key:'mainClass',label:'Main class (Dewey)', type:'select', required:true, options:DB.setup.mainClasses, default:b.mainClass||'',
         extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`,
@@ -10720,19 +10720,22 @@ function isbn13to10(isbn13){
   let check = (11 - (sum%11)) % 11;
   return core + (check===10? 'X' : String(check));
 }
-/* ISBN lookup: chains three independent, free, keyless, CORS-enabled catalog sources so a miss
+/* ISBN lookup: chains four independent, free, keyless, CORS-enabled catalog sources so a miss
    on one doesn't mean giving up — Open Library first, then Google Books, then Wikidata's SPARQL
-   query service. No single one of these has full coverage: Open Library is thin for a lot of
-   non-US/UK editions and locally-published textbooks, Google Books is strong for anything
-   commercially in print but weak for older/academic titles, and Wikidata fills in some of the
-   remaining gap for notable works (especially ones with a genre/classification already recorded
-   there) even when neither bibliographic API has heard of them. Each source is also retried with
-   the other ISBN-10/13 form before moving on, since sources sometimes index only one form for
-   older titles. Every request is time-boxed (isbnFetchTimeout) so one slow/hanging host can't
-   stall the whole chain — the remaining sources still get a chance within a normal click.
-   Fills Title/Author/Publisher/Year, pulls in whatever subject/edition/classification data is
-   available, then runs the same Dewey suggestion as a normal title entry. Shelf is left as
-   "UNASSIGNED" so a fresh title never blocks on a physical location nobody's picked yet. */
+   query service, then Crossref. No single one of these has full coverage: Open Library is thin
+   for a lot of non-US/UK editions and locally-published textbooks, Google Books is strong for
+   anything commercially in print but weak for older/academic titles, Wikidata fills in some of
+   the remaining gap for notable works (especially ones with a genre/classification already
+   recorded there) even when neither bibliographic API has heard of them, and Crossref — a
+   scholarly-metadata registry rather than a library/bookseller catalog — occasionally catches an
+   academic or technical title (textbooks, monographs) none of the other three carried. Each
+   source is also retried with the other ISBN-10/13 form before moving on, since sources
+   sometimes index only one form for older titles. Every request is time-boxed (isbnFetchTimeout)
+   so one slow/hanging host can't stall the whole chain — the remaining sources still get a
+   chance within a normal click. Fills Title/Author/Publisher/Year, pulls in whatever
+   subject/edition/classification data is available, then runs the same Dewey suggestion as a
+   normal title entry. Shelf is left as "UNASSIGNED" so a fresh title never blocks on a physical
+   location nobody's picked yet. */
 // Wraps fetch() with an abortable timeout — without this, a source that hangs (rather than
 // erroring or rate-limiting) would block the rest of the chain indefinitely instead of failing
 // over to the next service within a reasonable time.
@@ -10851,9 +10854,9 @@ async function lookupBookByIsbn(){
   // the two above: a structured knowledge graph rather than a library/bookseller database. Books
   // there carry ISBN-13 as property P212 and ISBN-10 as P957, usually with hyphens, so the query
   // strips punctuation on both sides (REPLACE) rather than requiring an exact-string match. Tried
-  // last since its book coverage skews toward notable/well-known works rather than every printed
-  // edition, but it fills real gaps — including some older or academic titles neither
-  // bibliographic API carries a record for.
+  // after the two bibliographic APIs since its book coverage skews toward notable/well-known
+  // works rather than every printed edition, but it fills real gaps — including some older or
+  // academic titles neither bibliographic API carries a record for.
   const tryWikidata = async (isbn13code, isbn10code)=>{
     try{
       const filters = [];
@@ -10881,6 +10884,33 @@ async function lookupBookByIsbn(){
         publisher: row.publisherLabel ? row.publisherLabel.value : '',
         pubdate: row.pubdate ? row.pubdate.value : '',
         genre: row.genreLabel ? row.genreLabel.value : ''
+      };
+    }catch(e){ return null; }
+  };
+  // Source 4: Crossref — a scholarly-metadata registry rather than a library/bookseller catalog,
+  // so its coverage skews heavily toward academic and technical titles with a DOI (textbooks,
+  // monographs, edited volumes) and it carries little to nothing for general trade fiction or
+  // children's books. Tried last for that reason — it's a narrower specialist source, not a
+  // general-purpose one. A single ISBN can also return more than one Crossref record (e.g. one
+  // per chapter of an edited volume, all sharing the print ISBN), so this asks for a few rows
+  // and prefers whichever one is typed as a whole book rather than a chapter/component.
+  const tryCrossref = async (code)=>{
+    try{
+      const res = await isbnFetchTimeout(`https://api.crossref.org/works?filter=isbn:${code}&rows=5`);
+      reachable = true;
+      if(res.status===429) rateLimited = true;
+      if(!res.ok) return null;
+      const data = await res.json();
+      const items = (data.message && data.message.items) || [];
+      if(!items.length) return null;
+      const whole = items.find(it=> ['book','monograph','edited-book','reference-book'].includes(it.type)) || items[0];
+      const dateParts = ((whole['published-print'] || whole['published-online'] || whole.issued || {})['date-parts'] || [])[0];
+      return {
+        title: (whole.title && whole.title[0]) || '',
+        author: (whole.author||[]).map(a=>[a.given, a.family].filter(Boolean).join(' ')).filter(Boolean).join(', '),
+        publisher: whole.publisher || '',
+        year: dateParts && dateParts[0] ? String(dateParts[0]) : '',
+        subject: (whole.subject||[]).slice(0,3).join(' / ')
       };
     }catch(e){ return null; }
   };
@@ -10959,33 +10989,51 @@ async function lookupBookByIsbn(){
       return;
     }
 
-    // Last resort: Wikidata. Pass whichever forms we have (both isbn13/isbn10, stripped of
+    // Fourth resort: Wikidata. Pass whichever forms we have (both isbn13/isbn10, stripped of
     // hyphens) so a single query can match on either property.
     const isbn13 = isbn.length===13 ? isbn : (altIsbn && altIsbn.length===13 ? altIsbn : null);
     const isbn10 = isbn.length===10 ? isbn : (altIsbn && altIsbn.length===10 ? altIsbn : null);
     const wd = await tryWikidata(isbn13, isbn10);
-    if(!wd){
+    if(wd){
+      setIfEmpty('title', wd.title);
+      setIfEmpty('author', wd.author);
+      setIfEmpty('publisher', wd.publisher);
+      const yearMatch = String(wd.pubdate||'').match(/\d{4}/);
+      setIfEmpty('year', yearMatch? yearMatch[0] : '');
+      if(wd.genre) setIfEmpty('category', wd.genre);
+
+      finishCommon(null);
+      setIsbnCacheEntry(isbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
+      if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
+      toast('Filled in from Wikidata — check it over before saving');
+      return;
+    }
+
+    // Last resort: Crossref — narrow but sometimes catches an academic/technical title none of
+    // the three general sources above carried a record for.
+    let cr = await tryCrossref(isbn);
+    if(!cr && altIsbn) cr = await tryCrossref(altIsbn);
+    if(!cr){
       toast(rateLimited
         ? (DB.setup.googleBooksApiKey
             ? "Lookup services are rate-limiting these requests (Too Many Requests) — wait a few seconds and try again, or enter details manually."
             : "Google Books is rate-limiting these requests (Too Many Requests) — this happens on its free shared quota during busy cataloguing sessions. Add a free API key under Setup → Integrations to raise the limit, wait a few seconds and try again, or enter details manually for now.")
         : reachable
-          ? 'No match found on Open Library, Google Books, or Wikidata — enter details manually'
-          : "Couldn't reach any lookup service — check your internet connection, or that openlibrary.org, googleapis.com, and query.wikidata.org aren't blocked on this network. Enter details manually for now.");
+          ? 'No match found on Open Library, Google Books, Wikidata, or Crossref — enter details manually'
+          : "Couldn't reach any lookup service — check your internet connection, or that openlibrary.org, googleapis.com, query.wikidata.org, and api.crossref.org aren't blocked on this network. Enter details manually for now.");
       return;
     }
 
-    setIfEmpty('title', wd.title);
-    setIfEmpty('author', wd.author);
-    setIfEmpty('publisher', wd.publisher);
-    const yearMatch = String(wd.pubdate||'').match(/\d{4}/);
-    setIfEmpty('year', yearMatch? yearMatch[0] : '');
-    if(wd.genre) setIfEmpty('category', wd.genre);
+    setIfEmpty('title', cr.title);
+    setIfEmpty('author', cr.author);
+    setIfEmpty('publisher', cr.publisher);
+    setIfEmpty('year', cr.year);
+    if(cr.subject) setIfEmpty('category', cr.subject);
 
     finishCommon(null);
-    setIsbnCacheEntry(isbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
-    if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
-    toast('Filled in from Wikidata — check it over before saving');
+    setIsbnCacheEntry(isbn, {source:'Crossref', dewey:null, fields: snapshotIsbnFormFields()});
+    if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Crossref', dewey:null, fields: snapshotIsbnFormFields()});
+    toast('Filled in from Crossref — check it over before saving');
   } catch(e){
     toast('Lookup failed — check your connection, or enter details manually');
   }
@@ -11006,7 +11054,7 @@ async function compareCategorySources(){
   if(!isbn){ toast('Enter an ISBN first'); return; }
   const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
   const hint = document.getElementById('hint_category');
-  if(hint) hint.textContent = 'Checking Open Library, Google Books and Wikidata…';
+  if(hint) hint.textContent = 'Checking Open Library, Google Books, Wikidata and Crossref…';
   toast('Comparing category/subject across sources…');
 
   const results = [];
@@ -11051,6 +11099,20 @@ async function compareCategorySources(){
         if(row && row.genreLabel && row.genreLabel.value) results.push({source:'Wikidata', value: row.genreLabel.value});
       }
     }
+  }catch(e){}
+
+  try{
+    const tryCR = async (code)=>{
+      const res = await isbnFetchTimeout(`https://api.crossref.org/works?filter=isbn:${code}&rows=5`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      const items = (data.message && data.message.items) || [];
+      if(!items.length) return null;
+      return items.find(it=> ['book','monograph','edited-book','reference-book'].includes(it.type)) || items[0];
+    };
+    let whole = await tryCR(isbn);
+    if(!whole && altIsbn) whole = await tryCR(altIsbn);
+    if(whole && (whole.subject||[]).length) results.push({source:'Crossref', value: whole.subject.slice(0,3).join(' / ')});
   }catch(e){}
 
   if(!hint) return;
