@@ -10047,12 +10047,7 @@ function pageDashboard(){
     <div></div>
     <div class="panel-head-actions">
       <button class="btn secondary small" onclick="generateSummaryReport()">🧾 Generate summary report</button>
-      <div class="dropdown-wrap">
-        <button class="btn secondary small" data-dropdown-toggle="moremenu_dashboard">⋯ More</button>
-        <div class="dropdown-menu" id="moremenu_dashboard">
-          <a onclick="openReportModal()">📋 Generate comprehensive report</a>
-        </div>
-      </div>
+      <button class="btn secondary small" onclick="openReportModal()">📋 Generate comprehensive report</button>
     </div>
   </div>
   <div class="grid kpis">
@@ -21242,18 +21237,28 @@ function enhanceCollapsibleSections(){
     if(!seenParents.has(parent)){ seenParents.add(parent); applyStoredSectionOrder(parent); }
   });
 
-  // One toolbar per page, injected fresh each render (the page's own HTML is fully replaced
-  // on every navigation, so there's nothing to reuse) — Collapse/Expand all plus the reorder
-  // toggle and a reset, available wherever there are at least two sections worth arranging.
-  if(panels.length>1 && !host.querySelector('.section-toolbar')){
-    const bar = document.createElement('div');
-    bar.className = 'section-toolbar';
-    bar.innerHTML = `
+  // One toolbar's worth of buttons per page, injected fresh each render (the page's own HTML is
+  // fully replaced on every navigation, so there's nothing to reuse) — Collapse/Expand all plus
+  // the reorder toggle and a reset, available wherever there are at least two sections worth
+  // arranging. If the page already starts with its own row of header buttons (marked
+  // .panel-head-row — currently just the Dashboard), these join that same row instead of
+  // getting a separate line of their own above it.
+  if(panels.length>1 && !host.querySelector('.section-toolbar') && !host.querySelector('#sectionReorderToggle')){
+    const buttonsHtml = `
       <button type="button" class="btn secondary small" onclick="toggleAllSections(true)">⊟ Collapse all</button>
       <button type="button" class="btn secondary small" onclick="toggleAllSections(false)">⊞ Expand all</button>
       <button type="button" class="btn secondary small" id="sectionReorderToggle" onclick="setSectionReorderMode(!sectionReorderMode)">${sectionReorderMode?'✓ Done reordering':'↕ Reorder sections'}</button>
       <button type="button" class="btn secondary small" onclick="resetSectionOrderForPage()">↺ Reset order</button>`;
-    host.insertBefore(bar, host.firstChild);
+    const mergeHead = host.firstElementChild;
+    const mergeActions = mergeHead && mergeHead.classList.contains('panel-head-row') ? mergeHead.querySelector('.panel-head-actions') : null;
+    if(mergeActions){
+      mergeActions.insertAdjacentHTML('afterbegin', buttonsHtml);
+    } else {
+      const bar = document.createElement('div');
+      bar.className = 'section-toolbar';
+      bar.innerHTML = buttonsHtml;
+      host.insertBefore(bar, host.firstChild);
+    }
   }
 }
 /* "Collapse all / expand all" for the pages that are mostly stacked sections. */
