@@ -3771,48 +3771,7 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
 @media (min-width:901px){ .mobile-fab{ display:none !important;} }
 
 /* ===== calendar quick-access FAB — shown on every page, on every screen size ===== */
-.calendar-fab{
-  position:fixed; right:18px; z-index:150;
-  /* On mobile, stack above the mobile "+ Add" FAB (same right edge) so the two never overlap.
-     On desktop, sits in the corner. */
-  bottom:calc(24px + env(safe-area-inset-bottom,0) + 52px + 12px);
-  width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
-  background:var(--forest); color:#F3EEDD; font-size:20px; line-height:1;
-  display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.28);
-  transition:transform .12s ease; font-weight:700;
-}
-#fabDate{ font-family:Montserrat, -apple-system, system-ui, sans-serif; }
-.calendar-fab:active{ transform:scale(.92);}
-.calendar-fab.active{ background:var(--brass); color:#221704;}
-/* Needs-attention states: overdue loans/reminders take priority (red, faster pulse) over the
-   softer amber pulse for anything less urgent (due-soon loans, unread notifications, classes
-   still expected today, unresolved feedback). Numeric badge on corner shows count of attention items. */
-.calendar-fab[data-badge]::after{
-  content:attr(data-badge); position:absolute; top:-4px; right:-4px; 
-  background:var(--amber); color:#221704; font-size:11px; font-weight:700;
-  width:20px; height:20px; min-width:20px; border-radius:50%; border:2px solid var(--card);
-  display:flex; align-items:center; justify-content:center; line-height:1;
-}
-.calendar-fab.fab-overdue[data-badge]::after{
-  background:var(--warn); color:white;
-}
-.calendar-fab.fab-attention{ animation:fabPulseAmber 1.8s ease-in-out infinite; }
-.calendar-fab.fab-overdue{ animation:fabPulseRed 1.4s ease-in-out infinite; }
-@keyframes fabPulseAmber{
-  0%,100%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 0 rgba(149,89,26,.55);}
-  50%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 9px rgba(149,89,26,0);}
-}
-@keyframes fabPulseRed{
-  0%,100%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 0 rgba(168,69,47,.6);}
-  50%{ box-shadow:0 10px 24px rgba(0,0,0,.28), 0 0 0 10px rgba(168,69,47,0);}
-}
-@media (prefers-reduced-motion: reduce){
-  .calendar-fab.fab-attention, .calendar-fab.fab-overdue{ animation:none; }
-}
-@media (min-width:901px){
-  /* No bottom nav to clear on desktop, so it just sits in the corner. */
-  .calendar-fab{ bottom:24px; }
-}
+
 
 /* ===== calendar FAB modal (mini month calendar + day drill-down) ===== */
 .cal-modal .modal{ max-width:480px; }
@@ -4717,7 +4676,7 @@ html[data-theme="dark"] .form-group select {
   </div>
   
   <button class="mobile-fab" id="mobileFab" style="display:none" aria-label="Add"><span>+</span></button>
-  <button class="calendar-fab" id="calendarFab" title="Calendar" aria-label="Open calendar" onclick="openCalendarModal();"><span id="fabDate">12</span></button>
+
   <button class="scroll-top-btn" id="scrollTopBtn" style="display:none" aria-label="Scroll to top">↑</button>
   <div class="pull-refresh-indicator" id="pullRefreshIndicator"><span class="prf-spinner"></span></div>
   <nav class="bottom-nav" id="bottomNav">
@@ -22357,6 +22316,10 @@ function closeQuickPanel() {
   panel.classList.remove('show');
 }
 
+// Store selected items for quick actions
+let quickActionSelectedMember = null;
+let quickActionSelectedBook = null;
+
 function openQuickAction(actionType) {
   closeQuickPanel();
   
@@ -22365,6 +22328,8 @@ function openQuickAction(actionType) {
       openCheckInOutModal();
       break;
     case 'issue':
+      quickActionSelectedMember = null;
+      quickActionSelectedBook = null;
       openIssueReturnModal();
       break;
     case 'addtitle':
@@ -22373,11 +22338,9 @@ function openQuickAction(actionType) {
     case 'addmember':
       openAddMemberModal();
       break;
-    case 'schedule':
-      openScheduleModal();
-      break;
-    case 'timetable':
-      openTimetableModal();
+    case 'calendar':
+      closeQuickActionModal();
+      openCalendarModal();
       break;
   }
 }
@@ -22389,34 +22352,31 @@ function openCheckInOutModal() {
     <div class="quick-modal-overlay show" id="tempOverlay">
       <div class="quick-modal show">
         <div class="quick-modal-header">
-          <h2>Check In/Out Item</h2>
+          <h2>Check In Member</h2>
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
           <div class="form-group">
-            <label>Item ID / Barcode</label>
-            <input type="text" id="itemBarcode" placeholder="Scan or enter item ID" autofocus>
+            <label>Member ID or Name</label>
+            <input type="text" id="memberSearch" placeholder="Search by ID or name..." autofocus 
+              oninput="updateMemberSuggestions()">
+            <div id="memberSuggestions" style="margin-top: 8px; max-height: 200px; overflow-y: auto;"></div>
           </div>
-          <div class="form-group">
-            <label>Action</label>
-            <select id="checkAction">
-              <option value="in">Check In</option>
-              <option value="out">Check Out</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Member ID</label>
-            <input type="text" id="memberIdCheck" placeholder="Enter member ID">
+          <div class="form-group" id="selectedMemberDisplay" style="display:none;">
+            <div style="padding: 12px; background: var(--parchment-dim); border-radius: 6px;">
+              <strong id="selectedMemberName"></strong>
+              <div style="font-size: 12px; color: var(--muted);" id="selectedMemberInfo"></div>
+            </div>
           </div>
         </div>
         <div class="quick-modal-footer">
           <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitCheckInOut()">Submit</button>
+          <button class="btn btn-primary" onclick="submitCheckInMember()" id="submitCheckInBtn" disabled>Check In</button>
         </div>
       </div>
     </div>
   `;
-  document.getElementById('itemBarcode').focus();
+  document.getElementById('memberSearch').focus();
 }
 
 function openIssueReturnModal() {
@@ -22425,38 +22385,40 @@ function openIssueReturnModal() {
     <div class="quick-modal-overlay show" id="tempOverlay">
       <div class="quick-modal show">
         <div class="quick-modal-header">
-          <h2>Issue/Return Item</h2>
+          <h2>Issue/Return Book</h2>
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
           <div class="form-group">
-            <label>Member ID</label>
-            <input type="text" id="memberIdIssue" placeholder="Enter member ID" autofocus>
+            <label>Member</label>
+            <input type="text" id="issueeMemberSearch" placeholder="Search member..." autofocus 
+              oninput="updateIssueMemberSuggestions()">
+            <div id="issueeMemberSuggestions" style="margin-top: 8px; max-height: 150px; overflow-y: auto;"></div>
           </div>
+          
           <div class="form-group">
-            <label>Item ID</label>
-            <input type="text" id="itemIdIssue" placeholder="Enter item ID">
+            <label>Book/Title</label>
+            <input type="text" id="issueBookSearch" placeholder="Search book..." 
+              oninput="updateIssueBookSuggestions()">
+            <div id="issueBookSuggestions" style="margin-top: 8px; max-height: 150px; overflow-y: auto;"></div>
           </div>
+          
           <div class="form-group">
             <label>Action</label>
             <select id="issueAction">
-              <option value="issue">Issue</option>
+              <option value="issue">Issue (Borrow)</option>
               <option value="return">Return</option>
             </select>
-          </div>
-          <div class="form-group">
-            <label>Due Date (if issuing)</label>
-            <input type="date" id="dueDate">
           </div>
         </div>
         <div class="quick-modal-footer">
           <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitIssueReturn()">Submit</button>
+          <button class="btn btn-primary" onclick="submitIssueReturn()" id="submitIssueBtn" disabled>Process</button>
         </div>
       </div>
     </div>
   `;
-  document.getElementById('memberIdIssue').focus();
+  document.getElementById('issueeMemberSearch').focus();
 }
 
 function openAddTitleModal() {
@@ -22541,94 +22503,211 @@ function openAddMemberModal() {
   document.getElementById('memberName').focus();
 }
 
-function openScheduleModal() {
-  const modal = document.getElementById('quickActionModals');
-  modal.innerHTML = `
-    <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show">
-        <div class="quick-modal-header">
-          <h2>Today's Schedule</h2>
-          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
-        </div>
-        <div class="quick-modal-body">
-          <p style="color: var(--text-secondary); margin-bottom: 1rem;">Loading today's schedule...</p>
-          <div id="scheduleContent"></div>
-        </div>
-        <div class="quick-modal-footer">
-          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
-          <button class="btn btn-primary" onclick="navigateToSchedule()">View Full Schedule</button>
-        </div>
-      </div>
-    </div>
-  `;
-  loadTodaySchedule();
-}
-
-function openTimetableModal() {
-  const modal = document.getElementById('quickActionModals');
-  modal.innerHTML = `
-    <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show">
-        <div class="quick-modal-header">
-          <h2>Today's Timetable</h2>
-          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
-        </div>
-        <div class="quick-modal-body">
-          <p style="color: var(--text-secondary); margin-bottom: 1rem;">Loading today's timetable...</p>
-          <div id="timetableContent"></div>
-        </div>
-        <div class="quick-modal-footer">
-          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
-          <button class="btn btn-primary" onclick="navigateToTimetable()">View Full Timetable</button>
-        </div>
-      </div>
-    </div>
-  `;
-  loadTodayTimetable();
-}
-
 function closeQuickActionModal() {
   const modal = document.getElementById('quickActionModals');
   modal.innerHTML = '';
+  quickActionSelectedMember = null;
+  quickActionSelectedBook = null;
 }
 
-// Submission handlers
-function submitCheckInOut() {
-  const itemBarcode = document.getElementById('itemBarcode').value;
-  const action = document.getElementById('checkAction').value;
-  const memberId = document.getElementById('memberIdCheck').value;
-  
-  if (!itemBarcode) {
-    alert('Please enter an item ID');
+// Submission handlers - use real app functions
+function submitCheckInMember() {
+  if (!quickActionSelectedMember) {
+    alert('Please select a member');
     return;
   }
   
-  // Dispatch event to notify other parts of the app
-  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
-    detail: { type: 'checkin', itemBarcode, action, memberId }
-  }));
-  
-  toast(`Item ${action === 'in' ? 'checked in' : 'checked out'} successfully`);
-  closeQuickActionModal();
+  try {
+    // Call the real app function
+    autoCheckInForCirculation(
+      quickActionSelectedMember,
+      'DESK OPERATION',
+      false,
+      'Checked In',
+      'Quick Action Check-In'
+    );
+    
+    // Save and refresh
+    if (typeof saveDB === 'function') saveDB('Member checked in via quick actions');
+    if (typeof render === 'function') render();
+    
+    toast(`${quickActionSelectedMember.name} checked in successfully ✓`);
+    closeQuickActionModal();
+  } catch(error) {
+    console.error('Check-in error:', error);
+    alert('Error: ' + error.message);
+  }
 }
 
 function submitIssueReturn() {
-  const memberId = document.getElementById('memberIdIssue').value;
-  const itemId = document.getElementById('itemIdIssue').value;
-  const action = document.getElementById('issueAction').value;
-  const dueDate = document.getElementById('dueDate').value;
-  
-  if (!memberId || !itemId) {
-    alert('Please enter member ID and item ID');
+  if (!quickActionSelectedMember || !quickActionSelectedBook) {
+    alert('Please select both member and book');
     return;
   }
   
-  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
-    detail: { type: 'issue', memberId, itemId, action, dueDate }
-  }));
+  const action = document.getElementById('issueAction').value;
   
-  toast(`Item ${action === 'issue' ? 'issued' : 'returned'} successfully`);
-  closeQuickActionModal();
+  try {
+    if (action === 'issue') {
+      // Check member can borrow
+      if (typeof memberBorrowBlockReason === 'function') {
+        const blockReason = memberBorrowBlockReason(quickActionSelectedMember);
+        if (blockReason) {
+          alert('⛔ ' + blockReason);
+          return;
+        }
+      }
+      
+      if (quickActionSelectedMember.borrowed >= quickActionSelectedMember.maxAllowed) {
+        alert(`${quickActionSelectedMember.name} has reached borrowing limit`);
+        return;
+      }
+      
+      // Call the real issue function
+      const trx = doIssueOne(quickActionSelectedMember, quickActionSelectedBook);
+      
+      if (typeof saveDB === 'function') saveDB(`${quickActionSelectedBook.title} issued to ${quickActionSelectedMember.name}`);
+      if (typeof render === 'function') render();
+      
+      toast(`"${quickActionSelectedBook.title}" issued ✓`);
+    } else {
+      // Return book - find the transaction
+      const trx = DB.circulation.find(t => 
+        t.userId === quickActionSelectedMember.id && 
+        t.acc === quickActionSelectedBook.acc && 
+        !t.returnDate
+      );
+      
+      if (!trx) {
+        alert('No active loan found for this member and book');
+        return;
+      }
+      
+      trx.returnDate = new Date().toISOString().slice(0, 10);
+      quickActionSelectedMember.borrowed -= 1;
+      
+      if (typeof saveDB === 'function') saveDB(`${quickActionSelectedBook.title} returned by ${quickActionSelectedMember.name}`);
+      if (typeof render === 'function') render();
+      
+      toast(`"${quickActionSelectedBook.title}" returned ✓`);
+    }
+    
+    closeQuickActionModal();
+  } catch(error) {
+    console.error('Issue/return error:', error);
+    alert('Error: ' + error.message);
+  }
+}
+
+// Member and book search functions
+function updateMemberSuggestions() {
+  const query = document.getElementById('memberSearch').value.toLowerCase();
+  const suggestionsDiv = document.getElementById('memberSuggestions');
+  
+  if (query.length < 1) {
+    suggestionsDiv.innerHTML = '';
+    return;
+  }
+  
+  const matches = (DB.users || []).filter(u => 
+    u.name.toLowerCase().includes(query) || 
+    u.id.toLowerCase().includes(query)
+  ).slice(0, 8);
+  
+  if (matches.length === 0) {
+    suggestionsDiv.innerHTML = '<div style="color: var(--muted); font-size: 12px; padding: 8px;">No members found</div>';
+    return;
+  }
+  
+  suggestionsDiv.innerHTML = matches.map(member => `
+    <button class="quick-action-item" style="text-align: left; margin: 4px 0;" 
+      onclick="selectCheckInMember(${JSON.stringify(member).replace(/"/g, '&quot;')})">
+      <strong>${esc(member.name)}</strong>
+      <div style="font-size: 12px; color: var(--muted);">${member.id} • ${member.category || 'N/A'}</div>
+    </button>
+  `).join('');
+}
+
+function selectCheckInMember(member) {
+  quickActionSelectedMember = member;
+  document.getElementById('memberSearch').value = member.name;
+  document.getElementById('memberSuggestions').innerHTML = '';
+  document.getElementById('selectedMemberDisplay').style.display = 'block';
+  document.getElementById('selectedMemberName').textContent = member.name;
+  document.getElementById('selectedMemberInfo').textContent = `${member.id} • ${member.category || 'N/A'}`;
+  document.getElementById('submitCheckInBtn').disabled = false;
+}
+
+function updateIssueMemberSuggestions() {
+  const query = document.getElementById('issueeMemberSearch').value.toLowerCase();
+  const suggestionsDiv = document.getElementById('issueeMemberSuggestions');
+  
+  if (query.length < 1) {
+    suggestionsDiv.innerHTML = '';
+    return;
+  }
+  
+  const matches = (DB.users || []).filter(u => 
+    u.name.toLowerCase().includes(query) || 
+    u.id.toLowerCase().includes(query)
+  ).slice(0, 8);
+  
+  suggestionsDiv.innerHTML = matches.map(member => `
+    <button class="quick-action-item" style="text-align: left; margin: 4px 0;" 
+      onclick="selectIssueMember(${JSON.stringify(member).replace(/"/g, '&quot;')})">
+      <strong>${esc(member.name)}</strong>
+      <div style="font-size: 12px; color: var(--muted);">${member.id} • Borrowed: ${member.borrowed || 0}/${member.maxAllowed || 5}</div>
+    </button>
+  `).join('') || '<div style="color: var(--muted); font-size: 12px; padding: 8px;">No members found</div>';
+}
+
+function selectIssueMember(member) {
+  quickActionSelectedMember = member;
+  document.getElementById('issueeMemberSearch').value = member.name;
+  document.getElementById('issueeMemberSuggestions').innerHTML = '';
+  checkIssueFormComplete();
+}
+
+function updateIssueBookSuggestions() {
+  const query = document.getElementById('issueBookSearch').value.toLowerCase();
+  const suggestionsDiv = document.getElementById('issueBookSuggestions');
+  
+  if (query.length < 1) {
+    suggestionsDiv.innerHTML = '';
+    return;
+  }
+  
+  const matches = (DB.catalogue || []).filter(b => 
+    b.title.toLowerCase().includes(query) || 
+    b.acc.toLowerCase().includes(query)
+  ).slice(0, 8);
+  
+  const actionType = document.getElementById('issueAction').value;
+  
+  suggestionsDiv.innerHTML = matches.map(book => {
+    let status = book.available || 'UNKNOWN';
+    let available = (actionType === 'issue' && status === 'AVAILABLE') || (actionType === 'return' && status === 'ISSUED');
+    return `
+      <button class="quick-action-item" style="text-align: left; margin: 4px 0; opacity: ${available ? 1 : 0.5}" 
+        onclick="selectIssueBook(${JSON.stringify(book).replace(/"/g, '&quot;')})" 
+        ${!available ? 'disabled' : ''}>
+        <strong>${esc(book.title)}</strong>
+        <div style="font-size: 12px; color: var(--muted);">${book.acc} • ${status}</div>
+      </button>
+    `;
+  }).join('') || '<div style="color: var(--muted); font-size: 12px; padding: 8px;">No books found</div>';
+}
+
+function selectIssueBook(book) {
+  quickActionSelectedBook = book;
+  document.getElementById('issueBookSearch').value = book.title;
+  document.getElementById('issueBookSuggestions').innerHTML = '';
+  checkIssueFormComplete();
+}
+
+function checkIssueFormComplete() {
+  const btnEnabled = quickActionSelectedMember && quickActionSelectedBook;
+  document.getElementById('submitIssueBtn').disabled = !btnEnabled;
 }
 
 function submitAddTitle() {
@@ -22670,29 +22749,7 @@ function submitAddMember() {
   closeQuickActionModal();
 }
 
-function loadTodaySchedule() {
-  // This should fetch today's schedule from your data
-  const content = document.getElementById('scheduleContent');
-  content.innerHTML = '<p style="color: var(--text-secondary);">No events scheduled for today.</p>';
-}
 
-function loadTodayTimetable() {
-  // This should fetch today's timetable from your data
-  const content = document.getElementById('timetableContent');
-  content.innerHTML = '<p style="color: var(--text-secondary);">No classes scheduled for today.</p>';
-}
-
-function navigateToSchedule() {
-  closeQuickActionModal();
-  // Navigate to schedule page - adjust based on your routing
-  if (window.navigateTo) window.navigateTo('schedule');
-}
-
-function navigateToTimetable() {
-  closeQuickActionModal();
-  // Navigate to timetable page - adjust based on your routing
-  if (window.navigateTo) window.navigateTo('timetable');
-}
 
 // Close panel when clicking overlay
 document.addEventListener('DOMContentLoaded', function() {
@@ -22833,12 +22890,12 @@ window.addEventListener('quickActionSubmit', function(e) {
   <div class="quick-panel-header">Quick Actions</div>
   <div class="quick-actions-list">
     <button class="quick-action-item" onclick="openQuickAction('checkin')">
-      <span class="quick-action-icon">🔄</span>
-      <span>Check In/Out</span>
+      <span class="quick-action-icon">✓</span>
+      <span>Check In Member</span>
     </button>
     <button class="quick-action-item" onclick="openQuickAction('issue')">
-      <span class="quick-action-icon">📤</span>
-      <span>Issue/Return</span>
+      <span class="quick-action-icon">📖</span>
+      <span>Issue/Return Book</span>
     </button>
     <button class="quick-action-item" onclick="openQuickAction('addtitle')">
       <span class="quick-action-icon">📚</span>
@@ -22848,13 +22905,9 @@ window.addEventListener('quickActionSubmit', function(e) {
       <span class="quick-action-icon">👤</span>
       <span>Add Member</span>
     </button>
-    <button class="quick-action-item" onclick="openQuickAction('schedule')">
+    <button class="quick-action-item" onclick="openQuickAction('calendar')">
       <span class="quick-action-icon">📅</span>
-      <span>Today's Schedule</span>
-    </button>
-    <button class="quick-action-item" onclick="openQuickAction('timetable')">
-      <span class="quick-action-icon">⏰</span>
-      <span>Today's Timetable</span>
+      <span>Calendar</span>
     </button>
   </div>
 </div>
