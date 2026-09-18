@@ -4347,6 +4347,8 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
         <button class="hamburger" id="hamburgerBtn" onclick="handleHamburgerClick()" aria-label="Open menu">☰</button>
+        <button class="icon-btn" id="navBackBtn" onclick="navGoBack()" title="Back" aria-label="Go back"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <button class="icon-btn" id="navForwardBtn" onclick="navGoForward()" title="Forward" aria-label="Go forward"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
         <button class="icon-btn" id="topHomeBtn" onclick="route='home';render();" title="Home" style="display:none" aria-label="Home">⌂</button>
         <button type="button" class="titles topbar-title-btn" data-dropdown-toggle="topbarNavMenu" data-dropdown-align="left" onclick="prepareTopbarNavMenu()" aria-label="Go to…" aria-haspopup="true" aria-expanded="false">
           <span style="min-width:0;overflow:hidden">
@@ -6204,18 +6206,44 @@ let route = 'home';
 let homeAlertsDismissed = {}; // { dueList: 'YYYY-MM-DD' } — dismissed alerts stay hidden until a new day / new item triggers them again
 let sidebarPersistMode = false; // true when user double-clicks hamburger to lock sidebar open
 
-/* ---- Back-button navigation: the phone/browser back button should step back through the
-   pages the person actually visited (like a native app), landing on Home rather than closing
-   the app outright. Pressing back again from Home (within a couple of seconds) is what
-   actually exits, matching the familiar "press back again to exit" pattern. ---- */
+/* ---- Back/forward navigation: the phone/browser back button (and the in-app ◀ / ▶ buttons
+   in the topbar) step through the pages actually visited, like a native app or a desktop
+   browser — landing on Home rather than closing the app outright. Pressing back again from
+   Home (within a couple of seconds) is what actually exits, matching the familiar "press back
+   again to exit" pattern. Every real navigation records a browser history entry (same URL,
+   just a marker in its state) purely so the OS/browser back-forward gestures and the in-app
+   buttons below can all drive the same navStack/forwardStack — the address bar itself never
+   changes. ---- */
 let navStack = ['home'];       // our own logical page stack, bottom is always Home
+let forwardStack = [];         // pages stepped back from, most-recently-left on top — cleared
+                                // the moment a genuinely new page is visited, same as a browser
 let __navFromPopstate = false; // true while render() is reacting to a back/forward press, so it
                                 // doesn't re-push a browser history entry for a page we're leaving
 let backExitArmed = false;
 let backExitTimer = null;
+function canGoBack(){ return navStack.length > 1; }
+function canGoForward(){ return forwardStack.length > 0; }
+// The in-app ◀ / ▶ buttons just replay the browser's own back()/forward() — the popstate
+// listener below is what actually moves navStack/forwardStack and re-renders, so a phone's
+// native back gesture, the browser's own back/forward buttons, and these two buttons all stay
+// perfectly in sync with each other.
+function navGoBack(){ if(canGoBack()) history.back(); }
+function navGoForward(){ if(canGoForward()) history.forward(); }
 window.addEventListener('popstate', (e)=>{
+  const targetDepth = e.state && typeof e.state.navDepth==='number' ? e.state.navDepth : null;
+  // Forward: the browser moved to an entry recorded at a greater depth than where our own
+  // stack currently sits — only reachable via navGoForward() (or the browser/OS's own forward
+  // gesture) stepping back into a page we'd previously left via back.
+  if(targetDepth!=null && targetDepth > navStack.length && forwardStack.length){
+    const next = forwardStack.pop();
+    navStack.push(next);
+    route = next;
+    __navFromPopstate = true;
+    render();
+    return;
+  }
   if(navStack.length > 1){
-    navStack.pop();
+    forwardStack.push(navStack.pop());
     route = navStack[navStack.length-1];
     __navFromPopstate = true;
     render();
@@ -7649,6 +7677,10 @@ function setHeader(){
   $('#pageTitle').textContent = t; $('#pageSubtitle').textContent = s;
   const homeBtn = document.getElementById('topHomeBtn');
   if(homeBtn) homeBtn.style.display = route==='home' ? 'none' : '';
+  const backBtn = document.getElementById('navBackBtn');
+  if(backBtn){ backBtn.disabled = !canGoBack(); backBtn.style.opacity = canGoBack()? '' : '.35'; backBtn.style.cursor = canGoBack()? '' : 'default'; }
+  const fwdBtn = document.getElementById('navForwardBtn');
+  if(fwdBtn){ fwdBtn.disabled = !canGoForward(); fwdBtn.style.opacity = canGoForward()? '' : '.35'; fwdBtn.style.cursor = canGoForward()? '' : 'default'; }
   const calFab = document.getElementById('calendarFab');
   if(calFab) calFab.classList.toggle('active', route==='schedule');
   updateFabDate();
@@ -21664,6 +21696,7 @@ function render(){
       __navFromPopstate = false;
     } else if(navStack[navStack.length-1] !== route){
       navStack.push(route);
+      forwardStack.length = 0; // a genuinely new page was chosen — same as a browser, this drops any "forward" history
       try{ history.pushState({navDepth:navStack.length}, '', location.href); }catch(e){}
     }
     lastRenderedRoute = route;
@@ -21771,6 +21804,7 @@ async function enterApp(){
       if(DB.setup.dateFormat) PREFS.dateFormat = DB.setup.dateFormat;
     }
     navStack = [route];
+    forwardStack = [];
     try{
       history.replaceState({navDepth:1}, '', location.href);
       history.pushState({navDepth:1, buffer:true}, '', location.href);
