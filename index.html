@@ -10544,6 +10544,7 @@ function pageCatalogue(){
       {label:'🪪 Catalogue cards', alwaysShow:true, onClick:()=> openAllBookCardsModal()},
       {label:'🏷 Print codes only', alwaysShow:true, onClick:()=> openAllBookCodesModal()},
       {label:'📍 Reassign shelf (selected)', onClick:()=> bulkReassignShelf()},
+      {label:'🧩 Fill selected from one correct copy', onClick:()=> bulkFillFromTemplate()},
       {label:'🔖 Reserve selected (kept back)', onClick:()=> bulkReserveCatalogue()},
       {
         label: sel => (sel.length && sel.every(r=>r.available==='WITHDRAWN')) ? '♻ Reinstate selected' : '🗃 Withdraw selected',
@@ -11486,6 +11487,99 @@ function bulkReassignShelf(){
       saveDB(`${accs.length} title(s) moved to "${vals.shelf}"`); render(); toast(`${accs.length} title(s) moved to "${vals.shelf}"`);
     }
   });
+}
+/* Fixes the "entered one copy correctly, forgot to fix the other 40" situation: tick every
+   copy of a title (the one that's right plus every one that isn't), pick which of the ticked
+   items is the correct one, choose which fields should match, and the rest are overwritten from
+   it in one go. Accession number, date added and each item's own history are never touched —
+   only the ticked bibliographic/location fields are copied, and a history line is added to
+   every item actually changed so the bulk edit is traceable later from its own record. */
+function bulkFillFromTemplate(){
+  if(!isAdmin()) return requireAdmin('edit the catalogue');
+  const accs = [...(catalogueModuleState.selected||[])];
+  if(accs.length < 2){ toast('Tick the correct copy plus at least one title to fix (2 or more in total)'); return; }
+  const rows = DB.catalogue.filter(b=>accs.includes(b.acc)).sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  const FIELD_DEFS = [
+    {key:'title', label:'Title', def:true},
+    {key:'author', label:'Author / Creator', def:true},
+    {key:'isbn', label:'ISBN', def:true},
+    {key:'publisher', label:'Publisher / Source', def:true},
+    {key:'year', label:'Year published', def:true},
+    {key:'edition', label:'Edition', def:true},
+    {key:'vol', label:'Volume', def:false},
+    {key:'category', label:'Subject / Category', def:true},
+    {key:'mainClass', label:'Main class (Dewey)', def:true},
+    {key:'info', label:'Additional info', def:true},
+    {key:'shelf', label:'Shelf location', def:false},
+    {key:'condition', label:'Condition', def:false},
+    {key:'available', label:'Status', def:false},
+  ];
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal wide">
+      <div class="modal-head"><h3>Fill ${rows.length} selected titles from one correct copy</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <p class="field-hint" style="margin:0 0 12px">Pick whichever of the ${rows.length} ticked titles already has the correct details — it's copied onto the rest. Every item keeps its own accession number, date added and item history; only the fields ticked below are overwritten on the others.</p>
+        <label style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted-label);display:block;margin-bottom:6px">Which one is correct?</label>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow:auto;margin-bottom:16px;padding:2px">
+          ${rows.map((r,i)=>`
+            <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;background:var(--surface-1);font-size:13px;cursor:pointer">
+              <input type="radio" name="bulkFillSrc" value="${esc(r.acc)}" ${i===0?'checked':''}>
+              <span><strong>${esc(r.title)}</strong> <span style="opacity:.65">— ${esc(r.acc)}${r.author?' · '+esc(r.author):''}</span></span>
+            </label>`).join('')}
+        </div>
+        <label style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted-label);display:block;margin-bottom:6px">Fields to copy across</label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px">
+          ${FIELD_DEFS.map(f=>`
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+              <input type="checkbox" class="bulkFillField" value="${f.key}" ${f.def?'checked':''}>
+              ${esc(f.label)}
+            </label>`).join('')}
+        </div>
+        <p class="field-hint" style="margin-top:10px">Condition, status and shelf are usually specific to each physical copy, so they're left unticked by default — tick them too only if these copies genuinely share them.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="mCancel">Cancel</button>
+        <button class="btn" id="mApply">Apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#mCancel').onclick = close;
+  wrap.querySelector('#mApply').onclick = ()=>{
+    const checkedRadio = wrap.querySelector('input[name="bulkFillSrc"]:checked');
+    const srcAcc = checkedRadio ? checkedRadio.value : null;
+    const src = DB.catalogue.find(b=>b.acc===srcAcc);
+    if(!src) return;
+    const fields = Array.from(wrap.querySelectorAll('.bulkFillField:checked')).map(c=>c.value);
+    if(!fields.length){ toast('Tick at least one field to copy'); return; }
+    const targets = rows.filter(r=>r.acc!==srcAcc);
+    if(!targets.length){ toast('Only the correct copy is ticked — tick the titles to fix too'); return; }
+    close();
+    confirmModal(`Copy ${fields.length} field(s) from "${src.title}" (${src.acc}) onto ${targets.length} other selected title(s)?`, ()=>{
+      let changedCount = 0;
+      targets.forEach(r=>{
+        const book = DB.catalogue.find(b=>b.acc===r.acc);
+        if(!book) return;
+        const changedFields = [];
+        fields.forEach(k=>{
+          if((book[k]||'') !== (src[k]||'')){ changedFields.push(k); book[k] = src[k]; }
+        });
+        if(changedFields.length){
+          changedCount++;
+          if(!Array.isArray(book.history)) book.history = [];
+          book.history.unshift({date:todayISO(), condition:book.condition, shelf:book.shelf, available:book.available, note:`Details filled in from "${src.title}" (${src.acc}): ${changedFields.join(', ')}`});
+        }
+      });
+      catalogueModuleState.selected.clear();
+      logActivity('catalogue', 'edit', `Bulk-filled ${targets.length} title(s) from "${src.title}" (${src.acc})`);
+      saveDB(`${targets.length} title(s) updated from "${src.acc}"`); render();
+      toast(`${changedCount} of ${targets.length} title(s) updated from "${src.title}"`);
+    }, {confirmLabel:'Update', danger:false});
+  };
 }
 
 /* ================= PAGE: USERS ================= */
