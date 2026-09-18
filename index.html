@@ -10741,6 +10741,32 @@ async function isbnFetchTimeout(url, ms=7000){
   finally{ clearTimeout(t); }
 }
 let isbnLookupInFlight = null;
+// Session-only cache, keyed by the digits actually looked up (both ISBN-10/13 forms of the
+// same book are cached under their own key, since sources are queried by whichever form is
+// typed first). Avoids re-hitting Google Books' shared quota for a second/third physical copy
+// of a title scanned later in the same cataloguing session — cleared when the tab closes, so
+// it never masks a source coming back online or a catalog record improving.
+const ISBN_CACHE_KEY = 'alcms_isbn_lookup_cache_v1';
+function getIsbnCacheEntry(isbn){
+  try{ return JSON.parse(sessionStorage.getItem(ISBN_CACHE_KEY)||'{}')[isbn] || null; }catch(e){ return null; }
+}
+function setIsbnCacheEntry(isbn, entry){
+  try{
+    const all = JSON.parse(sessionStorage.getItem(ISBN_CACHE_KEY)||'{}');
+    all[isbn] = entry;
+    sessionStorage.setItem(ISBN_CACHE_KEY, JSON.stringify(all));
+  }catch(e){ /* sessionStorage unavailable — caching is a bonus, not required */ }
+}
+// Reads back whatever the lookup just filled in, so a later scan of the same ISBN (a second
+// physical copy, most commonly) can be filled from cache without another round of network calls.
+function snapshotIsbnFormFields(){
+  const out = {};
+  ['title','author','publisher','year','category','edition','vol','info'].forEach(k=>{
+    const el = document.getElementById('f_'+k);
+    if(el && el.value) out[k] = el.value;
+  });
+  return out;
+}
 async function lookupBookByIsbn(){
   const isbnEl = document.getElementById('f_isbn');
   const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
@@ -10757,6 +10783,20 @@ async function lookupBookByIsbn(){
   isbnLookupInFlight = isbn;
   try{
   const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
+  const cached = getIsbnCacheEntry(isbn) || (altIsbn && getIsbnCacheEntry(altIsbn));
+  if(cached){
+    Object.entries(cached.fields).forEach(([k,v])=>{ const el = document.getElementById('f_'+k); if(el && v && !el.value) el.value = v; });
+    if(cached.dewey){
+      const bucket = deweyToMainClass(cached.dewey);
+      const sel = document.getElementById('f_mainClass');
+      if(bucket && sel && !sel.value) sel.value = bucket;
+    }
+    applyMainClassSuggestion();
+    const shelfEl = document.getElementById('f_shelf');
+    if(shelfEl && !shelfEl.value) shelfEl.value = 'UNASSIGNED';
+    toast(`Filled in from ${cached.source} (cached from earlier this session) — check it over before saving`);
+    return;
+  }
 
   const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val && !el.value) el.value = String(val).toUpperCase(); };
   const finishCommon = (dewey)=>{
@@ -10787,12 +10827,19 @@ async function lookupBookByIsbn(){
       return data['ISBN:'+code] || null;
     }catch(e){ return null; } // this source being unreachable shouldn't block trying the next one
   };
-  // Source 2: Google Books
-  const tryGoogleBooks = async (code)=>{
+  // Source 2: Google Books. Uses the shared keyless quota unless an API key is configured
+  // (Setup → Integrations), in which case that key is appended for a much higher quota. A 429
+  // here is retried once after a short pause — bursts against the shared keyless quota often
+  // clear within a couple of seconds — before this source is given up on for this ISBN.
+  const tryGoogleBooks = async (code, _retried)=>{
     try{
-      const res = await isbnFetchTimeout(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`);
+      const keyParam = DB.setup.googleBooksApiKey ? `&key=${encodeURIComponent(DB.setup.googleBooksApiKey)}` : '';
+      const res = await isbnFetchTimeout(`https://www.googleapis.com/books/v1/volumes?q=isbn:${code}${keyParam}`);
       reachable = true;
-      if(res.status===429) rateLimited = true;
+      if(res.status===429){
+        rateLimited = true;
+        if(!_retried){ await new Promise(r=>setTimeout(r,1500)); return tryGoogleBooks(code, true); }
+      }
       if(!res.ok) return null;
       const data = await res.json();
       return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
@@ -10874,6 +10921,8 @@ async function lookupBookByIsbn(){
       }
 
       finishCommon(dewey);
+      setIsbnCacheEntry(isbn, {source:'Open Library', dewey, fields: snapshotIsbnFormFields()});
+      if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Open Library', dewey, fields: snapshotIsbnFormFields()});
       toast('Filled in from Open Library — check it over before saving');
       return;
     }
@@ -10902,6 +10951,8 @@ async function lookupBookByIsbn(){
       }
 
       finishCommon(null);
+      setIsbnCacheEntry(isbn, {source:'Google Books', dewey:null, fields: snapshotIsbnFormFields()});
+      if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Google Books', dewey:null, fields: snapshotIsbnFormFields()});
       toast('Filled in from Google Books — check it over before saving');
       return;
     }
@@ -10913,7 +10964,9 @@ async function lookupBookByIsbn(){
     const wd = await tryWikidata(isbn13, isbn10);
     if(!wd){
       toast(rateLimited
-        ? "Lookup services are rate-limiting these requests (Too Many Requests) — wait a few seconds and try again, or enter details manually."
+        ? (DB.setup.googleBooksApiKey
+            ? "Lookup services are rate-limiting these requests (Too Many Requests) — wait a few seconds and try again, or enter details manually."
+            : "Google Books is rate-limiting these requests (Too Many Requests) — this happens on its free shared quota during busy cataloguing sessions. Add a free API key under Setup → Integrations to raise the limit, wait a few seconds and try again, or enter details manually for now.")
         : reachable
           ? 'No match found on Open Library, Google Books, or Wikidata — enter details manually'
           : "Couldn't reach any lookup service — check your internet connection, or that openlibrary.org, googleapis.com, and query.wikidata.org aren't blocked on this network. Enter details manually for now.");
@@ -10928,6 +10981,8 @@ async function lookupBookByIsbn(){
     if(wd.genre) setIfEmpty('category', wd.genre);
 
     finishCommon(null);
+    setIsbnCacheEntry(isbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
+    if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
     toast('Filled in from Wikidata — check it over before saving');
   } catch(e){
     toast('Lookup failed — check your connection, or enter details manually');
@@ -18329,6 +18384,8 @@ function pageSetup(){
     <div class="field"><label>Webhook URL</label><input type="url" id="setScanWebhookUrl" value="${esc(DB.setup.scanWebhookUrl||'')}" placeholder="https://your-scan2flow-endpoint.example.com/hook"></div>
     <div class="field"><label>Station ID</label><input type="text" id="setStationId" value="${esc(DB.setup.stationId||'')}" placeholder="e.g. DESK1"></div>
     <p class="field-hint">Every scan, issue, return, and check-in is POSTed here as JSON if a URL is set. A station/token can also be supplied via the URL, e.g. <code>?station=DESK1&amp;token=abc123</code>.</p>
+    <div class="field" style="margin-top:10px"><label>Google Books API key (optional)</label><input type="text" id="setGoogleBooksKey" value="${esc(DB.setup.googleBooksApiKey||'')}" placeholder="AIza…"></div>
+    <p class="field-hint">ISBN lookup (Catalogue → + Add) tries Open Library, then Google Books, then Wikidata. Without a key, Google Books shares a small public quota across everyone using it keyless, so busy cataloguing sessions can hit "Too Many Requests" — a free key from <a href="https://console.cloud.google.com/apis/library/books.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a> (enable the Books API, no billing required) raises that ceiling substantially. Leave blank to keep using the shared keyless quota.</p>
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
       <button class="btn secondary" onclick="saveIntegrationSettings()">Save integration settings</button>
       <button class="btn secondary small" onclick="sendScanWebhook('test',{note:'Test event from alcms Setup'}); toast(DB.setup.scanWebhookUrl? 'Test event sent' : 'Set a webhook URL first')">Send test event</button>
@@ -20755,6 +20812,7 @@ function saveIntegrationSettings(){
   if(!isAdmin()) return requireAdmin('change integration settings');
   DB.setup.scanWebhookUrl = (document.getElementById('setScanWebhookUrl')?.value||'').trim();
   DB.setup.stationId = (document.getElementById('setStationId')?.value||'').trim();
+  DB.setup.googleBooksApiKey = (document.getElementById('setGoogleBooksKey')?.value||'').trim();
   saveDB('Integration settings updated'); render(); toast('Integration settings saved');
 }
 /* ---- Discipline & consequences (Setup) ---- */
