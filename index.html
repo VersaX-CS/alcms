@@ -15727,6 +15727,7 @@ function pageSchedule(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary" onclick="printWeeklySchedule()">🖶 Print</button>
         ${isAdmin()? `<button class="btn" onclick="openScheduleForm()">+ Add period</button>`:''}
+        ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
         ${isAdmin() && DB.scheduleDays.length? `<button class="btn danger" onclick="clearAllSchedule()">⚠ Clear all schedule</button>`:''}
       </div>
     </div>
@@ -15932,8 +15933,8 @@ async function editPeriodTimeModal(){
   setTimeout(()=> wrap.querySelector('#ptmSave').focus(), 30);
 }
 /* Grabs whatever is currently selected in the class subject-timetable dropdowns (the
-   "Free / LIBRARY / subject" cells) for the currently-selected class — including selections
-   the user made but hasn't clicked "Save timetable for {class}" for yet — and folds them into
+   "Free / LIBRARY / subject" cells) for the currently-selected class — including any edit
+   made an instant ago, before its own auto-save round-trip finishes — and folds them into
    DB.classTimetable. No-op if the subject timetable grid isn't currently rendered. */
 function capturePendingClassTimetable(){
   const cls = (typeof ttSelectedClass!=='undefined') ? ttSelectedClass : null;
@@ -16961,7 +16962,7 @@ function editTimetableCellModal(day, period){
       // cell (another subject sharing the period, an activity) is left alone rather than
       // being wiped by a blanket overwrite.
       // Touches saved data directly — most of these slots aren't on screen to edit via the
-      // grid — so this persists immediately rather than waiting on "Save timetable".
+      // grid — so this persists immediately, same as every other cell edit now does.
       capturePendingClassTimetable(); // fold this class's on-screen picks (incl. this one) into DB first
       if(!DB.classTimetable) DB.classTimetable = {};
       occurrences.forEach(o=>{
@@ -16978,10 +16979,11 @@ function editTimetableCellModal(day, period){
       render();
       toast(`Updated ${occurrences.length+1} slot(s) across ${classCount} class(es)`);
     } else {
-      // Single-class edit stays "pending" like before (folded into DB but not yet saved to
-      // storage) — just refresh the unknown-entries banner in place so it reflects this edit
-      // immediately without redrawing the whole grid.
+      // Single-class edit: fold this class's on-screen grid into DB and persist immediately —
+      // the table saves automatically as each cell is edited, so just refresh the
+      // unknown-entries banner in place rather than redrawing the whole grid.
       capturePendingClassTimetable();
+      saveDB(`Timetable entry changed: ${cls} ${day} ${period}`);
       refreshTtUnknownBanner(cls);
     }
   };
@@ -17005,7 +17007,7 @@ function pageClassTimetable(){
     <div class="panel-head">
       <div><h3>Class subject timetable</h3><div class="hint">Enter each class's weekly timetable so the library visit schedule can be built from it automatically</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
+        ${isAdmin() && classes.length? `<button class="btn" onclick="importFullTimetableFromExcel()">📥 Import for ${esc(cls)} (Excel)</button>`:''}
         ${classes.length? `<div class="dropdown-wrap">
           <button class="btn secondary small" data-dropdown-toggle="moremenu_classtt">⋯ More</button>
           <div class="dropdown-menu" id="moremenu_classtt">
@@ -17064,10 +17066,8 @@ function pageClassTimetable(){
           ${classes.map(c=>`<option value="${esc(c)}" ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
       </div>
-      ${isAdmin()? `<button class="btn small" onclick="importFullTimetableFromExcel()">📥 Import for ${esc(cls)} (Excel)</button>
-      <button class="btn secondary small" onclick="saveClassTimetable()">💾 Save timetable for ${esc(cls)}</button>`:''}
     </div>
-    ${isAdmin()? `<p class="field-hint" style="margin:6px 0 0">Import and save both act on the class selected above — switch the dropdown first to work on a different class.</p>`:''}
+    ${isAdmin()? `<p class="field-hint" style="margin:6px 0 0">Import acts on the class selected above — switch the dropdown first to work on a different class. Cell edits below save automatically.</p>`:''}
     <div id="ttUnknownBanner">${ttUnknownBannerHtml(cls)}</div>
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
       <thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
@@ -17089,7 +17089,6 @@ function pageClassTimetable(){
           </tr>`).join('')}
       </tbody>
     </table></div>
-    ${isAdmin()? `<button class="btn secondary" style="margin-top:10px" onclick="saveClassTimetable()">💾 Save timetable for ${esc(cls)}</button>`:''}
     <p class="field-hint" style="margin-top:8px">Click a cell to pick what runs in that period. A period can hold more than one subject — for senior classes that split by subject combination, tick every subject running at that time, and auto-build will count a student as free only if their own combination includes none of them. Mark "📚 LIBRARY" on the period(s) a class visits the library; leave a period empty for "— Free —".</p>
     `}
   </div>`;
@@ -17137,24 +17136,6 @@ function clearAllClassTimetables(){
     DB.classTimings = {};
     saveDB('All class timetables and period times cleared'); render(); toast('Class timetables and times cleared');
   }, {confirmLabel:'Clear all', danger:true});
-}
-function saveClassTimetable(){
-  if(!isAdmin()) return requireAdmin('edit the class timetable');
-  const cls = ttSelectedClass; if(!cls) return;
-  if(!DB.classTimetable) DB.classTimetable = {};
-  const dayMap = {};
-  $$('.ttCell').forEach(sel=>{
-    const day = sel.dataset.day, period = sel.dataset.period;
-    const stored = ttCellStore(String(sel.value||'').split('|'));
-    if(stored){ (dayMap[day] = dayMap[day] || {})[period] = stored; }
-  });
-  DB.classTimetable[cls] = dayMap;
-  // CRITICAL: await saveDB before render so data is persisted first
-  (async ()=>{
-    await saveDB(`Class timetable saved for ${cls}`);
-    render();
-    toast('Timetable saved for '+cls);
-  })();
 }
 function editClassPeriodTime(cls, day, period){
   if(!isAdmin()) return requireAdmin('edit class period times');
