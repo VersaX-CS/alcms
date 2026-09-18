@@ -8236,7 +8236,7 @@ function fieldHtml(f,values){
       input = `<input id="f_${f.key}" type="${f.type||'text'}" value="${esc(val)}" ${f.readonly?'readonly':''}>`;
     }
   }
-  return `<div class="field" ${f.wrapId?`id="${f.wrapId}"`:''} ${f.hidden?'style="display:none"':''}><label>${esc(f.label)}${f.required?' *':''}</label>${f.extra? `<div class="field-with-extra" style="display:flex;gap:6px;align-items:center;min-width:0">${input}${f.extra}</div>` : input}${f.subHint?`<p class="field-hint" id="hint_${f.key}" style="margin-top:4px">${f.subHint}</p>`:''}</div>`;
+  return `<div class="field" ${f.wrapId?`id="${f.wrapId}"`:''} ${f.hidden?'style="display:none"':''}><label>${esc(f.label)}${f.required?' *':''}</label>${f.extra? `<div class="field-with-extra" style="display:flex;gap:6px;align-items:center;min-width:0">${input}${f.extra}</div>` : input}${f.subHint!=null?`<p class="field-hint" id="hint_${f.key}" style="margin-top:4px">${f.subHint}</p>`:''}</div>`;
 }
 /* Wires up every 'searchselect' field rendered by fieldHtml(): typing filters the option list by
    matching each typed word anywhere in the option text (order-independent, e.g. typing "harry
@@ -10644,8 +10644,7 @@ function bookFields(b={}, isNew){
   return [
     ...(isNew && DB.catalogue.length ? [
       {key:'_copyFrom', label:'Copy details from an existing title (optional)', type:'searchselect', placeholder:'Search a title to copy from…',
-        options: [...DB.catalogue].sort((a,b2)=>(a.title||'').localeCompare(b2.title||'')).map(x=>`${x.title} — ${x.acc}`),
-        subHint:'Fills in everything below from that title — the accession number stays fresh, and you can still edit anything before saving.'}
+        options: [...DB.catalogue].sort((a,b2)=>(a.title||'').localeCompare(b2.title||'')).map(x=>`${x.title} — ${x.acc}`)}
     ] : []),
     {row:[
       {key:'isbn',label:'ISBN (optional)', default:b.isbn, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="lookupBookByIsbn()" title="Fetch title/author/publisher/year from the ISBN (checks Open Library, Google Books, Wikidata, then Crossref)"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Look up</button><button type="button" class="btn secondary small" style="flex:none" onclick="openScanModal('isbn')" title="Scan the ISBN barcode with your camera">📷 Scan</button>`},
@@ -10654,21 +10653,18 @@ function bookFields(b={}, isNew){
     {row:[{key:'title', label:'Title', required:true, default:b.title},{key:'year',label:'Year published', default:b.year}]},
     {key:'author', label:'Author / Creator', default:b.author},
     {row:[{key:'publisher',label:'Publisher / Source', default:b.publisher},{key:'edition',label:'Edition', default:b.edition}]},
-    {row:[{key:'category',label:'Subject / Category', default:b.category, subHint:'ISBN lookup fills this from whichever source answered first — sources vary a lot in how specific they are (e.g. Google Books often says just "Bible" where Wikidata might say "Christian calendar"). Use 🔎 Compare sources to see what each one has on file.', extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="compareCategorySources()" title="Check Open Library, Google Books, Wikidata, and Crossref for this ISBN and compare their subject/category values">🔎 Compare sources</button>`},{key:'vol',label:'Volume', default:b.vol}]},
+    {row:[{key:'category',label:'Subject / Category', default:b.category, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="compareCategorySources()" title="Check Open Library, Google Books, Wikidata, and Crossref for this ISBN and compare their subject/category values">🔎 Compare sources</button>`, subHint:''},{key:'vol',label:'Volume', default:b.vol}]},
     {row:[
       {key:'mainClass',label:'Main class (Dewey)', type:'select', required:true, options:DB.setup.mainClasses, default:b.mainClass||'',
-        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`,
-        subHint:'Suggested automatically from the title once you move on — always yours to change.'},
-      {key:'shelf',label:'Shelf location', type:'select', required:true, options:DB.setup.shelves, default:b.shelf||'',
-        subHint: (DB.setup.shelfMap && Object.keys(DB.setup.shelfMap).length) ? 'Auto-picked from the shelf mapping once a main class is set — always yours to change.' : undefined},
+        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`, subHint:''},
+      {key:'shelf',label:'Shelf location', type:'select', required:true, options:DB.setup.shelves, default:b.shelf||'', subHint:''},
     ]},
     {row:[
       {key:'condition',label:'Condition', type:'select', options:DB.setup.conditions, default:b.condition||'GOOD'},
       {key:'available',label:'Status', type:'select', options:['AVAILABLE','ISSUED','MISSING'], default:b.available||'AVAILABLE'},
     ]},
     {key:'info', label:'Additional info', type:'textarea', default:b.info,
-      extra:`<button type="button" class="btn secondary small" style="flex:none;align-self:flex-start;margin-top:2px" onclick="compareInfoSources()" title="Check Open Library and Google Books for cataloging details (page count, format, place of publication, Dewey/LC class) not already listed here">🔎 Check other sources</button>`,
-      subHint:'Page count, format, place of publication, and any Dewey/LC classification the winning source had on file. Other sources sometimes carry details this one didn\u2019t — 🔎 Check other sources adds anything missing.'},
+      extra:`<button type="button" class="btn secondary small" style="flex:none;align-self:flex-start;margin-top:2px" onclick="compareInfoSources()" title="Check Open Library and Google Books for cataloging details (page count, format, place of publication, Dewey/LC class) not already listed here">🔎 Check other sources</button>`, subHint:''},
   ];
 }
 /* Dewey suggestion: fires once, quietly, the first time the Main class field is still empty
