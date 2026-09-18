@@ -13184,8 +13184,49 @@ function memberCheckinBlockReason(user){
   if(status==='INACTIVE') return `${user.name} is INACTIVE and cannot be checked in`;
   return null;
 }
+/* Auto check-in: a borrow or return is proof the member is physically in the library right now,
+   so if they don't already have an open register entry for today (signed in at the desk but not
+   yet signed out), open one automatically at the moment of the transaction — timeIn is the exact
+   transaction time, not a placeholder. This means staff no longer have to remember a separate
+   desk sign-in step before issuing or taking back a book; the register stays accurate either way. */
+function openDeskEntryToday(userId){
+  const today = todayISO();
+  return DB.registerLog.find(r=> r.source==='DESK' && r.id===userId && (r.date||'').slice(0,10)===today && r.timeIn && !r.timeOut);
+}
+/* One line per borrow/return event, e.g. Borrowed: "Things Fall Apart" (13:42) — appended to the
+   visit's register entry so the Note column/edit box shows exactly what happened on that visit,
+   not just a YES/NO flag. */
+function circEventLine(actionLabel, title){
+  return `${actionLabel}: "${title}" (${new Date().toTimeString().slice(0,5)})`;
+}
+function appendRegisterNote(entry, line){
+  const existing = (entry.note||'').trim();
+  entry.note = existing ? existing + ' • ' + line : line;
+}
+function autoCheckInForCirculation(user, purpose, borrowFlag, actionLabel, title){
+  if(!user) return;
+  const line = circEventLine(actionLabel, title);
+  const openEntry = openDeskEntryToday(user.id);
+  if(openEntry){
+    // Already signed in today — just make sure "Borrowed?" reflects a borrow happening on this
+    // visit, and log this specific book onto the visit's note so nothing gets lost.
+    if(borrowFlag && openEntry.borrow!=='YES') openEntry.borrow = 'YES';
+    appendRegisterNote(openEntry, line);
+    return;
+  }
+  if(memberCheckinBlockReason(user)) return; // e.g. INACTIVE — don't silently add them to the register
+  if(!Array.isArray(DB.registerLog)) DB.registerLog = [];
+  DB.registerLog.unshift({
+    entryId: uid('REG'), source:'DESK', date: todayISO(), timeIn: new Date().toTimeString().slice(0,5), timeOut:'', period:'',
+    id:user.id, name:user.name, category:user.category, cls:user.cls, purpose,
+    conduct:'NONE', action:'NONE', borrow: borrowFlag?'YES':'NO', verifiedBy:(typeof SESSION!=='undefined' && SESSION.fullName)||'',
+    note: `Auto checked-in — ${line}`, offense:'', offenseOther:'', consequence:'', consequenceOther:''
+  });
+  logActivity('register', 'auto-checkin', `${user.name} (${user.id}) auto checked-in via ${purpose.toLowerCase()}`);
+}
 function doIssueOne(user, book, opts={}){
   const now = new Date();
+  autoCheckInForCirculation(user, 'BOOK BORROWING', true, 'Borrowed', book.title);
   const trx = {
     trxId:'TRX-'+book.acc+'-'+user.id+'-'+Date.now()+'-'+Math.floor(Math.random()*1000), acc:book.acc, title:book.title, userId:user.id, name:user.name,
     category:user.category, cls:user.cls, dateBorrowed:now.toISOString().slice(0,10),
@@ -13307,6 +13348,7 @@ function applyReturnConsequences(user, trx, condition, wasOverdue){
 function doReturnOne(trx, condition, opts={}){
   const book = DB.catalogue.find(b=>b.acc===trx.acc);
   const user = DB.users.find(u=>u.id===trx.userId);
+  autoCheckInForCirculation(user, 'RETURNING BOOK', false, 'Returned', trx.title);
   const wasOverdue = txnStatus(trx)==='OVERDUE';
   const isMissing = condition === 'MISSING';
   trx.returnDate = todayISO(); trx.condition = condition;
