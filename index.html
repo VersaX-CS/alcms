@@ -4250,6 +4250,313 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
   opacity: 0.6;
 }
 
+/* ================= Floating Quick Actions Panel ================= */
+
+/* Floating action button */
+#quickActionBtn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--highlight);
+  color: var(--parchment);
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: var(--shadow), 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+#quickActionBtn:hover {
+  transform: scale(1.1);
+  box-shadow: var(--shadow), 0 6px 16px rgba(0,0,0,0.2);
+}
+
+#quickActionBtn:active {
+  transform: scale(0.95);
+}
+
+/* Quick panel overlay */
+#quickPanelOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0);
+  z-index: 998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+#quickPanelOverlay.show {
+  background: rgba(0,0,0,0.5);
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* Quick actions panel */
+#quickActionsPanel {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  background: var(--card);
+  border-radius: 12px;
+  box-shadow: var(--shadow), 0 8px 24px rgba(0,0,0,0.15);
+  min-width: 280px;
+  z-index: 999;
+  opacity: 0;
+  transform: translateY(20px) scale(0.9);
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid var(--line);
+}
+
+#quickActionsPanel.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+.quick-panel-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--heading-text-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.quick-actions-list {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 4px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.quick-action-item {
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  color: var(--body-text-color);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.quick-action-item:hover {
+  background: var(--parchment-dim);
+  color: var(--highlight);
+}
+
+.quick-action-item:active {
+  transform: scale(0.98);
+}
+
+.quick-action-icon {
+  font-size: 18px;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Quick modals */
+.quick-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0);
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quick-modal-overlay.show {
+  background: rgba(0,0,0,0.5);
+  opacity: 1;
+  pointer-events: all;
+}
+
+.quick-modal {
+  background: var(--card);
+  border-radius: 12px;
+  box-shadow: var(--shadow), 0 12px 32px rgba(0,0,0,0.2);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  z-index: 1001;
+  transform: scale(0.9);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid var(--line);
+}
+
+.quick-modal.show {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.quick-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--heading-text-color);
+}
+
+.quick-modal-header .close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.quick-modal-header .close-btn:hover {
+  background: var(--parchment-dim);
+  color: var(--body-text-color);
+}
+
+.quick-modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--body-text-color);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--parchment);
+  color: var(--body-text-color);
+  font-family: var(--app-font);
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+html[data-theme="dark"] .form-group input,
+html[data-theme="dark"] .form-group select {
+  background: var(--parchment-dim);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--highlight);
+  box-shadow: 0 0 0 3px rgba(76, 124, 94, 0.1);
+}
+
+.quick-modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.quick-modal-footer .btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-modal-footer .btn-primary {
+  background: var(--highlight);
+  color: var(--parchment);
+}
+
+.quick-modal-footer .btn-primary:hover {
+  background: var(--highlight);
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 124, 94, 0.3);
+}
+
+.quick-modal-footer .btn-secondary {
+  background: var(--parchment-dim);
+  color: var(--body-text-color);
+}
+
+.quick-modal-footer .btn-secondary:hover {
+  background: var(--line);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  #quickActionBtn {
+    bottom: 16px;
+    right: 16px;
+    width: 52px;
+    height: 52px;
+  }
+
+  #quickActionsPanel {
+    bottom: 72px;
+    right: 16px;
+    min-width: 250px;
+  }
+
+  .quick-modal {
+    width: 95%;
+    margin: 0 auto;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -22023,6 +22330,393 @@ async function maybeShowInstallHint(){
 // never flashes the manual banner before falling back to the real Install button.
 setTimeout(maybeShowInstallHint, 2500);
 
+/* ================= Floating Quick Actions Panel ================= */
+
+// Floating panel state
+let quickPanelOpen = false;
+
+function toggleQuickPanel() {
+  const panel = document.getElementById('quickActionsPanel');
+  const overlay = document.getElementById('quickPanelOverlay');
+  quickPanelOpen = !quickPanelOpen;
+  
+  if (quickPanelOpen) {
+    overlay.classList.add('show');
+    panel.classList.add('show');
+  } else {
+    overlay.classList.remove('show');
+    panel.classList.remove('show');
+  }
+}
+
+function closeQuickPanel() {
+  const panel = document.getElementById('quickActionsPanel');
+  const overlay = document.getElementById('quickPanelOverlay');
+  quickPanelOpen = false;
+  overlay.classList.remove('show');
+  panel.classList.remove('show');
+}
+
+function openQuickAction(actionType) {
+  closeQuickPanel();
+  
+  switch(actionType) {
+    case 'checkin':
+      openCheckInOutModal();
+      break;
+    case 'issue':
+      openIssueReturnModal();
+      break;
+    case 'addtitle':
+      openAddTitleModal();
+      break;
+    case 'addmember':
+      openAddMemberModal();
+      break;
+    case 'schedule':
+      openScheduleModal();
+      break;
+    case 'timetable':
+      openTimetableModal();
+      break;
+  }
+}
+
+// Modal functions for each action
+function openCheckInOutModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show">
+        <div class="quick-modal-header">
+          <h2>Check In/Out Item</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <div class="form-group">
+            <label>Item ID / Barcode</label>
+            <input type="text" id="itemBarcode" placeholder="Scan or enter item ID" autofocus>
+          </div>
+          <div class="form-group">
+            <label>Action</label>
+            <select id="checkAction">
+              <option value="in">Check In</option>
+              <option value="out">Check Out</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Member ID</label>
+            <input type="text" id="memberIdCheck" placeholder="Enter member ID">
+          </div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="submitCheckInOut()">Submit</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('itemBarcode').focus();
+}
+
+function openIssueReturnModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show">
+        <div class="quick-modal-header">
+          <h2>Issue/Return Item</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <div class="form-group">
+            <label>Member ID</label>
+            <input type="text" id="memberIdIssue" placeholder="Enter member ID" autofocus>
+          </div>
+          <div class="form-group">
+            <label>Item ID</label>
+            <input type="text" id="itemIdIssue" placeholder="Enter item ID">
+          </div>
+          <div class="form-group">
+            <label>Action</label>
+            <select id="issueAction">
+              <option value="issue">Issue</option>
+              <option value="return">Return</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Due Date (if issuing)</label>
+            <input type="date" id="dueDate">
+          </div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="submitIssueReturn()">Submit</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('memberIdIssue').focus();
+}
+
+function openAddTitleModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show">
+        <div class="quick-modal-header">
+          <h2>Add New Title</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" id="titleName" placeholder="Enter book/item title" autofocus>
+          </div>
+          <div class="form-group">
+            <label>Author</label>
+            <input type="text" id="titleAuthor" placeholder="Enter author name">
+          </div>
+          <div class="form-group">
+            <label>ISBN</label>
+            <input type="text" id="titleISBN" placeholder="Enter ISBN">
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <input type="text" id="titleCategory" placeholder="Enter category">
+          </div>
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="titleQty" placeholder="Enter quantity" value="1">
+          </div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="submitAddTitle()">Add Title</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('titleName').focus();
+}
+
+function openAddMemberModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show">
+        <div class="quick-modal-header">
+          <h2>Add New Member</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="memberName" placeholder="Enter member name" autofocus>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="memberEmail" placeholder="Enter email">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="memberPhone" placeholder="Enter phone number">
+          </div>
+          <div class="form-group">
+            <label>Member Type</label>
+            <select id="memberType">
+              <option value="student">Student</option>
+              <option value="staff">Staff</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="submitAddMember()">Add Member</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('memberName').focus();
+}
+
+function openScheduleModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show">
+        <div class="quick-modal-header">
+          <h2>Today's Schedule</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <p style="color: var(--text-secondary); margin-bottom: 1rem;">Loading today's schedule...</p>
+          <div id="scheduleContent"></div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
+          <button class="btn btn-primary" onclick="navigateToSchedule()">View Full Schedule</button>
+        </div>
+      </div>
+    </div>
+  `;
+  loadTodaySchedule();
+}
+
+function openTimetableModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show">
+        <div class="quick-modal-header">
+          <h2>Today's Timetable</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <p style="color: var(--text-secondary); margin-bottom: 1rem;">Loading today's timetable...</p>
+          <div id="timetableContent"></div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
+          <button class="btn btn-primary" onclick="navigateToTimetable()">View Full Timetable</button>
+        </div>
+      </div>
+    </div>
+  `;
+  loadTodayTimetable();
+}
+
+function closeQuickActionModal() {
+  const modal = document.getElementById('quickActionModals');
+  modal.innerHTML = '';
+}
+
+// Submission handlers
+function submitCheckInOut() {
+  const itemBarcode = document.getElementById('itemBarcode').value;
+  const action = document.getElementById('checkAction').value;
+  const memberId = document.getElementById('memberIdCheck').value;
+  
+  if (!itemBarcode) {
+    alert('Please enter an item ID');
+    return;
+  }
+  
+  // Dispatch event to notify other parts of the app
+  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
+    detail: { type: 'checkin', itemBarcode, action, memberId }
+  }));
+  
+  toast(`Item ${action === 'in' ? 'checked in' : 'checked out'} successfully`);
+  closeQuickActionModal();
+}
+
+function submitIssueReturn() {
+  const memberId = document.getElementById('memberIdIssue').value;
+  const itemId = document.getElementById('itemIdIssue').value;
+  const action = document.getElementById('issueAction').value;
+  const dueDate = document.getElementById('dueDate').value;
+  
+  if (!memberId || !itemId) {
+    alert('Please enter member ID and item ID');
+    return;
+  }
+  
+  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
+    detail: { type: 'issue', memberId, itemId, action, dueDate }
+  }));
+  
+  toast(`Item ${action === 'issue' ? 'issued' : 'returned'} successfully`);
+  closeQuickActionModal();
+}
+
+function submitAddTitle() {
+  const title = document.getElementById('titleName').value;
+  const author = document.getElementById('titleAuthor').value;
+  const isbn = document.getElementById('titleISBN').value;
+  const category = document.getElementById('titleCategory').value;
+  const qty = document.getElementById('titleQty').value;
+  
+  if (!title) {
+    alert('Please enter a title');
+    return;
+  }
+  
+  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
+    detail: { type: 'addtitle', title, author, isbn, category, qty }
+  }));
+  
+  toast('Title added successfully');
+  closeQuickActionModal();
+}
+
+function submitAddMember() {
+  const name = document.getElementById('memberName').value;
+  const email = document.getElementById('memberEmail').value;
+  const phone = document.getElementById('memberPhone').value;
+  const type = document.getElementById('memberType').value;
+  
+  if (!name) {
+    alert('Please enter member name');
+    return;
+  }
+  
+  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
+    detail: { type: 'addmember', name, email, phone, memberType: type }
+  }));
+  
+  toast('Member added successfully');
+  closeQuickActionModal();
+}
+
+function loadTodaySchedule() {
+  // This should fetch today's schedule from your data
+  const content = document.getElementById('scheduleContent');
+  content.innerHTML = '<p style="color: var(--text-secondary);">No events scheduled for today.</p>';
+}
+
+function loadTodayTimetable() {
+  // This should fetch today's timetable from your data
+  const content = document.getElementById('timetableContent');
+  content.innerHTML = '<p style="color: var(--text-secondary);">No classes scheduled for today.</p>';
+}
+
+function navigateToSchedule() {
+  closeQuickActionModal();
+  // Navigate to schedule page - adjust based on your routing
+  if (window.navigateTo) window.navigateTo('schedule');
+}
+
+function navigateToTimetable() {
+  closeQuickActionModal();
+  // Navigate to timetable page - adjust based on your routing
+  if (window.navigateTo) window.navigateTo('timetable');
+}
+
+// Close panel when clicking overlay
+document.addEventListener('DOMContentLoaded', function() {
+  const overlay = document.getElementById('quickPanelOverlay');
+  if (overlay) {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) closeQuickPanel();
+    });
+  }
+  
+  // Close modals when clicking overlay
+  document.addEventListener('click', function(e) {
+    if (e.target.id === 'tempOverlay') closeQuickActionModal();
+  });
+  
+  // ESC key to close
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      closeQuickActionModal();
+      closeQuickPanel();
+    }
+  });
+});
+
 /* ================= Note Modal Functions ================= */
 let noteHasChanges = false;
 
@@ -22119,6 +22813,54 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 });
 
+/* Listen for quick action submissions from modals and handle them */
+window.addEventListener('quickActionSubmit', function(e) {
+  const detail = e.detail;
+  console.log('Quick action submitted:', detail);
+  
+  // You can integrate this with your existing data handling here
+  // For example, you might dispatch to your main app controller
+  // or store the data and notify the appropriate page section
+});
+
 </script>
+
+<!-- Floating Quick Actions Panel -->
+<button id="quickActionBtn" onclick="toggleQuickPanel()" title="Quick Actions" aria-label="Open quick actions">⚡</button>
+<div id="quickPanelOverlay" onclick="closeQuickPanel()"></div>
+
+<div id="quickActionsPanel">
+  <div class="quick-panel-header">Quick Actions</div>
+  <div class="quick-actions-list">
+    <button class="quick-action-item" onclick="openQuickAction('checkin')">
+      <span class="quick-action-icon">🔄</span>
+      <span>Check In/Out</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('issue')">
+      <span class="quick-action-icon">📤</span>
+      <span>Issue/Return</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('addtitle')">
+      <span class="quick-action-icon">📚</span>
+      <span>Add Title</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('addmember')">
+      <span class="quick-action-icon">👤</span>
+      <span>Add Member</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('schedule')">
+      <span class="quick-action-icon">📅</span>
+      <span>Today's Schedule</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('timetable')">
+      <span class="quick-action-icon">⏰</span>
+      <span>Today's Timetable</span>
+    </button>
+  </div>
+</div>
+
+<!-- Quick Action Modals Container -->
+<div id="quickActionModals"></div>
+
 </body>
 </html>
