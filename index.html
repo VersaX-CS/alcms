@@ -22338,9 +22338,11 @@ function openQuickAction(actionType) {
     case 'addmember':
       openAddMemberModal();
       break;
-    case 'calendar':
-      closeQuickActionModal();
-      openCalendarModal();
+    case 'schedule':
+      openScheduleModal();
+      break;
+    case 'timetable':
+      openTimetableModal();
       break;
   }
 }
@@ -22460,6 +22462,103 @@ function openAddTitleModal() {
     </div>
   `;
   document.getElementById('titleName').focus();
+}
+
+function openScheduleModal() {
+  const modal = document.getElementById('quickActionModals');
+  const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
+  const today = todayISO();
+  const todaysPeriods = (DB.scheduleDays||[]).filter(r=>r[0]===weekday);
+  
+  let scheduleContent = '';
+  if(!todaysPeriods.length) {
+    scheduleContent = '<div class="empty">No classes scheduled today</div>';
+  } else {
+    const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===today).map(r=>r.cls));
+    const sorted = [...todaysPeriods].sort((a,b)=>(a[1]||'').localeCompare(b[1]||''));
+    scheduleContent = sorted.map(r=>{
+      const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+      const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
+      const individualHtml = renderIndividualFreeHtml(r[5]);
+      const classesLabel = classes.length ? esc(classes.join(', '))
+        : (individualHtml ? '' : 'No class assigned');
+      return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
+        <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
+        <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
+        ${individualHtml}</div>
+        ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
+    }).join('');
+  }
+  
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show" style="max-width: 600px;">
+        <div class="quick-modal-header">
+          <h2>Today's Schedule — ${esc(weekday)}</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          <div style="max-height: 400px; overflow-y: auto;">
+            ${scheduleContent}
+          </div>
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
+          <button class="btn btn-primary" onclick="closeQuickActionModal(); route='schedule'; render()">View Full Schedule</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openTimetableModal() {
+  const modal = document.getElementById('quickActionModals');
+  const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
+  
+  let timetableContent = '';
+  const classes = sortedClasses();
+  const periods = timetablePeriods().filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
+  
+  if(!classes.length || !periods.length) {
+    timetableContent = `<div class="empty">No class timetable entered for today yet</div>`;
+  } else {
+    const cellHtml = (raw)=>{
+      const vals = ttCellValues(raw);
+      if(!vals.length) return '<span style="color:var(--muted-label)">—</span>';
+      const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+      const subjects = DB.setup.subjects || [];
+      return vals.map(val=>{
+        if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
+        if(activities.includes(val) && !subjects.includes(val)){
+          return `<span style="color:var(--muted-label);font-style:italic;text-transform:uppercase">${esc(val.toUpperCase())}</span>`;
+        }
+        return esc(val);
+      }).join('<span style="color:var(--muted-label)"> / </span>');
+    };
+    timetableContent = `<div class="table-wrap" style="max-height: 400px; overflow: auto;"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
+    <tbody>${classes.map(c=>{
+      const tt = classTimetableFor(c)[weekday]||{};
+      return `<tr><td>${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+  
+  modal.innerHTML = `
+    <div class="quick-modal-overlay show" id="tempOverlay">
+      <div class="quick-modal show" style="max-width: 800px;">
+        <div class="quick-modal-header">
+          <h2>Today's Class Timetable — ${esc(weekday)}</h2>
+          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="quick-modal-body">
+          ${timetableContent}
+        </div>
+        <div class="quick-modal-footer">
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
+          <button class="btn btn-primary" onclick="closeQuickActionModal(); route='schedule'; scheduleSubview='timetable'; render()">View Full Timetable</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function openAddMemberModal() {
@@ -22905,9 +23004,13 @@ window.addEventListener('quickActionSubmit', function(e) {
       <span class="quick-action-icon">👤</span>
       <span>Add Member</span>
     </button>
-    <button class="quick-action-item" onclick="openQuickAction('calendar')">
+    <button class="quick-action-item" onclick="openQuickAction('schedule')">
       <span class="quick-action-icon">📅</span>
-      <span>Calendar</span>
+      <span>Today's Schedule</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('timetable')">
+      <span class="quick-action-icon">⏰</span>
+      <span>Today's Timetable</span>
     </button>
   </div>
 </div>
