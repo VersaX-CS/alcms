@@ -4317,6 +4317,22 @@ html[data-theme="dark"] .note-modal{ background:#2E2B31; border-color:rgba(203,1
 #quickActionBtn:active {
   transform: scale(0.95);
 }
+/* Quick-actions button: two soft halos ripple out from behind it, one after the other, to draw the
+   eye. They sit behind the ⚡ (z-index:-1 inside the button's own stacking context), never catch
+   clicks, stop while the panel is open, and are off for anyone who asks for reduced motion. */
+#quickActionBtn::before, #quickActionBtn::after{
+  content:''; position:absolute; inset:0; border-radius:50%; background:var(--highlight);
+  z-index:-1; opacity:0; pointer-events:none; animation:fabPulse 2.8s ease-out infinite;
+}
+#quickActionBtn::after{ animation-delay:1.4s; }
+#quickActionBtn.open::before, #quickActionBtn.open::after{ animation:none; opacity:0; }
+@keyframes fabPulse{
+  0%{ transform:scale(1); opacity:.5; }
+  75%,100%{ transform:scale(1.75); opacity:0; }
+}
+@media (prefers-reduced-motion: reduce){
+  #quickActionBtn::before, #quickActionBtn::after{ animation:none; opacity:0; }
+}
 
 /* Quick panel overlay */
 #quickPanelOverlay {
@@ -22690,6 +22706,7 @@ function toggleQuickPanel() {
   const panel = document.getElementById('quickActionsPanel');
   const overlay = document.getElementById('quickPanelOverlay');
   quickPanelOpen = !quickPanelOpen;
+  const fab = document.getElementById('quickActionBtn'); if(fab) fab.classList.toggle('open', quickPanelOpen);
   
   if (quickPanelOpen) {
     overlay.classList.add('show');
@@ -22704,6 +22721,7 @@ function closeQuickPanel() {
   const panel = document.getElementById('quickActionsPanel');
   const overlay = document.getElementById('quickPanelOverlay');
   quickPanelOpen = false;
+  const fab = document.getElementById('quickActionBtn'); if(fab) fab.classList.remove('open');
   overlay.classList.remove('show');
   panel.classList.remove('show');
 }
