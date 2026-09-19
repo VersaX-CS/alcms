@@ -5935,6 +5935,7 @@ function renderAuthForm(){
       <p class="field-hint" style="margin-top:8px"><a href="#" onclick="authTab='forgot';renderAuthForm();return false;" style="color:var(--forest);font-weight:600">Forgot your password?</a></p>
     `;
     $('#siPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignin(); });
+    if(!focusIsTouchFirst()){ const su=$('#siUser'); if(su) setTimeout(()=>{ (su.value? $('#siPass') : su).focus(); }, 60); }
   } else if(authTab==='locked'){
     area.innerHTML = `
       <h2>🔒 Too many attempts</h2>
@@ -14420,6 +14421,132 @@ function viewReservation(id){
   const f = wrap.querySelector('#mFulfil'); if(f) f.onclick = ()=>{ close(); fulfillReservation(r.id); };
   const c = wrap.querySelector('#mCancelRes'); if(c) c.onclick = ()=>{ close(); cancelReservation(r.id); };
 }
+/* ---- Forgiving matching for the global search (Ctrl+K and the top-bar search) -------------
+   Same idea as smartFilter — precise while what you typed exists, forgiving once it doesn't —
+   but forgiving in more ways, and ranked so the best guess is first instead of alphabetical:
+     · accents, punctuation and spacing are ignored ("o'brien", "acl045" and "ACL-045" all meet)
+     · a swapped pair of letters is ONE slip, not two ("hrary" → Harry)
+     · a typo anywhere in a word counts, including in the part typed so far of a longer word
+     · leading zeros on numbers don't matter ("0045" finds 45); numbers are never "corrected"
+       into a different number, so an ID is only ever a real hit
+     · nothing has to match every word: if no record has all your words, the ones that match
+       most of them are shown, best first
+   Tiers, tried in order until one finds something: (A) every word found as typed, (B) every
+   word found allowing typos, (C) at least half the words found. Within a tier, results are
+   ordered by how close each hit is, with a bonus when it lands in the title/name/ID. */
+function foldForSearch(s){
+  return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+/* Damerau–Levenshtein (optimal string alignment): insert / delete / substitute / swap-adjacent,
+   abandoned as soon as it can't come in within `max`. */
+const _OSA_R0 = new Int32Array(66), _OSA_R1 = new Int32Array(66), _OSA_R2 = new Int32Array(66);
+function osaWithin(a, b, max){
+  if(a===b) return 0;
+  const la=a.length, lb=b.length;
+  if(Math.abs(la-lb) > max || la>64 || lb>64) return max+1;
+  let p2=_OSA_R0, p1=_OSA_R1, cur=_OSA_R2;
+  for(let j=0;j<=lb;j++) p1[j]=j;
+  for(let i=1;i<=la;i++){
+    cur[0]=i; let best=i;
+    const ai=a.charCodeAt(i-1), ap=i>1 ? a.charCodeAt(i-2) : -1;
+    for(let j=1;j<=lb;j++){
+      const bj=b.charCodeAt(j-1);
+      let v = p1[j-1] + (ai===bj ? 0 : 1);
+      const del = p1[j]+1; if(del<v) v=del;
+      const ins = cur[j-1]+1; if(ins<v) v=ins;
+      if(i>1 && j>1 && ai===b.charCodeAt(j-2) && ap===bj){ const tr = p2[j-2]+1; if(tr<v) v=tr; }
+      cur[j]=v; if(v<best) best=v;
+    }
+    if(best>max) return max+1;
+    const t=p2; p2=p1; p1=cur; cur=t;
+  }
+  return p1[lb];
+}
+function forgivingTolerance(term){
+  if(/^\d+$/.test(term)) return 0;               // never turn one number into another
+  const n = term.length;
+  return n<=2 ? 0 : n<=4 ? 1 : n<=7 ? 2 : 3;
+}
+const FORGIVING_CTX = new WeakMap();              // record -> {raw, spaced, compact, words}
+function forgivingCtx(rec, raw){
+  const hit = FORGIVING_CTX.get(rec);
+  if(hit && hit.raw===raw) return hit;
+  const folded = foldForSearch(raw);
+  const ctx = {raw, spaced:' '+folded+' ', compact:folded.replace(/ /g,''), words:folded?folded.split(' '):[]};
+  FORGIVING_CTX.set(rec, ctx); return ctx;
+}
+const stripLeadingZeros = w => w.replace(/^0+(?=\d)/,'');
+/* Score of one search word against one record's text: lower is closer, Infinity = no match.
+   0 word starts with it · 1 inside a word · 2 ignoring spaces/punctuation or leading zeros ·
+   3+d found with d typos (only when allowTypos). */
+function scoreTermForgiving(term, ctx, allowTypos){
+  if(ctx.spaced.includes(' '+term)) return 0;
+  if(ctx.spaced.includes(term)) return 1;
+  if(term.length>=4 && ctx.compact.includes(term)) return 2;
+  if(/^\d+$/.test(term)){
+    const z = stripLeadingZeros(term);
+    if(ctx.words.some(w=> /^\d+$/.test(w) && stripLeadingZeros(w)===z)) return 2;
+    return Infinity;
+  }
+  if(!allowTypos) return Infinity;
+  const tol = forgivingTolerance(term);
+  if(!tol) return Infinity;
+  let best = Infinity;
+  const tl = term.length;
+  for(let i=0;i<ctx.words.length;i++){
+    const w = ctx.words[i];
+    if(w.length<2) continue;
+    if(tl<=4 && w[0]!==term[0]) continue;         // short words: the first letter is rarely the typo
+    let d = osaWithin(term, w, tol);
+    if(d>tol && w.length>tl){                     // "poter" typed so far of "potter…"
+      d = Math.min(osaWithin(term, w.slice(0,tl), tol), osaWithin(term, w.slice(0,tl+1), tol), osaWithin(term, w.slice(0,tl-1), tol));
+    }
+    if(d<=tol && 3+d<best){ best = 3+d; if(d===1) break; }
+  }
+  return best;
+}
+function forgivingFilter(list, q, textFn, primaryFn){
+  const terms = foldForSearch(q).replace(/([a-z])(\d)|(\d)([a-z])/g,'$1$3 $2$4').split(' ').filter(Boolean);   // "acc45" = "acc" + "45"
+  if(!terms.length || !Array.isArray(list)) return [];
+  const n = terms.length;
+  const recs = list.map((r,idx)=>{
+    const ctx = forgivingCtx(r, String(textFn(r)||''));
+    return {r, idx, ctx, pctx:null};
+  });
+  // primary-field contexts are built lazily per hit (cheap: only for records that matched)
+  const primaryOf = rec=>{
+    if(!primaryFn) return null;
+    if(!rec.pctx){ const folded = foldForSearch(primaryFn(rec.r)); rec.pctx = {spaced:' '+folded+' ', compact:folded.replace(/ /g,''), words:folded?folded.split(' '):[]}; }
+    return rec.pctx;
+  };
+  const scoreRec = (rec, allowTypos)=>{
+    let total = 0, matched = 0;
+    for(const term of terms){
+      let sc = scoreTermForgiving(term, rec.ctx, allowTypos);
+      if(sc!==Infinity && primaryFn){
+        const sp = scoreTermForgiving(term, primaryOf(rec), allowTypos);
+        if(sp!==Infinity) sc = Math.min(sc, sp-0.5);
+      }
+      if(sc===Infinity) continue;
+      matched++; total += sc;
+    }
+    return {matched, total};
+  };
+  const collect = (allowTypos, need)=>{
+    const out = [];
+    for(const rec of recs){
+      const {matched, total} = scoreRec(rec, allowTypos);
+      if(matched>=need) out.push({rec, score: total + (n-matched)*8});
+    }
+    return out;
+  };
+  let hits = collect(false, n);                    // A: every word, as typed
+  if(!hits.length) hits = collect(true, n);        // B: every word, typos allowed
+  if(!hits.length && n>=2) hits = collect(true, Math.ceil(n/2)); // C: at least half the words
+  hits.sort((a,b)=> a.score-b.score || a.rec.idx-b.rec.idx);
+  return hits.map(h=>h.rec.r);
+}
 /* Builds the categorised results markup shared by both the full-screen modal (mobile /
    Ctrl+K) and the inline dropdown under the stretched desktop search bar.
    A purely-numeric query (accession no., member ID, phone digits…) is treated as an
@@ -14427,7 +14554,8 @@ function viewReservation(id){
    each (still grouped under their own headings) instead of the usual short preview list.
    collectSearchMatches() is shared with the lockscreen search (buildLockSearchHTML) below,
    so both stay in sync — same data, same categories, same matching rules. */
-function collectSearchMatches(q){
+function collectSearchMatches(q, opts){
+  const forgiving = !!(opts && opts.forgiving);
   const query = (q||'').trim().toLowerCase();
   if(!DB || !query) return {query, isNumeric:false, books:[], members:[], txns:[], reservations:[], reminders:[]};
   const isNumeric = /^\d+$/.test(query);
@@ -14435,6 +14563,15 @@ function collectSearchMatches(q){
   // Every field on the record is searchable here, not just title/author/name — a half-remembered
   // publisher, shelf, note or class now finds the record — and a mistyped term still lands via
   // the same exact-first, near-miss-second rule the table searches use.
+  if(forgiving){
+    const top = (list, primary, lim)=> forgivingFilter(list, query, rowSearchText, primary).slice(0, lim);
+    return {query, isNumeric,
+      books: top(DB.catalogue, b=>[b.title,b.author,b.acc,b.isbn].join(' '), limit),
+      members: top(DB.users, u=>[u.name,u.id].join(' '), limit),
+      txns: isNumeric ? [] : top(DB.circulation, t=>[t.title,t.name,t.acc,t.trxId,t.userId].join(' '), 6),
+      reservations: isNumeric ? [] : top(DB.reservations, r=>[r.title,r.name,r.acc,r.userId].join(' '), 6),
+      reminders: isNumeric ? [] : top(DB.reminders||[], r=>[r.name,r.title,r.userId,r.trxId].join(' '), 6)};
+  }
   const books = smartFilter(DB.catalogue, query, rowSearchText).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,limit);
   const members = smartFilter(DB.users, query, rowSearchText).sort((a,b)=>(a.name||'').localeCompare(b.name||'')).slice(0,limit);
   const txns = isNumeric ? [] : smartFilter(DB.circulation, query, rowSearchText).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).slice(0,6);
@@ -14444,7 +14581,7 @@ function collectSearchMatches(q){
 }
 function buildGlobalSearchHTML(q){
   if(!DB) return '';
-  const m = collectSearchMatches(q);
+  const m = collectSearchMatches(q, {forgiving:true});
   if(!m.query){
     return `<div class="empty" style="padding:20px 10px"><div class="big"><svg viewBox="0 0 20 20" width="32" height="32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg></div>Search books, members, loans, reminders and reservations across the whole app</div>`;
   }
@@ -16186,6 +16323,7 @@ function mountBatchStaging(){
   if(!el) return;
   el.innerHTML = renderBatchStagingHtml();
   bindBatchStagingEvents();
+  focusKeyOperationalBox();   // back to "Add one student" so the next ID can be typed straight away
 }
 function bindBatchStagingEvents(){
   if(!isAdmin()) return;
@@ -22184,7 +22322,55 @@ function render(){
   try{ enhanceCollapsibleSections(); }catch(e){ console.error('Collapsible/reorderable sections failed to attach:', e); }
   restoreScrollPositions(el, __scrollSnapshot);
   if(memberProfileModalId) refreshMemberProfileModal();
+  focusKeyOperationalBox();
 }
+
+/* ================= KEY-BOX FOCUS =================
+   The cursor lands where the work starts, so the desk can type straight away:
+     · a page's main box — the Member ID on Issue, the student box on Register check-in, the
+       Member ID on Reservations, the sign-in username, or the search box on list pages
+     · the first field of any modal that opens (unless the modal already placed focus itself,
+       e.g. a confirm button)
+   Skipped on touch-first devices, where it would pop the on-screen keyboard uninvited, and
+   whenever something is already being typed into or another dialog is open. */
+const KEY_FOCUS_BY_ROUTE = {
+  circulation:'#qp_input_issueUser, #q_circulation',
+  register:'#qp_input_batchAdd, #q_register',
+  reservations:'#qp_input_reserveUser, #q_reservations',
+  catalogue:'#q_catalogue', users:'#q_users', equipment:'#q_equipment',
+  feedback:'#q_feedback', activitylog:'#q_activitylog',
+};
+function focusIsTouchFirst(){ try{ return window.matchMedia('(pointer: coarse)').matches; }catch(e){ return false; } }
+function placeCaretAtEnd(el){ try{ const l=(el.value||'').length; el.setSelectionRange(l,l); }catch(e){} }
+function focusKeyOperationalBox(){
+  if(focusIsTouchFirst()) return;
+  const sel = KEY_FOCUS_BY_ROUTE[route]; if(!sel) return;
+  if(document.querySelector('.modal-backdrop, .gsearch-backdrop, .quick-modal-overlay.show, .note-modal-overlay.show')) return;
+  const ae = document.activeElement;
+  if(ae && ae!==document.body && ae!==document.documentElement && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  const target = Array.from(document.querySelectorAll(sel)).find(el=> !el.disabled && el.offsetParent!==null);
+  if(target){ target.focus({preventScroll:true}); placeCaretAtEnd(target); }
+}
+const MODAL_FOCUS_SKIP_TYPES = ['hidden','checkbox','radio','file','button','submit','reset','range','color','image'];
+function focusFirstModalField(root){
+  if(!root || focusIsTouchFirst()) return;
+  const ae = document.activeElement;
+  if(ae && ae!==document.body && root.contains(ae)) return;      // the modal already chose its own focus
+  const usable = el=> !el.disabled && !el.readOnly && (el.offsetParent!==null || el.getClientRects().length>0);
+  const fields = Array.from(root.querySelectorAll('input, textarea')).filter(el=> !MODAL_FOCUS_SKIP_TYPES.includes((el.type||'').toLowerCase()) && usable(el));
+  const target = fields[0] || Array.from(root.querySelectorAll('select')).find(usable);
+  if(target){ target.focus({preventScroll:true}); if(target.tagName!=='SELECT') placeCaretAtEnd(target); }
+}
+(function watchModalsForFocus(){
+  const start = ()=> new MutationObserver(muts=>{
+    muts.forEach(m=> m.addedNodes.forEach(node=>{
+      if(node.nodeType===1 && node.matches && node.matches('.modal-backdrop, .quick-modal-overlay')){
+        setTimeout(()=> focusFirstModalField(node), 80);          // after any focus the modal sets itself (30ms)
+      }
+    }));
+  }).observe(document.body, {childList:true});
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
 
 /* ================= boot ================= */
 async function enterApp(){
