@@ -22350,10 +22350,11 @@ function openQuickAction(actionType) {
 function openAddTitleModal() { openBookForm(); }
 function openAddMemberModal() { openUserForm(); }
 
-// Check In Member wraps the exact "Batch check-in" section from the Register page
-// (renderBatchStagingHtml + mountBatchStaging — nothing re-implemented here) inside the
-// quick-actions modal shell. If the Register page is already open, that section is already
-// on screen, so we just scroll to it instead of opening a second copy of it.
+// Check In / Check Out wraps the exact "Batch check-in" and "Batch check-out" sections from
+// the Register page (renderBatchStagingHtml + mountBatchStaging, renderCheckoutHtml +
+// mountCheckoutStaging — nothing re-implemented here) inside the quick-actions modal shell,
+// side by side just like Issue/Return. If the Register page is already open, both sections are
+// already on screen, so we just scroll to them instead of opening a second copy.
 function openCheckInOutModal() {
   if (route === 'register') {
     const el = document.getElementById('batchStagingArea');
@@ -22363,14 +22364,23 @@ function openCheckInOutModal() {
   const modal = document.getElementById('quickActionModals');
   modal.innerHTML = `
     <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show" style="max-width: 640px;">
+      <div class="quick-modal show" style="max-width: 1000px;">
         <div class="quick-modal-header">
-          <h2>Check In Member</h2>
+          <h2>Check In / Check Out</h2>
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
           ${libraryBannerHtml()}
-          <div id="batchStagingArea"></div>
+          <div class="grid two-col">
+            <div class="card panel" style="box-shadow:none;border:1px solid var(--line)">
+              <div class="panel-head"><div><h3>Batch check-in</h3></div></div>
+              <div id="batchStagingArea"></div>
+            </div>
+            <div class="card panel" style="box-shadow:none;border:1px solid var(--line)">
+              <div class="panel-head"><div><h3>Batch check-out</h3></div></div>
+              <div id="checkoutStagingArea"></div>
+            </div>
+          </div>
         </div>
         <div class="quick-modal-footer">
           <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
@@ -22379,6 +22389,7 @@ function openCheckInOutModal() {
     </div>
   `;
   mountBatchStaging();
+  mountCheckoutStaging();
 }
 
 // Issue/Return Book wraps the exact "Issue a title" / "Return a title" sections from the
@@ -22703,7 +22714,7 @@ window.addEventListener('quickActionSubmit', function(e) {
   <div class="quick-actions-list">
     <button class="quick-action-item" onclick="openQuickAction('checkin')">
       <span class="quick-action-icon">✓</span>
-      <span>Check In Member</span>
+      <span>Check In / Check Out</span>
     </button>
     <button class="quick-action-item" onclick="openQuickAction('issue')">
       <span class="quick-action-icon">📖</span>
