@@ -3614,6 +3614,28 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 .home-hero .accession-stamp .n{ font-size:22px; font-weight:700;}
 .home-hero .accession-stamp .t{ font-size:9px; letter-spacing:1.5px;}
 .weather-ambience{ position:absolute; top:0; right:0; left:0; width:100%; height:100%; pointer-events:auto; cursor:pointer; z-index:0; opacity:.7;}
+/* Home hero weather: gentle motion for the sky. Everything is transform/opacity only (cheap to
+   paint), offset with per-element delays so nothing pulses in unison, and switched off entirely
+   for anyone whose system asks for reduced motion. */
+.weather-ambience .wx-twinkle{ animation:wxTwinkle 3.6s ease-in-out infinite;}
+.weather-ambience .wx-cloud{ animation:wxDrift 30s ease-in-out infinite alternate;}
+.weather-ambience .wx-glow, .weather-ambience .wx-core{ transform-box:fill-box; transform-origin:center; animation:wxGlow 6s ease-in-out infinite;}
+.weather-ambience .wx-core{ animation-name:wxCore; animation-duration:7s;}
+.weather-ambience .wx-float{ animation:wxFloat 9s ease-in-out infinite;}
+.weather-ambience .wx-wave{ animation:wxWave 3.8s ease-in-out infinite;}
+.weather-ambience .wx-shoot{ opacity:0; animation:wxShoot 14s linear infinite;}
+.weather-label-dot{ animation:wxDot 2.8s ease-in-out infinite;}
+@keyframes wxTwinkle{ 0%,100%{ opacity:var(--o,.5);} 50%{ opacity:calc(var(--o,.5) * .2);} }
+@keyframes wxDrift{ from{ transform:translateX(-22px);} to{ transform:translateX(34px);} }
+@keyframes wxGlow{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.13);} }
+@keyframes wxCore{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.05);} }
+@keyframes wxFloat{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-3px);} }
+@keyframes wxWave{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-2.5px);} }
+@keyframes wxShoot{ 0%{ opacity:0; transform:translate(0,0);} 2%{ opacity:1;} 9%{ opacity:0; transform:translate(-150px,53px);} 100%{ opacity:0; transform:translate(-150px,53px);} }
+@keyframes wxDot{ 0%,100%{ transform:scale(1); opacity:1;} 50%{ transform:scale(1.25); opacity:.7;} }
+@media (prefers-reduced-motion: reduce){
+  .weather-ambience *, .weather-label-dot{ animation:none !important;}
+}
 .weather-label{
   position:absolute !important; top:18px !important; right:22px !important; left:auto !important; bottom:auto !important;
   z-index:5 !important; display:flex !important; align-items:center; gap:7px; cursor:pointer;
@@ -10287,7 +10309,7 @@ const WEATHER_SETS = {
     <path d="M184,62 L192,54 L200,62 Z" fill="#fff" opacity="${op*0.55}"/>`},
   ocean:   {label:'Ocean waves', render:(p,w,h,op)=>{
     let waves='';
-    for(let i=0;i<4;i++){ const yy=h-36+i*9; waves+=`<path d="M0,${yy} Q${w/4},${yy-7} ${w/2},${yy} T${w},${yy}" stroke="${i%2?p.hillFront:p.hillBack}" stroke-width="2" fill="none" opacity="${op*(0.55-i*0.08)}"/>`; }
+    for(let i=0;i<4;i++){ const yy=h-36+i*9; waves+=`<path class="wx-wave" style="animation-delay:-${(i*0.95).toFixed(2)}s" d="M0,${yy} Q${w/4},${yy-7} ${w/2},${yy} T${w},${yy}" stroke="${i%2?p.hillFront:p.hillBack}" stroke-width="2" fill="none" opacity="${op*(0.55-i*0.08)}"/>`; }
     return `<rect x="0" y="${h-40}" width="${w}" height="40" fill="${p.hillBack}" opacity="${op*0.55}"/>${waves}`;
   }},
   city:    {label:'City skyline', render:(p,w,h,op)=>{
@@ -10311,8 +10333,8 @@ const WEATHER_SETS = {
     <path d="M0,80 Q60,66 130,78 T${w},72 V${h-18} H0 Z" fill="${p.hillBack}" opacity="${op*0.85}"/>
     <path d="M120,${h-18} C120,${h-52} 155,${h-76} 185,${h-76} C215,${h-76} 240,${h-56} 248,${h-38} V${h-18} Z" fill="${p.hillFront}" opacity="${op}"/>
     <rect x="0" y="${h-18}" width="${w}" height="18" fill="${p.hillBack}" opacity="${op*0.3}"/>
-    <path d="M0,${h-10} Q${w/4},${h-14} ${w/2},${h-10} T${w},${h-10}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.4}"/>
-    <path d="M0,${h-4} Q${w/4},${h-7} ${w/2},${h-4} T${w},${h-4}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.3}"/>`},
+    <path class="wx-wave" d="M0,${h-10} Q${w/4},${h-14} ${w/2},${h-10} T${w},${h-10}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.4}"/>
+    <path class="wx-wave" style="animation-delay:-1.6s" d="M0,${h-4} Q${w/4},${h-7} ${w/2},${h-4} T${w},${h-4}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.3}"/>`},
   meadow:  {label:'Meadow', render:(p,w,h,op)=>{
     const rand=(seed)=>{ const x=Math.sin(seed*777)*10000; return x-Math.floor(x); };
     let flowers='';
@@ -10342,34 +10364,40 @@ function renderWeatherAmbience(){
     const rand = (seed)=> { const x = Math.sin(seed*999)*10000; return x-Math.floor(x); };
     stars = Array.from({length:14*REPEATS},(_,i)=>{
       const x = Math.round(rand(i+1)*w), y = Math.round(rand(i+50)*70), r = rand(i+80)<0.25?1.6:0.9;
-      return `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${0.55*op}"/>`;
+      const dur = 2.4 + rand(i+120)*3.6, dl = rand(i+160)*dur;
+      return `<circle class="wx-twinkle" style="--o:${(0.55*op).toFixed(3)};animation-duration:${dur.toFixed(2)}s;animation-delay:-${dl.toFixed(2)}s" cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${0.55*op}"/>`;
     }).join('');
   }
+  const shooting = p.stars ? [{x:w-190,y:8,dur:13,delay:2},{x:w-390,y:24,dur:19,delay:11}].map(m=>
+    `<g class="wx-shoot" style="animation-duration:${m.dur}s;animation-delay:-${m.delay}s">
+       <line x1="${m.x}" y1="${m.y}" x2="${m.x+64}" y2="${m.y-22}" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="${(0.35*op).toFixed(3)}"/>
+       <line x1="${m.x}" y1="${m.y}" x2="${m.x+30}" y2="${m.y-10.5}" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity="${op}"/>
+     </g>`).join('') : '';
   let clouds = '';
   if(!p.stars){
     // Soft overlapping ellipses read as a puffy cloud, with a slightly darker underside for depth.
-    const cloudFn = (x,y,scale,fade)=>`
-      <g opacity="${op*fade}" transform="translate(${x},${y}) scale(${scale})">
+    const cloudFn = (x,y,scale,fade,idx)=>`
+      <g class="wx-cloud" style="animation-duration:${22 + (idx*7)%17}s;animation-delay:-${(idx*5.3)%19}s"><g opacity="${op*fade}" transform="translate(${x},${y}) scale(${scale})">
         <ellipse cx="0" cy="6" rx="26" ry="8" fill="#000" opacity="0.06"/>
         <ellipse cx="-14" cy="0" rx="15" ry="11" fill="#fff"/>
         <ellipse cx="10" cy="-3" rx="19" ry="14" fill="#fff"/>
         <ellipse cx="26" cy="2" rx="13" ry="9" fill="#fff"/>
-      </g>`;
+      </g></g>`;
     // One staggered pair of clouds per tile so the repeat reads as a continuous sky, not a stamp.
-    clouds = Array.from({length:REPEATS},(_,i)=> cloudFn(52+i*tileW,26,0.8,0.5) + cloudFn(150+i*tileW,18,0.55,0.38)).join('');
+    clouds = Array.from({length:REPEATS},(_,i)=> cloudFn(52+i*tileW,26,0.8,0.5,i*2) + cloudFn(150+i*tileW,18,0.55,0.38,i*2+1)).join('');
   }
   const celestial = p.moon
-    ? `<circle cx="${cx}" cy="${cy}" r="40" fill="${p.moon}" opacity="${op*0.12}"/>
+    ? `<g class="wx-float"><circle class="wx-glow" cx="${cx}" cy="${cy}" r="40" fill="${p.moon}" opacity="${op*0.12}"/>
        <mask id="wxMoonMask-${key}"><rect x="0" y="0" width="${w}" height="${h}" fill="#fff"/><circle cx="${cx+11}" cy="${cy-8}" r="23" fill="#000"/></mask>
        <g mask="url(#wxMoonMask-${key})">
          <circle cx="${cx}" cy="${cy}" r="26" fill="${p.moon}" opacity="${op}"/>
          <circle cx="${cx-8}" cy="${cy-6}" r="3.4" fill="${p.hillBack}" opacity="${op*0.3}"/>
          <circle cx="${cx-2}" cy="${cy+8}" r="2.2" fill="${p.hillBack}" opacity="${op*0.25}"/>
          <circle cx="${cx-11}" cy="${cy+4}" r="1.6" fill="${p.hillBack}" opacity="${op*0.22}"/>
-       </g>`
-    : `<circle cx="${cx}" cy="${cy}" r="44" fill="${p.sunGlow}" opacity="${op*0.35}"/>
-       <circle cx="${cx}" cy="${cy}" r="30" fill="${p.sunGlow}" opacity="${op*0.5}"/>
-       <circle cx="${cx}" cy="${cy}" r="18" fill="${p.sun}" opacity="${op}"/>`;
+       </g></g>`
+    : `<circle class="wx-glow" style="animation-duration:7s" cx="${cx}" cy="${cy}" r="44" fill="${p.sunGlow}" opacity="${op*0.35}"/>
+       <circle class="wx-glow" style="animation-duration:5s;animation-delay:-1.8s" cx="${cx}" cy="${cy}" r="30" fill="${p.sunGlow}" opacity="${op*0.5}"/>
+       <circle class="wx-core" cx="${cx}" cy="${cy}" r="18" fill="${p.sun}" opacity="${op}"/>`;
   const sceneFn = (WEATHER_SETS[PREFS.weatherAmbienceSet]||WEATHER_SETS.hills).render;
   const scene = Array.from({length:REPEATS},(_,i)=>`<g transform="translate(${i*tileW},0)">${sceneFn(p,tileW,h,op)}</g>`).join('');
   const inner = `
@@ -10380,6 +10408,7 @@ function renderWeatherAmbience(){
     </defs>
     <rect x="0" y="0" width="${w}" height="${h}" fill="url(#wxSky-${key})" opacity="${op*0.9}"/>
     ${stars}
+    ${shooting}
     ${celestial}
     ${clouds}
     ${scene}
