@@ -3165,6 +3165,8 @@ body[data-section-style="glassy"] :is(.toast, .cloud-indicator:not(.error), .ins
   background:color-mix(in srgb, var(--forest-dark) calc(max(var(--section-opacity,0.7), 0.75) * 100%), transparent);
   backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
 }
+/* Member profile modal: its inner cards sit flat on the modal's own surface (no second blur/tint). */
+html body .modal.member-profile-modal .card.panel{ background:none; border:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; padding:0; margin-bottom:14px;}
 body[data-topbar-style="blank"] .topbar{ background:transparent; border-bottom:1px solid var(--line); box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none;}
 body[data-topbar-style="blank"] .topbar .titles h2, body[data-topbar-style="blank"] .topbar .titles p, body[data-topbar-style="blank"] .clock-chip .time{ color:var(--ink);}
 body[data-topbar-style="glassy"] .topbar{ background:rgba(var(--topbar-bg-rgb,31,58,46),var(--section-opacity,0.7)); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,.15);}
@@ -12044,43 +12046,6 @@ function touchMemberStatusDate(user){
   if(!user) return;
   user.statusUpdated = todayISO();
 }
-function viewMember(id){
-  const u = DB.users.find(x=>x.id===id);
-  if(!u) return;
-  const rows = [
-    ['Member ID', u.id],
-    ['Gender', u.gender||'—'],
-    ['Category', u.category||'—'],
-    ['Class / Designation', u.cls||'—'],
-    [memberContactRow(u).label, memberContactRow(u).value],
-    ['Currently borrowed', `${u.borrowed||0} / ${u.maxAllowed||0}`],
-    ['Total borrowed (all time)', u.totalBorrowed||0],
-    ['Strikes', u.strike||0],
-    ['Discipline', u.discipline||'—'],
-    ['Eligibility', u.eligibility||'—'],
-    ['Status', u.status||'—'],
-    ['Status last updated', u.statusUpdated? fmtDate(u.statusUpdated) : '—'],
-    ['Notes', u.notes||'—'],
-  ];
-  const wrap = document.createElement('div');
-  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
-  wrap.innerHTML = `
-    <div class="modal">
-      <div class="modal-head"><h3>Member details</h3><button id="mClose" aria-label="Close">✕</button></div>
-      <div class="modal-body">
-        <table class="datatable">
-          <tr><td style="font-weight:600;width:40%">Full name</td><td>${memberNameHtml(u.name, u.id)}</td></tr>
-          ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:40%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}
-        </table>
-      </div>
-      <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
-    </div>`;
-  document.body.appendChild(wrap);
-  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
-  wrap.onclick = e=>{ if(e.target===wrap) close(); };
-  wrap.querySelector('#mClose').onclick = close;
-  wrap.querySelector('#mCancel').onclick = close;
-}
 /* Auto-detect gender from an honorific prefix on the name (e.g. "MR. BALOGUN MAYOWA",
    "MS. NNAMDI ANGEL"). Returns '' when no recognisable prefix is present, so callers can
    fall back to a default without clobbering names that simply don't carry a title. */
@@ -12559,6 +12524,12 @@ function pageMemberProfile(){
   if(!u){
     return `<div class="empty"><div class="big">👤</div>No member selected — go to Members and click "Profile" on someone.<br><button class="btn secondary" style="margin-top:12px" onclick="route='users';render();">← Back to Members</button></div>`;
   }
+  return `<button class="btn secondary" style="margin-bottom:14px" onclick="route='users';render();">← Back to Members</button>` + memberProfileBodyHtml(u);
+}
+/* The full member profile (details table + Loans/Subjects/Visits/Fines/Reservations/Documents tabs),
+   shared by the Member Profile page and the Member profile modal opened from global search, so the
+   two can never drift apart again. */
+function memberProfileBodyHtml(u){
   const allTxns = DB.circulation.filter(t=>t.userId===u.id).sort((a,b)=>(parseAnyDate(b.dateBorrowed)||0)-(parseAnyDate(a.dateBorrowed)||0));
   const active = allTxns.filter(t=>!t.returnDate);
   const history = allTxns.filter(t=>t.returnDate);
@@ -12627,7 +12598,6 @@ function pageMemberProfile(){
   }
 
   return `
-  <button class="btn secondary" style="margin-bottom:14px" onclick="route='users';render();">← Back to Members</button>
   <div class="card panel">
     <div class="panel-head">
       <h3><span class="${getMemberStatusClass(u.id)}">${esc(u.name)}</span> <span class="badge ${u.status==='ACTIVE'?'green':'grey'}">${esc(u.status)}</span></h3>
@@ -12647,6 +12617,8 @@ function pageMemberProfile(){
       <tr><td style="font-weight:600">Strikes</td><td>${u.strike||0}</td></tr>
       <tr><td style="font-weight:600">Discipline</td><td>${esc(u.discipline||'—')}</td></tr>
       <tr><td style="font-weight:600">Eligibility</td><td>${esc(u.eligibility||'—')}</td></tr>
+      <tr><td style="font-weight:600">Status</td><td>${esc(u.status||'—')}</td></tr>
+      <tr><td style="font-weight:600">Status last updated</td><td>${u.statusUpdated? esc(fmtDate(u.statusUpdated)) : '—'}</td></tr>
       <tr><td style="font-weight:600">Notes</td><td>${esc(u.notes||'—')}</td></tr>
       ${DB.setup.fineEnabled? `<tr><td style="font-weight:600">Outstanding fines</td><td style="color:${outstanding?'var(--terracotta)':'inherit'};font-weight:${outstanding?'700':'400'}">${fmtCurrency(outstanding)}</td></tr>`:''}
     </table>
@@ -12657,6 +12629,46 @@ function pageMemberProfile(){
     </div>
     <div class="profile-tab-body">${tabBody}</div>
   </div>`;
+}
+
+/* Member profile as a modal (opened from global search): the same full profile as the page, over
+   whatever page the person is already on. Tab switches and every action inside the tabs already call
+   render(); render() ends by calling refreshMemberProfileModal(), so the modal stays in step. */
+let memberProfileModalId = null;
+function openMemberProfileModal(id){
+  const u = DB.users.find(x=>x.id===id); if(!u) return;
+  if(route==='memberProfile'){ currentProfileMemberId = id; memberProfileTab = 'loans'; render(); return; } // already looking at a profile page
+  closeMemberProfileModal(true);
+  memberProfileModalId = id; memberProfileTab = 'loans';
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'memberProfileModal';
+  wrap.innerHTML = `
+    <div class="modal wide member-profile-modal">
+      <div class="modal-head"><h3>Member profile</h3><button id="mpClose" aria-label="Close">✕</button></div>
+      <div class="modal-body" id="memberProfileModalBody"></div>
+      <div class="modal-foot"><button class="btn secondary" id="mpCancel">Close</button></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.onclick = e=>{ if(e.target===wrap) closeMemberProfileModal(); };
+  wrap.querySelector('#mpClose').onclick = ()=> closeMemberProfileModal();
+  wrap.querySelector('#mpCancel').onclick = ()=> closeMemberProfileModal();
+  refreshMemberProfileModal();
+}
+function refreshMemberProfileModal(){
+  const body = document.getElementById('memberProfileModalBody'); if(!body) return;
+  const u = DB.users.find(x=>x.id===memberProfileModalId);
+  if(!u){ closeMemberProfileModal(true); return; }
+  const scroller = body.closest('.modal'); const top = scroller ? scroller.scrollTop : 0;
+  body.innerHTML = memberProfileBodyHtml(u);
+  if(memberProfileTab==='subjects' && isAdmin()) wireSelectAllToolbar(body, '.subjChkProfile');
+  try{ applyIconPack(); }catch(e){}
+  if(scroller) scroller.scrollTop = top;
+}
+function closeMemberProfileModal(instant){
+  const wrap = document.getElementById('memberProfileModal');
+  memberProfileModalId = null;
+  if(!wrap) return;
+  if(instant) wrap.remove(); else animatedCloseModal(wrap, ()=> wrap.remove());
 }
 
 /* ---- Member documents (reports, scans, images, PDFs attached to a member) ---- */
@@ -14363,7 +14375,7 @@ function globalSearchGoto(kind, id){
   // Every result opens its details in a modal over whatever page the person is already on —
   // no route change, no full re-render — so they can look, close, and carry on where they were.
   if(kind==='book') viewBook(id);
-  else if(kind==='member') viewMember(id);
+  else if(kind==='member') openMemberProfileModal(id);
   else if(kind==='txn' || kind==='reminder') viewTransaction(id);
   else if(kind==='reservation') viewReservation(id);
 }
@@ -15059,7 +15071,7 @@ function printMemberFullProfile(id){
     ['Class / Designation', u.cls||'—'],[contact.label, contact.value],
     ['Currently borrowed', `${u.borrowed||0} / ${u.maxAllowed||0}`],['Total borrowed (all time)', u.totalBorrowed||0],
     ['Strikes', u.strike||0],['Discipline', u.discipline||'—'],['Eligibility', u.eligibility||'—'],
-    ['Status', u.status||'—'],['Notes', u.notes||'—'],
+    ['Status', u.status||'—'],['Status last updated', u.statusUpdated? fmtDate(u.statusUpdated) : '—'],['Notes', u.notes||'—'],
   ];
   if(DB.setup.fineEnabled) rows.push(['Outstanding fines', fmtCurrency(fines.reduce((s,x)=>s+fineStatus(x.t).outstanding,0))]);
   const sections = [
@@ -22166,6 +22178,7 @@ function render(){
   applyIconPack();
   try{ enhanceCollapsibleSections(); }catch(e){ console.error('Collapsible/reorderable sections failed to attach:', e); }
   restoreScrollPositions(el, __scrollSnapshot);
+  if(memberProfileModalId) refreshMemberProfileModal();
 }
 
 /* ================= boot ================= */
