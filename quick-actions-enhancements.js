@@ -257,8 +257,8 @@
         }
       }
       
-      // Ctrl+Alt+1 through 6 for direct action access
-      if ((e.ctrlKey || e.metaKey) && e.altKey && /^[1-6]$/.test(e.key)) {
+      // Ctrl+Alt+1 through 7 for direct action access
+      if ((e.ctrlKey || e.metaKey) && e.altKey && /^[1-7]$/.test(e.key)) {
         e.preventDefault();
         const actionMap = {
           '1': 'checkin',
@@ -266,7 +266,8 @@
           '3': 'addtitle',
           '4': 'addmember',
           '5': 'schedule',
-          '6': 'timetable'
+          '6': 'timetable',
+          '7': 'calendar'
         };
         
         if (typeof openQuickAction === 'function') {
@@ -280,7 +281,7 @@
     if (btn) {
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
       const modifier = isMac ? 'Cmd' : 'Ctrl';
-      btn.title = `Quick Actions (${modifier}+Shift+Q)\nDirect: ${modifier}+Alt+1-6`;
+      btn.title = `Quick Actions (${modifier}+Shift+Q)\nDirect: ${modifier}+Alt+1-7`;
     }
   }
 
@@ -448,7 +449,7 @@
   }
 
   console.log('✓ Quick Actions Enhancements loaded');
-  console.log('  Shortcuts: Ctrl+Shift+Q to toggle, Ctrl+Alt+1-6 for direct access');
+  console.log('  Shortcuts: Ctrl+Shift+Q to toggle, Ctrl+Alt+1-7 for direct access');
   console.log('  Features: Auto-save drafts, history tracking, keyboard navigation');
 
 })();

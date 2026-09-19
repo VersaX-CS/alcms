@@ -22316,10 +22316,6 @@ function closeQuickPanel() {
   panel.classList.remove('show');
 }
 
-// Store selected items for quick actions
-let quickActionSelectedMember = null;
-let quickActionSelectedBook = null;
-
 function openQuickAction(actionType) {
   closeQuickPanel();
   
@@ -22328,8 +22324,6 @@ function openQuickAction(actionType) {
       openCheckInOutModal();
       break;
     case 'issue':
-      quickActionSelectedMember = null;
-      quickActionSelectedBook = null;
       openIssueReturnModal();
       break;
     case 'addtitle':
@@ -22344,124 +22338,127 @@ function openQuickAction(actionType) {
     case 'timetable':
       openTimetableModal();
       break;
+    case 'calendar':
+      openCalendarModal();
+      break;
   }
 }
 
-// Modal functions for each action
+// Add Title / Add Member don't build their own forms — they open the exact same modal the
+// Catalogue and Members pages open (openBookForm / openUserForm), so there is only ever one
+// "Add title" or "Add member" form in the whole app.
+function openAddTitleModal() { openBookForm(); }
+function openAddMemberModal() { openUserForm(); }
+
+// Check In Member wraps the exact "Batch check-in" section from the Register page
+// (renderBatchStagingHtml + mountBatchStaging — nothing re-implemented here) inside the
+// quick-actions modal shell. If the Register page is already open, that section is already
+// on screen, so we just scroll to it instead of opening a second copy of it.
 function openCheckInOutModal() {
+  if (route === 'register') {
+    const el = document.getElementById('batchStagingArea');
+    if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+    return;
+  }
   const modal = document.getElementById('quickActionModals');
   modal.innerHTML = `
     <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show">
+      <div class="quick-modal show" style="max-width: 640px;">
         <div class="quick-modal-header">
           <h2>Check In Member</h2>
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
-          <div class="form-group">
-            <label>Member ID or Name</label>
-            <input type="text" id="memberSearch" placeholder="Search by ID or name..." autofocus 
-              oninput="updateMemberSuggestions()">
-            <div id="memberSuggestions" style="margin-top: 8px; max-height: 200px; overflow-y: auto;"></div>
-          </div>
-          <div class="form-group" id="selectedMemberDisplay" style="display:none;">
-            <div style="padding: 12px; background: var(--parchment-dim); border-radius: 6px;">
-              <strong id="selectedMemberName"></strong>
-              <div style="font-size: 12px; color: var(--muted);" id="selectedMemberInfo"></div>
-            </div>
-          </div>
+          ${libraryBannerHtml()}
+          <div id="batchStagingArea"></div>
         </div>
         <div class="quick-modal-footer">
-          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitCheckInMember()" id="submitCheckInBtn" disabled>Check In</button>
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
         </div>
       </div>
     </div>
   `;
-  document.getElementById('memberSearch').focus();
+  mountBatchStaging();
 }
 
+// Issue/Return Book wraps the exact "Issue a title" / "Return a title" sections from the
+// Circulation page — same markup, same quickPickerHtml fields, same bindCirculationPickers /
+// renderIssueStaging / renderReturnStaging functions, nothing re-implemented here. If the
+// Circulation page is already open, scroll to that section instead of opening a duplicate.
 function openIssueReturnModal() {
+  if (route === 'circulation') {
+    const el = document.querySelector('.grid.two-col');
+    if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+    return;
+  }
+
   const modal = document.getElementById('quickActionModals');
+
+  if (!isStaff()) {
+    modal.innerHTML = `
+      <div class="quick-modal-overlay show" id="tempOverlay">
+        <div class="quick-modal show">
+          <div class="quick-modal-header">
+            <h2>Issue/Return Book</h2>
+            <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
+          </div>
+          <div class="quick-modal-body">
+            <div class="guest-lock">You're signed in as a guest — issuing and returning titles needs a staff or admin account.</div>
+          </div>
+          <div class="quick-modal-footer">
+            <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const t = DB.circulation.map(x => ({...x, status: txnStatus(x)}));
+  const active = t.filter(x => x.status !== 'RETURNED');
+
   modal.innerHTML = `
     <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show">
+      <div class="quick-modal show" style="max-width: 900px;">
         <div class="quick-modal-header">
           <h2>Issue/Return Book</h2>
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
-          <div class="form-group">
-            <label>Member</label>
-            <input type="text" id="issueeMemberSearch" placeholder="Search member..." autofocus 
-              oninput="updateIssueMemberSuggestions()">
-            <div id="issueeMemberSuggestions" style="margin-top: 8px; max-height: 150px; overflow-y: auto;"></div>
-          </div>
-          
-          <div class="form-group">
-            <label>Book/Title</label>
-            <input type="text" id="issueBookSearch" placeholder="Search book..." 
-              oninput="updateIssueBookSuggestions()">
-            <div id="issueBookSuggestions" style="margin-top: 8px; max-height: 150px; overflow-y: auto;"></div>
-          </div>
-          
-          <div class="form-group">
-            <label>Action</label>
-            <select id="issueAction">
-              <option value="issue">Issue (Borrow)</option>
-              <option value="return">Return</option>
-            </select>
+          <div class="grid two-col">
+            <div class="card panel" style="box-shadow:none;border:1px solid var(--line)">
+              <div class="panel-head"><h3>Issue a title</h3><div class="hint">Type an ID to fetch it instantly · 7-day loan period · capped at each member's max allowed</div></div>
+              <div class="field"><label>Member ID</label>${quickPickerHtml('issueUser','Type a member ID, e.g. ACL-045')}</div>
+              <div class="field"><label>Accession No.</label>${quickPickerHtml('issueBook','Type an accession no., e.g. ACC-512')}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn" onclick="issueBook()">Issue title</button>
+                <button class="btn secondary" onclick="addIssueToStaging()" title="Add to a batch of titles for this member">+ Add to batch</button>
+                <button class="btn secondary" onclick="openScanModal('issue')" title="Scan a barcode">📷 Scan</button>
+              </div>
+              <div id="issueStagingArea"></div>
+            </div>
+            <div class="card panel" style="box-shadow:none;border:1px solid var(--line)">
+              <div class="panel-head"><h3>Return a title</h3><div class="hint">${active.length} loan(s) currently out · type transaction, member or acc. no.</div></div>
+              <div class="field"><label>Active loan</label>${quickPickerHtml('returnTrx','Type member ID or accession no.')}</div>
+              <div class="field"><label>Returned condition</label><select id="returnCondition">${(DB.setup.conditions||['GOOD','FAIR','DAMAGED','MISSING']).map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn" onclick="returnBook()">Mark as returned</button>
+                <button class="btn secondary" onclick="addReturnToStaging()" title="Add to a batch of loans to return together">+ Add to batch</button>
+                <button class="btn secondary" onclick="openScanModal('return')" title="Scan a barcode">📷 Scan</button>
+              </div>
+              <div id="returnStagingArea"></div>
+            </div>
           </div>
         </div>
         <div class="quick-modal-footer">
-          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitIssueReturn()" id="submitIssueBtn" disabled>Process</button>
+          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
         </div>
       </div>
     </div>
   `;
-  document.getElementById('issueeMemberSearch').focus();
-}
-
-function openAddTitleModal() {
-  const modal = document.getElementById('quickActionModals');
-  modal.innerHTML = `
-    <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show">
-        <div class="quick-modal-header">
-          <h2>Add New Title</h2>
-          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
-        </div>
-        <div class="quick-modal-body">
-          <div class="form-group">
-            <label>Title</label>
-            <input type="text" id="titleName" placeholder="Enter book/item title" autofocus>
-          </div>
-          <div class="form-group">
-            <label>Author</label>
-            <input type="text" id="titleAuthor" placeholder="Enter author name">
-          </div>
-          <div class="form-group">
-            <label>ISBN</label>
-            <input type="text" id="titleISBN" placeholder="Enter ISBN">
-          </div>
-          <div class="form-group">
-            <label>Category</label>
-            <input type="text" id="titleCategory" placeholder="Enter category">
-          </div>
-          <div class="form-group">
-            <label>Quantity</label>
-            <input type="number" id="titleQty" placeholder="Enter quantity" value="1">
-          </div>
-        </div>
-        <div class="quick-modal-footer">
-          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitAddTitle()">Add Title</button>
-        </div>
-      </div>
-    </div>
-  `;
-  document.getElementById('titleName').focus();
+  bindCirculationPickers();
+  renderIssueStaging();
+  renderReturnStaging();
 }
 
 function openScheduleModal() {
@@ -22561,294 +22558,10 @@ function openTimetableModal() {
   `;
 }
 
-function openAddMemberModal() {
-  const modal = document.getElementById('quickActionModals');
-  modal.innerHTML = `
-    <div class="quick-modal-overlay show" id="tempOverlay">
-      <div class="quick-modal show">
-        <div class="quick-modal-header">
-          <h2>Add New Member</h2>
-          <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
-        </div>
-        <div class="quick-modal-body">
-          <div class="form-group">
-            <label>Name</label>
-            <input type="text" id="memberName" placeholder="Enter member name" autofocus>
-          </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input type="email" id="memberEmail" placeholder="Enter email">
-          </div>
-          <div class="form-group">
-            <label>Phone</label>
-            <input type="tel" id="memberPhone" placeholder="Enter phone number">
-          </div>
-          <div class="form-group">
-            <label>Member Type</label>
-            <select id="memberType">
-              <option value="student">Student</option>
-              <option value="staff">Staff</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-        </div>
-        <div class="quick-modal-footer">
-          <button class="btn btn-secondary" onclick="closeQuickActionModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="submitAddMember()">Add Member</button>
-        </div>
-      </div>
-    </div>
-  `;
-  document.getElementById('memberName').focus();
-}
-
 function closeQuickActionModal() {
   const modal = document.getElementById('quickActionModals');
   modal.innerHTML = '';
-  quickActionSelectedMember = null;
-  quickActionSelectedBook = null;
 }
-
-// Submission handlers - use real app functions
-function submitCheckInMember() {
-  if (!quickActionSelectedMember) {
-    alert('Please select a member');
-    return;
-  }
-  
-  try {
-    // Call the real app function
-    autoCheckInForCirculation(
-      quickActionSelectedMember,
-      'DESK OPERATION',
-      false,
-      'Checked In',
-      'Quick Action Check-In'
-    );
-    
-    // Save and refresh
-    if (typeof saveDB === 'function') saveDB('Member checked in via quick actions');
-    if (typeof render === 'function') render();
-    
-    toast(`${quickActionSelectedMember.name} checked in successfully ✓`);
-    closeQuickActionModal();
-  } catch(error) {
-    console.error('Check-in error:', error);
-    alert('Error: ' + error.message);
-  }
-}
-
-function submitIssueReturn() {
-  if (!quickActionSelectedMember || !quickActionSelectedBook) {
-    alert('Please select both member and book');
-    return;
-  }
-  
-  const action = document.getElementById('issueAction').value;
-  
-  try {
-    if (action === 'issue') {
-      // Check member can borrow
-      if (typeof memberBorrowBlockReason === 'function') {
-        const blockReason = memberBorrowBlockReason(quickActionSelectedMember);
-        if (blockReason) {
-          alert('⛔ ' + blockReason);
-          return;
-        }
-      }
-      
-      if (quickActionSelectedMember.borrowed >= quickActionSelectedMember.maxAllowed) {
-        alert(`${quickActionSelectedMember.name} has reached borrowing limit`);
-        return;
-      }
-      
-      // Call the real issue function
-      const trx = doIssueOne(quickActionSelectedMember, quickActionSelectedBook);
-      
-      if (typeof saveDB === 'function') saveDB(`${quickActionSelectedBook.title} issued to ${quickActionSelectedMember.name}`);
-      if (typeof render === 'function') render();
-      
-      toast(`"${quickActionSelectedBook.title}" issued ✓`);
-    } else {
-      // Return book - find the transaction
-      const trx = DB.circulation.find(t => 
-        t.userId === quickActionSelectedMember.id && 
-        t.acc === quickActionSelectedBook.acc && 
-        !t.returnDate
-      );
-      
-      if (!trx) {
-        alert('No active loan found for this member and book');
-        return;
-      }
-      
-      trx.returnDate = new Date().toISOString().slice(0, 10);
-      quickActionSelectedMember.borrowed -= 1;
-      
-      if (typeof saveDB === 'function') saveDB(`${quickActionSelectedBook.title} returned by ${quickActionSelectedMember.name}`);
-      if (typeof render === 'function') render();
-      
-      toast(`"${quickActionSelectedBook.title}" returned ✓`);
-    }
-    
-    closeQuickActionModal();
-  } catch(error) {
-    console.error('Issue/return error:', error);
-    alert('Error: ' + error.message);
-  }
-}
-
-// Member and book search functions
-function updateMemberSuggestions() {
-  const query = document.getElementById('memberSearch').value.toLowerCase();
-  const suggestionsDiv = document.getElementById('memberSuggestions');
-  
-  if (query.length < 1) {
-    suggestionsDiv.innerHTML = '';
-    return;
-  }
-  
-  const matches = (DB.users || []).filter(u => 
-    u.name.toLowerCase().includes(query) || 
-    u.id.toLowerCase().includes(query)
-  ).slice(0, 8);
-  
-  if (matches.length === 0) {
-    suggestionsDiv.innerHTML = '<div style="color: var(--muted); font-size: 12px; padding: 8px;">No members found</div>';
-    return;
-  }
-  
-  suggestionsDiv.innerHTML = matches.map(member => `
-    <button class="quick-action-item" style="text-align: left; margin: 4px 0;" 
-      onclick="selectCheckInMember(${JSON.stringify(member).replace(/"/g, '&quot;')})">
-      <strong>${esc(member.name)}</strong>
-      <div style="font-size: 12px; color: var(--muted);">${member.id} • ${member.category || 'N/A'}</div>
-    </button>
-  `).join('');
-}
-
-function selectCheckInMember(member) {
-  quickActionSelectedMember = member;
-  document.getElementById('memberSearch').value = member.name;
-  document.getElementById('memberSuggestions').innerHTML = '';
-  document.getElementById('selectedMemberDisplay').style.display = 'block';
-  document.getElementById('selectedMemberName').textContent = member.name;
-  document.getElementById('selectedMemberInfo').textContent = `${member.id} • ${member.category || 'N/A'}`;
-  document.getElementById('submitCheckInBtn').disabled = false;
-}
-
-function updateIssueMemberSuggestions() {
-  const query = document.getElementById('issueeMemberSearch').value.toLowerCase();
-  const suggestionsDiv = document.getElementById('issueeMemberSuggestions');
-  
-  if (query.length < 1) {
-    suggestionsDiv.innerHTML = '';
-    return;
-  }
-  
-  const matches = (DB.users || []).filter(u => 
-    u.name.toLowerCase().includes(query) || 
-    u.id.toLowerCase().includes(query)
-  ).slice(0, 8);
-  
-  suggestionsDiv.innerHTML = matches.map(member => `
-    <button class="quick-action-item" style="text-align: left; margin: 4px 0;" 
-      onclick="selectIssueMember(${JSON.stringify(member).replace(/"/g, '&quot;')})">
-      <strong>${esc(member.name)}</strong>
-      <div style="font-size: 12px; color: var(--muted);">${member.id} • Borrowed: ${member.borrowed || 0}/${member.maxAllowed || 5}</div>
-    </button>
-  `).join('') || '<div style="color: var(--muted); font-size: 12px; padding: 8px;">No members found</div>';
-}
-
-function selectIssueMember(member) {
-  quickActionSelectedMember = member;
-  document.getElementById('issueeMemberSearch').value = member.name;
-  document.getElementById('issueeMemberSuggestions').innerHTML = '';
-  checkIssueFormComplete();
-}
-
-function updateIssueBookSuggestions() {
-  const query = document.getElementById('issueBookSearch').value.toLowerCase();
-  const suggestionsDiv = document.getElementById('issueBookSuggestions');
-  
-  if (query.length < 1) {
-    suggestionsDiv.innerHTML = '';
-    return;
-  }
-  
-  const matches = (DB.catalogue || []).filter(b => 
-    b.title.toLowerCase().includes(query) || 
-    b.acc.toLowerCase().includes(query)
-  ).slice(0, 8);
-  
-  const actionType = document.getElementById('issueAction').value;
-  
-  suggestionsDiv.innerHTML = matches.map(book => {
-    let status = book.available || 'UNKNOWN';
-    let available = (actionType === 'issue' && status === 'AVAILABLE') || (actionType === 'return' && status === 'ISSUED');
-    return `
-      <button class="quick-action-item" style="text-align: left; margin: 4px 0; opacity: ${available ? 1 : 0.5}" 
-        onclick="selectIssueBook(${JSON.stringify(book).replace(/"/g, '&quot;')})" 
-        ${!available ? 'disabled' : ''}>
-        <strong>${esc(book.title)}</strong>
-        <div style="font-size: 12px; color: var(--muted);">${book.acc} • ${status}</div>
-      </button>
-    `;
-  }).join('') || '<div style="color: var(--muted); font-size: 12px; padding: 8px;">No books found</div>';
-}
-
-function selectIssueBook(book) {
-  quickActionSelectedBook = book;
-  document.getElementById('issueBookSearch').value = book.title;
-  document.getElementById('issueBookSuggestions').innerHTML = '';
-  checkIssueFormComplete();
-}
-
-function checkIssueFormComplete() {
-  const btnEnabled = quickActionSelectedMember && quickActionSelectedBook;
-  document.getElementById('submitIssueBtn').disabled = !btnEnabled;
-}
-
-function submitAddTitle() {
-  const title = document.getElementById('titleName').value;
-  const author = document.getElementById('titleAuthor').value;
-  const isbn = document.getElementById('titleISBN').value;
-  const category = document.getElementById('titleCategory').value;
-  const qty = document.getElementById('titleQty').value;
-  
-  if (!title) {
-    alert('Please enter a title');
-    return;
-  }
-  
-  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
-    detail: { type: 'addtitle', title, author, isbn, category, qty }
-  }));
-  
-  toast('Title added successfully');
-  closeQuickActionModal();
-}
-
-function submitAddMember() {
-  const name = document.getElementById('memberName').value;
-  const email = document.getElementById('memberEmail').value;
-  const phone = document.getElementById('memberPhone').value;
-  const type = document.getElementById('memberType').value;
-  
-  if (!name) {
-    alert('Please enter member name');
-    return;
-  }
-  
-  window.dispatchEvent(new CustomEvent('quickActionSubmit', {
-    detail: { type: 'addmember', name, email, phone, memberType: type }
-  }));
-  
-  toast('Member added successfully');
-  closeQuickActionModal();
-}
-
-
 
 // Close panel when clicking overlay
 document.addEventListener('DOMContentLoaded', function() {
@@ -23011,6 +22724,10 @@ window.addEventListener('quickActionSubmit', function(e) {
     <button class="quick-action-item" onclick="openQuickAction('timetable')">
       <span class="quick-action-icon">⏰</span>
       <span>Today's Timetable</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('calendar')">
+      <span class="quick-action-icon">🗓️</span>
+      <span>Calendar</span>
     </button>
   </div>
 </div>
