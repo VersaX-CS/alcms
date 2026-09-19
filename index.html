@@ -14360,11 +14360,48 @@ function closeGlobalSearch(){ const w = document.getElementById('gsearchBackdrop
 function globalSearchGoto(kind, id){
   closeGlobalSearch();
   closeTopbarSearch();
-  if(kind==='book'){ route='catalogue'; render(); viewBook(id); }
-  else if(kind==='member'){ openMemberProfile(id); return; }
-  else if(kind==='txn'){ route='circulation'; render(); viewTransaction(id); }
-  else if(kind==='reservation'){ route='reservations'; render(); }
-  else if(kind==='reminder'){ route='circulation'; render(); viewTransaction(id); }
+  // Every result opens its details in a modal over whatever page the person is already on —
+  // no route change, no full re-render — so they can look, close, and carry on where they were.
+  if(kind==='book') viewBook(id);
+  else if(kind==='member') viewMember(id);
+  else if(kind==='txn' || kind==='reminder') viewTransaction(id);
+  else if(kind==='reservation') viewReservation(id);
+}
+function viewReservation(id){
+  const r = DB.reservations.find(x=>x.id===id);
+  if(!r) return;
+  const pos = reservationQueuePosition(r);
+  const rows = [
+    ['Title', r.title||'—'],
+    ['Accession No.', r.acc||'—'],
+    ['Requested', r.dateRequested? fmtDate(r.dateRequested) : '—'],
+    ['Status', r.status||'—'],
+    ['Queue position', pos? '#'+pos : '—'],
+  ];
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'mb';
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>Reservation details</h3><button id="mClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <table class="datatable">
+          <tr><td style="font-weight:600;width:40%">Member</td><td>${memberNameHtml(r.name, r.userId)} (${esc(r.userId)})</td></tr>
+          ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:40%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}
+        </table>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="mCancel">Close</button>
+        ${r.status==='READY' && isStaff()? `<button class="btn secondary" id="mFulfil">Mark fulfilled</button>`:''}
+        ${r.status!=='FULFILLED' && isStaff()? `<button class="btn danger" id="mCancelRes">Cancel reservation</button>`:''}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#mClose').onclick = close;
+  wrap.querySelector('#mCancel').onclick = close;
+  const f = wrap.querySelector('#mFulfil'); if(f) f.onclick = ()=>{ close(); fulfillReservation(r.id); };
+  const c = wrap.querySelector('#mCancelRes'); if(c) c.onclick = ()=>{ close(); cancelReservation(r.id); };
 }
 /* Builds the categorised results markup shared by both the full-screen modal (mobile /
    Ctrl+K) and the inline dropdown under the stretched desktop search bar.
