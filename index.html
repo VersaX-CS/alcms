@@ -3509,6 +3509,26 @@ body[data-transition="bounce"] .modal-backdrop.closing .modal{ animation:modalSc
 .palette-chip-label{ white-space:nowrap; pointer-events:none; font-weight:600;}
 .palette-chip a{ text-decoration:none; color:var(--muted); font-size:12px; flex:none; padding:3px;}
 .palette-chip a:hover{ color:var(--forest);}
+.sound-cat-group{ margin-bottom:16px;}
+.sound-cat-group:last-child{ margin-bottom:0;}
+.sound-cat-label{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; margin:0 0 8px 2px;}
+.sound-chip-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px;}
+.sound-chip{
+  display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:12px;
+  border:1.5px solid var(--line); background:var(--card); cursor:pointer; transition:border-color .15s ease;
+}
+.sound-chip:hover{ border-color:var(--brass);}
+.sound-chip.selected{ border-color:var(--forest); box-shadow:0 0 0 1px var(--forest);}
+.sound-chip-icon{ font-size:18px; flex:none; line-height:1;}
+.sound-chip-info{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;}
+.sound-chip-name{ font-weight:600; font-size:12.5px;}
+.sound-chip-desc{ font-size:11px; color:var(--muted); line-height:1.3; white-space:normal;}
+.sound-chip-play{
+  flex:none; border:none; background:rgba(0,0,0,.06); color:var(--ink); width:26px; height:26px; border-radius:50%;
+  cursor:pointer; font-size:11px; display:flex; align-items:center; justify-content:center; padding:0;
+}
+.sound-chip-play:hover{ background:var(--brass); color:#fff;}
+html[data-theme="dark"] .sound-chip-play{ background:rgba(255,255,255,.1);}
 .color-picker-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin:12px 0; align-items:end;}
 .color-picker-row input[type="color"]{ height:46px;}
 @media (max-width:900px){ .color-picker-row{ grid-template-columns:repeat(2,1fr);} }
@@ -5074,7 +5094,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -5279,6 +5299,46 @@ function applyAccessibility(){
 function toggleA11yLargeText(on){ PREFS.a11yLargeText = !!on; applyAccessibility(); savePrefs(); }
 function toggleA11yHighContrast(on){ PREFS.a11yHighContrast = !!on; applyAccessibility(); savePrefs(); }
 async function savePrefs(){ await storeSet(PREFS_KEY, JSON.stringify(PREFS)); }
+/* ---- Notification sound picker (Personalization → Notifications) ----
+   Selecting a chip both previews the sound immediately and marks it as the pending choice;
+   like every other Personalization control it isn't written into PREFS/storage until the
+   page-level Save button runs saveNotificationSoundPrefs() via saveAllPersonalization(). */
+let pendingNotificationSound = null;
+function notificationSoundPickerHtml(){
+  const current = pendingNotificationSound || PREFS.notificationSound || 'crystalBell';
+  const byCategory = {};
+  Object.entries(NOTIFICATION_SOUNDS).forEach(([id,s])=>{
+    (byCategory[s.category] = byCategory[s.category] || []).push([id,s]);
+  });
+  return Object.entries(byCategory).map(([cat, items])=>`
+    <div class="sound-cat-group">
+      <div class="sound-cat-label">${esc(cat)}</div>
+      <div class="sound-chip-grid">
+        ${items.map(([id,s])=>`
+          <div class="sound-chip ${current===id?'selected':''}" data-sound-id="${id}" onclick="previewNotificationSound('${id}')" title="${esc(s.desc)}">
+            <span class="sound-chip-icon">${s.icon}</span>
+            <span class="sound-chip-info">
+              <span class="sound-chip-name">${esc(s.label)}</span>
+              <span class="sound-chip-desc">${esc(s.desc)}</span>
+            </span>
+            <button type="button" class="sound-chip-play" onclick="event.stopPropagation();previewNotificationSound('${id}')" title="Play" aria-label="Play ${esc(s.label)}">▶</button>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+function previewNotificationSound(id){
+  pendingNotificationSound = id;
+  playNotificationVoice(id);
+  document.querySelectorAll('.sound-chip').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.soundId === id);
+  });
+}
+function saveNotificationSoundPrefs(silent){
+  PREFS.notificationSound = pendingNotificationSound || PREFS.notificationSound || 'crystalBell';
+  pendingNotificationSound = null;
+  savePrefs();
+  if(!silent) toast('Notification sound updated');
+}
 /* Universal "back to default" button in Personalization. Resets every appearance/typography/
    icons/lockscreen/weather preference to the factory defaults captured in DEFAULT_PREFS.
    Uploaded background images themselves are left in place (not silently deleted) — resetting
@@ -5287,6 +5347,7 @@ async function savePrefs(){ await storeSet(PREFS_KEY, JSON.stringify(PREFS)); }
 function resetPersonalization(){
   confirmModal('Reset all Personalization settings to their defaults? This resets theme, colours, typography, icons, backgrounds and the lockscreen — it does not delete any uploaded images or accounts.', ()=>{
     PREFS = JSON.parse(JSON.stringify(DEFAULT_PREFS));
+  pendingNotificationSound = null;
   delete PREFS.sectionBgColor; delete PREFS.modalBgColor; delete PREFS.topbarBgColor; delete PREFS.authBoxColor;
   applyTheme(); applyPalette(PREFS.palette); applyTypography(); applyClockFont(PREFS.clockFont); applyDateFont(PREFS.dateFont);
   applyIconPack();
@@ -5318,6 +5379,7 @@ function saveAllPersonalization(){
   savePersonalizationExtras(true);
   saveLockscreenAppearance(true);
   saveWeatherAmbiencePrefs(true);
+  saveNotificationSoundPrefs(true);
   render();
   toast('Personalization saved');
 }
@@ -7155,17 +7217,307 @@ function txnStatus(t){
    later — repeating until someone actually dismisses it, rather than nagging continuously or
    getting missed entirely. */
 let alertBeepTimer = null, alertSnoozeTimer = null;
-function playAlertBeep(){
+/* ---- Notification sound engine -------------------------------------------------------
+   A small synth toolkit (tone/noiseBurst/withVibrato) plus a catalog of ~18 instrument-style
+   "voices" spanning bells, strings, woodwind, percussion, orchestral and soft/ambient sounds.
+   Nothing here is a sample file — every voice is generated live with the Web Audio API, so it
+   works fully offline just like the QR/barcode code elsewhere in this app. The person picks
+   their favourite in Personalization → Notifications; PREFS.notificationSound stores the id,
+   and playAlertBeep() (called by openTimedAlert, see below) just looks it up and plays it. */
+let _notifAudioCtx = null;
+function getNotifAudioCtx(){
+  if(!_notifAudioCtx) _notifAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(_notifAudioCtx.state === 'suspended') _notifAudioCtx.resume();
+  return _notifAudioCtx;
+}
+function notifTone(ctx, {freq, start, dur, type='sine', peak=0.2, attack=0.015, filterFreq=null, detune=0}){
+  const o = ctx.createOscillator();
+  o.type = type; o.frequency.value = freq; o.detune.value = detune;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(peak, start+attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+  let node = o;
+  if(filterFreq){
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = filterFreq;
+    o.connect(f); node = f;
+  }
+  node.connect(g); g.connect(ctx.destination);
+  o.start(start); o.stop(start+dur+0.1);
+  return o;
+}
+function notifNoiseBurst(ctx, {start, dur, peak=0.08, filterFreq=1200}){
+  const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for(let i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * (1 - i/bufferSize); }
+  const src = ctx.createBufferSource(); src.buffer = buffer;
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = filterFreq;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(peak, start+0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.start(start); src.stop(start+dur+0.05);
+}
+function notifVibrato(ctx, osc, {rate=5, depth=8, start, dur}){
+  const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = rate;
+  const lfoGain = ctx.createGain(); lfoGain.gain.value = depth;
+  lfo.connect(lfoGain); lfoGain.connect(osc.detune);
+  lfo.start(start); lfo.stop(start+dur+0.1);
+}
+const NOTIFICATION_SOUNDS = {
+  crystalBell:     {label:'Crystal Bell', desc:'Rising major-triad chime with soft bell overtones.', category:'Bells & Chimes', icon:'✨'},
+  glockenspiel:    {label:'Glockenspiel Sparkle', desc:'Bright, quick metallic bell run.', category:'Bells & Chimes', icon:'🎐'},
+  kalimbaPluck:    {label:'Kalimba Pluck', desc:'Bright plucked-idiophone run, bouncy and light.', category:'Bells & Chimes', icon:'🪘'},
+  warmStrings:     {label:'Warm String Swell', desc:'A gentle bowed-string chord with slow vibrato.', category:'Strings', icon:'🎻'},
+  pizzicato:       {label:'Pizzicato Pluck', desc:'Short, plucked string notes in a quick run.', category:'Strings', icon:'🪕'},
+  celloDrone:      {label:'Cello Drone', desc:'Low, warm two-note string swell.', category:'Strings', icon:'🎻'},
+  harpGlissando:   {label:'Harp Glissando', desc:'A fast ascending harp run.', category:'Strings', icon:'🎼'},
+  softFlute:       {label:'Soft Flute Phrase', desc:'A breathy, melodic three-note flute phrase.', category:'Woodwind', icon:'🪈'},
+  oboeCall:        {label:'Oboe Call', desc:'A single warm, reedy woodwind note.', category:'Woodwind', icon:'🎷'},
+  marimba:         {label:'Marimba Tap', desc:'Rhythmic wooden mallet pattern, warm and grounded.', category:'Percussion', icon:'🪵'},
+  templeBlock:     {label:'Temple Block Rhythm', desc:'Light rhythmic percussion tap pattern.', category:'Percussion', icon:'🥁'},
+  vibraphone:      {label:'Vibraphone Shimmer', desc:'Soft mallet tones with a gentle shimmer.', category:'Percussion', icon:'🎶'},
+  snareBrush:      {label:'Snare Brush Tap', desc:'Soft brushed-snare rhythmic taps.', category:'Percussion', icon:'🥁'},
+  orchestralHit:   {label:'Orchestral Hit', desc:'A short, full chord stab — brass and strings together.', category:'Orchestral', icon:'🎺'},
+  cinematicSwell:  {label:'Cinematic Swell', desc:'A slow rising orchestral swell, cinematic and grand.', category:'Orchestral', icon:'🎬'},
+  frenchHorn:      {label:'French Horn Call', desc:'A warm, rounded brass call.', category:'Orchestral', icon:'📯'},
+  softPad:         {label:'Soft Ambient Pad', desc:'A slow, cushiony pad chord — very unobtrusive.', category:'Soft & Ambient', icon:'☁️'},
+  gentlePiano:     {label:'Gentle Piano Roll', desc:'A soft rolled piano chord, quiet and warm.', category:'Soft & Ambient', icon:'🎹'},
+  choirPad:        {label:'Choir Pad', desc:'Slow, airy voice-like pad chord.', category:'Soft & Ambient', icon:'🎵'},
+};
+const NOTIFICATION_VOICES = {
+  crystalBell(ctx){
+    const now = ctx.currentTime;
+    const notes = [{f:523.25,s:0.00,d:0.42},{f:659.25,s:0.11,d:0.42},{f:783.99,s:0.22,d:0.46},{f:1046.50,s:0.34,d:0.55}];
+    notes.forEach(n=>{
+      notifTone(ctx,{freq:n.f, start:now+n.s, dur:n.d, type:'sine', peak:0.2});
+      notifTone(ctx,{freq:n.f*2, start:now+n.s, dur:n.d*0.7, type:'triangle', peak:0.06});
+    });
+  },
+  glockenspiel(ctx){
+    const now = ctx.currentTime;
+    [1046.50, 1318.51, 1567.98, 2093.00].forEach((f,i)=>{
+      const t0 = now + i*0.09;
+      notifTone(ctx,{freq:f, start:t0, dur:0.35, type:'sine', peak:0.16, attack:0.005});
+      notifTone(ctx,{freq:f*2, start:t0, dur:0.2, type:'triangle', peak:0.05, attack:0.003});
+    });
+  },
+  kalimbaPluck(ctx){
+    const now = ctx.currentTime;
+    const notes = [587.33, 698.46, 880.00, 698.46, 1046.50], gaps=[0,0.09,0.09,0.11,0.13];
+    let t = now;
+    notes.forEach((f,i)=>{
+      t += gaps[i];
+      notifTone(ctx,{freq:f, start:t, dur:0.3, type:'triangle', peak:0.18, attack:0.003, filterFreq:2600});
+      notifTone(ctx,{freq:f*2, start:t, dur:0.12, type:'sine', peak:0.04, attack:0.002});
+    });
+  },
+  warmStrings(ctx){
+    const now = ctx.currentTime;
+    [261.63, 329.63, 392.00].forEach((f,i)=>{
+      const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=(i-1)*4;
+      const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=1400;
+      const g = ctx.createGain();
+      const start = now, dur = 1.6;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.11, start+0.35);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      o.connect(filt); filt.connect(g); g.connect(ctx.destination);
+      notifVibrato(ctx, o, {rate:4.5, depth:5, start, dur});
+      o.start(start); o.stop(start+dur+0.1);
+    });
+  },
+  pizzicato(ctx){
+    const now = ctx.currentTime;
+    [261.63, 329.63, 392.00, 523.25].forEach((f,i)=>{
+      notifTone(ctx,{freq:f, start:now+i*0.15, dur:0.22, type:'triangle', peak:0.22, attack:0.004, filterFreq:2200});
+    });
+  },
+  celloDrone(ctx){
+    const now = ctx.currentTime;
+    [146.83, 220.00].forEach((f,i)=>{
+      const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=(i-0.5)*5;
+      const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=900;
+      const g = ctx.createGain();
+      const start=now, dur=1.8;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.12, start+0.4);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      o.connect(filt); filt.connect(g); g.connect(ctx.destination);
+      notifVibrato(ctx, o, {rate:4, depth:4, start, dur});
+      o.start(start); o.stop(start+dur+0.1);
+    });
+  },
+  harpGlissando(ctx){
+    const now = ctx.currentTime;
+    let t = now;
+    [392.00,440.00,493.88,523.25,587.33,659.25,698.46,783.99].forEach(f=>{
+      notifTone(ctx,{freq:f, start:t, dur:0.35, type:'triangle', peak:0.14, attack:0.003, filterFreq:3000});
+      t += 0.045;
+    });
+  },
+  softFlute(ctx){
+    const now = ctx.currentTime;
+    let t = now;
+    [{f:659.25,d:0.35},{f:783.99,d:0.35},{f:987.77,d:0.55}].forEach(n=>{
+      const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=n.f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.15, t+0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+n.d);
+      o.connect(g); g.connect(ctx.destination);
+      notifVibrato(ctx, o, {rate:5.5, depth:6, start:t, dur:n.d});
+      notifNoiseBurst(ctx, {start:t, dur:0.06, peak:0.02, filterFreq:2500});
+      o.start(t); o.stop(t+n.d+0.1);
+      t += n.d*0.85;
+    });
+  },
+  oboeCall(ctx){
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=587.33;
+    const filt = ctx.createBiquadFilter(); filt.type='bandpass'; filt.frequency.value=1200; filt.Q.value=6;
+    const g = ctx.createGain();
+    const start=now, dur=0.7;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(0.1, start+0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+    o.connect(filt); filt.connect(g); g.connect(ctx.destination);
+    notifVibrato(ctx, o, {rate:5, depth:10, start, dur});
+    o.start(start); o.stop(start+dur+0.1);
+  },
+  marimba(ctx){
+    const now = ctx.currentTime;
+    const notes=[392.00,493.88,587.33,493.88,587.33,783.99], gaps=[0,0.14,0.14,0.16,0.14,0.18];
+    let t=now;
+    notes.forEach((f,i)=>{ t+=gaps[i]; notifTone(ctx,{freq:f, start:t, dur:0.28, type:'triangle', peak:0.2, attack:0.004, filterFreq:1800}); });
+  },
+  templeBlock(ctx){
+    const now = ctx.currentTime;
+    [0, 0.16, 0.32, 0.56, 0.72].forEach((t,i)=>{
+      const pitch = i%2===0 ? 500 : 650;
+      notifNoiseBurst(ctx, {start: now+t, dur:0.09, peak:0.16, filterFreq:pitch});
+      notifTone(ctx,{freq:pitch, start:now+t, dur:0.12, type:'triangle', peak:0.1, attack:0.002});
+    });
+  },
+  vibraphone(ctx){
+    const now = ctx.currentTime;
+    [523.25,659.25,783.99].forEach((f,i)=>{
+      const t0 = now+i*0.1;
+      const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=f;
+      const g = ctx.createGain();
+      const dur=0.9;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.18, t0+0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      o.connect(g); g.connect(ctx.destination);
+      notifVibrato(ctx, o, {rate:6, depth:12, start:t0, dur});
+      o.start(t0); o.stop(t0+dur+0.1);
+    });
+  },
+  snareBrush(ctx){
+    const now = ctx.currentTime;
+    [0, 0.18, 0.36, 0.46].forEach(t=> notifNoiseBurst(ctx,{start:now+t, dur:0.12, peak:0.1, filterFreq:3500}));
+  },
+  orchestralHit(ctx){
+    const now = ctx.currentTime;
+    [196.00, 246.94, 293.66, 392.00].forEach((f,i)=>{
+      notifTone(ctx,{freq:f, start:now, dur:0.9, type: i%2? 'sawtooth':'square', peak:0.09, attack:0.01, filterFreq:2000, detune:(i-1.5)*3});
+    });
+    notifNoiseBurst(ctx,{start:now, dur:0.12, peak:0.12, filterFreq:1800});
+  },
+  cinematicSwell(ctx){
+    const now = ctx.currentTime;
+    [130.81, 196.00, 261.63, 329.63].forEach((f,i)=>{
+      const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=(i-1.5)*3;
+      const filt = ctx.createBiquadFilter(); filt.type='lowpass';
+      filt.frequency.setValueAtTime(400, now);
+      filt.frequency.linearRampToValueAtTime(2200, now+1.1);
+      const g = ctx.createGain();
+      const dur = 2.0;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.09, now+0.9);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+      o.connect(filt); filt.connect(g); g.connect(ctx.destination);
+      o.start(now); o.stop(now+dur+0.1);
+    });
+  },
+  frenchHorn(ctx){
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type='triangle'; o.frequency.value=261.63;
+    const o2 = ctx.createOscillator(); o2.type='sawtooth'; o2.frequency.value=261.63; o2.detune.value=4;
+    const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=1100;
+    const g = ctx.createGain();
+    const start=now, dur=1.2;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(0.13, start+0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+    o.connect(filt); o2.connect(filt); filt.connect(g); g.connect(ctx.destination);
+    o.start(start); o.stop(start+dur+0.1);
+    o2.start(start); o2.stop(start+dur+0.1);
+  },
+  softPad(ctx){
+    const now = ctx.currentTime;
+    [349.23, 440.00, 523.25].forEach(f=>{
+      const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=f;
+      const o2 = ctx.createOscillator(); o2.type='triangle'; o2.frequency.value=f; o2.detune.value=6;
+      const g = ctx.createGain();
+      const dur = 2.4;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.09, now+0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+      o1.connect(g); o2.connect(g); g.connect(ctx.destination);
+      o1.start(now); o1.stop(now+dur+0.1);
+      o2.start(now); o2.stop(now+dur+0.1);
+    });
+  },
+  gentlePiano(ctx){
+    const now = ctx.currentTime;
+    [523.25, 659.25, 783.99].forEach((f,i)=>{
+      const t0 = now + i*0.06;
+      const o = ctx.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=f*2;
+      const g = ctx.createGain(), dur = 0.9;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.18, t0+0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      const g2 = ctx.createGain();
+      g2.gain.setValueAtTime(0.0001, t0);
+      g2.gain.exponentialRampToValueAtTime(0.04, t0+0.008);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0+dur*0.5);
+      o.connect(g); g.connect(ctx.destination);
+      o2.connect(g2); g2.connect(ctx.destination);
+      o.start(t0); o.stop(t0+dur+0.1);
+      o2.start(t0); o2.stop(t0+dur*0.5+0.1);
+    });
+  },
+  choirPad(ctx){
+    const now = ctx.currentTime;
+    [261.63, 329.63, 392.00].forEach(f=>{
+      const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=f;
+      const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=f*2.01;
+      const g = ctx.createGain(), dur = 2.2;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.07, now+0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+      o1.connect(g); o2.connect(g); g.connect(ctx.destination);
+      o1.start(now); o1.stop(now+dur+0.1);
+      o2.start(now); o2.stop(now+dur+0.1);
+    });
+  },
+};
+/* Plays a catalog voice by id (falls back to the default bell if the id is unknown/missing —
+   e.g. an older saved PREFS from before this feature existed). */
+function playNotificationVoice(id){
   try{
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = 'sine'; o.frequency.value = 880;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.4);
-    o.connect(g); g.connect(ctx.destination);
-    o.start(); o.stop(ctx.currentTime+0.45);
+    const ctx = getNotifAudioCtx();
+    (NOTIFICATION_VOICES[id] || NOTIFICATION_VOICES.crystalBell)(ctx);
   }catch(e){ /* Web Audio unavailable — the visual alert still shows */ }
+}
+function playAlertBeep(){
+  playNotificationVoice(PREFS.notificationSound || 'crystalBell');
 }
 function openTimedAlert({title, bodyHtml, actions}){
   if($('#timedAlertBackdrop')) return; // one at a time — don't stack alerts
@@ -20094,6 +20446,11 @@ function pageSettings(){
       <div class="field"><label>Icon pack</label><select id="setIconPack" onchange="previewPersonalizationExtras()">${Object.entries(ICON_PACKS).map(([k,v])=>`<option value="${k}" ${(PREFS.iconPack||'minimal')===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Modal transition</label><select id="setTransitionStyle" onchange="previewPersonalizationExtras()">${Object.entries(TRANSITION_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.transitionStyle||'scale')===k?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
     </div>
+  </div>
+  <div class="card panel">
+    <div class="panel-head"><h3>Notifications</h3><div class="hint">Plays when a class period starts or a loan alert appears</div></div>
+    <p class="field-hint" style="margin-top:0">Tap any sound to hear it and set it as your notification sound.</p>
+    ${notificationSoundPickerHtml()}
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Clock &amp; date</h3></div>
