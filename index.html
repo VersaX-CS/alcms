@@ -3698,6 +3698,11 @@ html[data-theme="dark"] .sugg-item:hover, html[data-theme="dark"] .sugg-item.act
   html, body.printing{ background:#fff !important; }
   body.printing #app, body.printing #authScreen, body.printing #splash, body.printing #modalRoot, body.printing .toast{ display:none !important; }
   body.printing #printArea{ display:block !important; background:#fff !important; color:#111 !important; }
+  /* Anything else sitting directly on <body> — an open modal and its dimmed backdrop (the member
+     profile modal, or any other), dropdowns, popups, the install banner — must not print on top of
+     the report. Fixed-position overlays repeat on every printed page and, with a blurred glass
+     surface, can also print as a blank sheet, so hide every body-level element except the report. */
+  body.printing > *:not(#printArea){ display:none !important; }
   @page{ size:A4; margin:18mm 16mm; background:#fff; }
 }
 /* Screen-media twin of the block above, used only while a "Download PDF" capture is running.
@@ -8892,7 +8897,7 @@ function GenericModule(cfg){
       return `
       <div class="card panel">
         <div class="panel-head" data-mod="${cfg.key}">
-          <div><h3>${esc(cfg.title)}</h3><div class="hint">${esc(cfg.hint||'')}</div></div>
+          <div><h3>${esc(cfg.title)}</h3>${cfg.hint? `<div class="hint">${esc(cfg.hint)}</div>`:''}</div>
           <div class="panel-head-actions" id="headactions_${cfg.key}">${headActionsHtml()}</div>
         </div>
         <div class="toolbar">
@@ -10855,7 +10860,7 @@ let catalogueModule;
 let catalogueModuleState = {q:'', filters:{}};
 function pageCatalogue(){
   catalogueModule = GenericModule({
-    state:catalogueModuleState, key:'catalogue', title:'Catalogue', hint:'Search by title, author or accession number', cap:200,
+    state:catalogueModuleState, key:'catalogue', title:'Catalogue', hint:'', cap:200,
     data:()=>DB.catalogue,
     searchKeys:['acc','title','author','category','division','mainClass'],
     selectable:true, rowKey:r=>r.acc,
@@ -11958,7 +11963,7 @@ function classTeacherLabelPlain(cls){
 function pageUsers(){
   const currentUsers = getCurrentUsersInLibrary();
   usersModule = GenericModule({
-    state:usersModuleState, key:'users', title:'Members', hint:`Students and staff registered with the library · ${currentUsers} currently in library`,
+    state:usersModuleState, key:'users', title:'Members', hint:`${currentUsers} currently in library`,
     data:()=>DB.users,
     searchKeys:['id','name','cls','teacher'],
     selectable:true, rowKey:r=>r.id,
@@ -13026,7 +13031,7 @@ function pageCirculation(){
   return `
   <div class="grid two-col">
     <div class="card panel">
-      <div class="panel-head"><h3>Issue a title</h3><div class="hint">Type an ID to fetch it instantly · 7-day loan period · capped at each member's max allowed</div></div>
+      <div class="panel-head"><h3>Issue a title</h3><div class="hint">7-day loan period · capped at each member's max allowed</div></div>
       <div class="field"><label>Member ID</label>${quickPickerHtml('issueUser','Type a member ID, e.g. ACL-045')}</div>
       <div class="field"><label>Accession No.</label>${quickPickerHtml('issueBook','Type an accession no., e.g. ACC-512')}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -13037,7 +13042,7 @@ function pageCirculation(){
       <div id="issueStagingArea"></div>
     </div>
     <div class="card panel">
-      <div class="panel-head"><h3>Return a title</h3><div class="hint">${active.length} loan(s) currently out · type transaction, member or acc. no.</div></div>
+      <div class="panel-head"><h3>Return a title</h3><div class="hint">${active.length} loan(s) currently out</div></div>
       <div class="field"><label>Active loan</label>${quickPickerHtml('returnTrx','Type member ID or accession no.')}</div>
       <div class="field"><label>Returned condition</label><select id="returnCondition">${(DB.setup.conditions||['GOOD','FAIR','DAMAGED','MISSING']).map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -13155,7 +13160,7 @@ let circulationModule;
 let circulationModuleState = {q:'', filters:{}};
 function pageCirculationTable(){
   circulationModule = GenericModule({
-    state:circulationModuleState, key:'circulation', title:'Loan transactions', hint:'Full circulation history — latest first', cap:200,
+    state:circulationModuleState, key:'circulation', title:'Loan transactions', hint:'', cap:200,
     data:()=>DB.circulation.map(x=>({...x, status:txnStatus(x)}))
       .sort((a,b)=> (parseAnyDate(b.dateBorrowed)||0)-(parseAnyDate(a.dateBorrowed)||0)),
     searchKeys:['trxId','acc','title','userId','name'],
@@ -13275,7 +13280,7 @@ function bindReservationPickers(){
 }
 function pageReservations(){
   reservationsModule = GenericModule({
-    state:reservationsModuleState, key:'reservations', title:'Reservations', hint:'Holds placed by members on titles that are currently out — the oldest waiting reservation is promoted automatically when the title is returned',
+    state:reservationsModuleState, key:'reservations', title:'Reservations', hint:'The oldest waiting hold is promoted automatically when the title is returned',
     data:()=>[...DB.reservations].sort((a,b)=> (parseAnyDate(b.dateRequested)||0)-(parseAnyDate(a.dateRequested)||0)),
     searchKeys:['title','acc','name','userId'],
     rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
@@ -14190,7 +14195,7 @@ function openLockSearchDetail(kind, id){
   wrap.innerHTML = `
     <div class="modal">
       <div class="modal-head"><h3>${title}</h3><button id="mClose" aria-label="Close">✕</button></div>
-      <div class="modal-body"><p class="field-hint" style="margin-top:0">No sign-in needed for this read-only view.</p>${bodyHtml}</div>
+      <div class="modal-body">${bodyHtml}</div>
       <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
     </div>`;
   document.body.appendChild(wrap);
@@ -15421,7 +15426,7 @@ function pageReminders(){
     onRowDblClick:r=>`openMemberProfile('${esc(r.userId)}')`,
   });
   reminderHistoryModule = GenericModule({
-    state:reminderHistoryModuleState, key:'reminderhistory', title:'Reminder history', hint:'Full detail of every reminder logged — tick rows, or use the date range, to export/print just those',
+    state:reminderHistoryModuleState, key:'reminderhistory', title:'Reminder history', hint:'',
     data:()=>DB.reminders,
     searchKeys:['userId','name','cls','title','acc','trxId','loggedBy'],
     dateRange:true,
@@ -15850,7 +15855,7 @@ let registerModule;
 let registerModuleState = {q:'', filters:{}};
 function pageRegister(){
   registerModule = GenericModule({
-    state:registerModuleState, key:'register', title:'Register', hint:'Desk sign-ins and class period visits together', cap:200,
+    state:registerModuleState, key:'register', title:'Register', hint:'', cap:200,
     data:()=>DB.registerLog,
     searchKeys:['id','name','purpose','cls','verifiedBy'],
     selectable:true, rowKey:r=>r.entryId,
@@ -16393,7 +16398,7 @@ async function editPeriodTimeModal(){
       </tr></thead>
       <tbody>${tableHtml}</tbody>
     </table></div>
-    <p class="field-hint" style="margin-top:12px;font-size:12px">Edit start/end times for each period on each day. Click "Save all times" to apply changes.</p>
+    
   </div>`;
   
   // Create modal backdrop and structure
@@ -17532,7 +17537,7 @@ function pageClassTimetable(){
   return `
   <div class="card panel">
     <div class="panel-head">
-      <div><h3>Class subject timetable</h3><div class="hint">Enter each class's weekly timetable so the library visit schedule can be built from it automatically</div></div>
+      <div><h3>Class subject timetable</h3></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${isAdmin() && classes.length? `<button class="btn" onclick="importFullTimetableFromExcel()">📥 Import for ${esc(cls)} (Excel)</button>`:''}
         ${classes.length? `<div class="dropdown-wrap">
@@ -17565,7 +17570,7 @@ function pageClassTimetable(){
     ${isAdmin() ? `<details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times</summary>
       <div style="margin-top:10px;padding:10px;background:var(--surface-1);border-radius:6px">
-        <p class="field-hint" style="margin:0 0 8px">Start and end times for each period, per day. These fill in automatically wherever a period is shown, printed or exported.</p>
+        
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn secondary small" onclick="editPeriodTimeModal()">Edit times</button>
         </div>
@@ -17574,7 +17579,7 @@ function pageClassTimetable(){
     ${isAdmin() ? `<details style="margin-bottom:12px" ${ttPeriodsOpen?'open':''} ontoggle="ttPeriodsOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">📋 Periods</summary>
       <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px">
-        <p class="field-hint" style="margin:0">Rename, add or remove the periods every class timetable is built from.</p>
+        
         <button class="btn small" onclick="addTimetablePeriod()">+ Add period</button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -17872,7 +17877,7 @@ function openScheduleForm(index){
     classSection.style.marginTop = '14px';
     classSection.innerHTML = `
       <label>Expected class(es) *</label>
-      <p class="field-hint" style="margin-bottom:6px">Tick every class that shares this day, time and period.</p>
+      
       ${sortedClasses().length>1? selectAllToolbarHtml() : ''}
       <div class="subject-pill-grid" id="schedClassGrid">
         ${sortedClasses().map(c=>`<label class="subject-check"><input type="checkbox" class="schedClsChk" value="${esc(c)}" ${existingClasses.includes(c)?'checked':''}> ${esc(c)}</label>`).join('')}
@@ -17994,7 +17999,7 @@ function pageStaffTimetable(){
   return `
   <div class="card panel">
     <div class="panel-head">
-      <div><h3>Staff timetable</h3><p class="field-hint" style="margin-top:2px">Fellowship, assembly, staff meetings, lunch break, sport, etiquette, seminars, closing — or anything else — with a reminder before it starts and again right when it starts.</p></div>
+      <div><h3>Staff timetable</h3></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${isAdmin()? `<button class="btn" onclick="openStaffTimetableForm()">+ Add event</button>`:''}
         ${isAdmin() && rows.length? `<button class="btn danger" onclick="clearAllStaffTimetable()">⚠ Clear all</button>`:''}
@@ -18153,7 +18158,7 @@ let rosterModule;
 let rosterModuleState = {q:'', filters:{}};
 function pageRosterTable(){
   rosterModule = GenericModule({
-    state:rosterModuleState, key:'roster', title:'Individual subject combinations', hint:'Search a student to see — and edit — their subject line-up',
+    state:rosterModuleState, key:'roster', title:'Individual subject combinations', hint:'',
     data:()=>DB.users.filter(u=>u.category==='STUDENT').map(u=>({id:u.id, name:u.name, cls:u.cls, subs:studentSubjects(u)})),
     searchKeys:['id','name','cls'],
     rowClass:r=>isMemberInactive(r.id)?'row-muted':'',
@@ -18176,7 +18181,7 @@ let feedbackModule;
 let feedbackModuleState = {q:'', filters:{}};
 function pageFeedback(){
   feedbackModule = GenericModule({
-    state:feedbackModuleState, key:'feedback', title:'Feedback & suggestions', hint:'Raised by members and staff — tick rows, or use the date range, to export/print just those',
+    state:feedbackModuleState, key:'feedback', title:'Feedback & suggestions', hint:'',
     data:()=>DB.feedback,
     searchKeys:['userName','subject','text','type'],
     filters:[{key:'status', label:'Status', options:['NEW','IN REVIEW','RESOLVED']}],
@@ -18401,7 +18406,7 @@ function pageEquipment(){
   const categories = (DB.setup.equipmentCategories && DB.setup.equipmentCategories.length) ? DB.setup.equipmentCategories : DEFAULT_EQUIPMENT_CATEGORIES;
   equipmentModule = GenericModule({
     state:equipmentModuleState, key:'equipment', title:'Assets & Equipment',
-    hint:'Furniture, electronics and other non-book assets — tick rows to share/export/print just those',
+    hint:'',
     data:()=>DB.equipment,
     searchKeys:['name','tag','category','location','assignedTo','supplier','notes'],
     filters:[
@@ -19379,7 +19384,7 @@ function pageSettings(){
     <div class="hint">Every section below previews live as you edit it — nothing is kept until you click Save.</div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Theme sets</h3><div class="hint">One-click bundles of colour palette, typography, icon pack, transitions, and section/modal/title-bar style — pick a preset, tweak it, or build your own from scratch</div></div>
+    <div class="panel-head"><h3>Theme sets</h3></div>
     ${editingThemeSetKey ? `<div class="field-hint" style="background:rgba(184,134,62,.12);border:1px solid var(--brass);border-radius:8px;padding:8px 10px;margin-bottom:10px">
       Editing "<strong>${esc((allThemeSets()[editingThemeSetKey]||{}).label||editingThemeSetKey)}</strong>" — its settings are now loaded below. Change the colour palette, typography, icons, transitions or backgrounds anywhere on this page, click the Save button at the bottom to apply them, then come back here.
       <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
@@ -19402,7 +19407,7 @@ function pageSettings(){
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Save the current look as a new theme</label><input type="text" id="newThemeSetName" placeholder="e.g. Reading Room"></div>
       <button class="btn secondary" onclick="saveCurrentAsThemeSet()">${SAVE_ICON_INLINE} Save as new theme</button>
     </div>
-    <p class="field-hint" style="margin-top:8px">Applying a theme instantly sets its colour palette, fonts, icon pack, modal transition, section/modal/title-bar style &amp; colours, and lockscreen clock/decoration — then saves right away, no extra "Save" click needed. Uploaded background images themselves aren't swapped by a theme (they're separate files) — only the style and opacity around them.</p>
+    <p class="field-hint" style="margin-top:8px">Uploaded background images aren't swapped by a theme (they're separate files) — only the style and opacity around them.</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Appearance — theme &amp; colours</h3></div>
@@ -19410,7 +19415,7 @@ function pageSettings(){
       <div class="field"><label>Theme</label><select id="setTheme" onchange="previewTheme(this.value)"><option value="system" ${PREFS.theme==='system'?'selected':''}>Match system</option><option value="light" ${PREFS.theme==='light'?'selected':''}>Light</option><option value="dark" ${PREFS.theme==='dark'?'selected':''}>Dark</option></select></div>
       <div class="field"><label>Colour palette</label><select id="setPalette" onchange="previewPalette(this.value)">${Object.entries(allPalettes()).map(([k,p])=>`<option value="${k}" ${PREFS.palette===k?'selected':''}>${esc(p.label)}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+    
     <div class="palette-swatch-row" id="paletteSwatches">${Object.entries(allPalettes()).map(([k,p])=>`
       <div class="palette-chip ${PREFS.palette===k?'selected':''}" onclick="document.getElementById('setPalette').value='${k}'; previewPalette('${k}')" title="${esc(p.label)}">
         <span class="palette-chip-dots">
@@ -19429,7 +19434,7 @@ function pageSettings(){
     <p class="field-hint" style="margin-top:-4px">These take effect immediately — no need to click Save.</p>
 
     <div class="panel-head" style="margin-top:20px"><h3 style="font-size:14px">Build a custom palette</h3></div>
-    <p class="field-hint">Pick each colour below — the app updates live as you choose — then name and save it as a new preset.</p>
+    
     <div class="color-picker-row">
       <div class="field"><label>Primary (sidebar / main accent)</label><input type="color" id="cpForest" value="${esc(customPaletteDraft.forest)}" oninput="liveCustomPalettePreview()"></div>
       <div class="field"><label>Accent (buttons / highlights)</label><input type="color" id="cpBrass" value="${esc(customPaletteDraft.brass)}" oninput="liveCustomPalettePreview()"></div>
@@ -19443,8 +19448,8 @@ function pageSettings(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Typography</h3><div class="hint">Fonts, weight and size — applies across the whole app</div></div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+    <div class="panel-head"><h3>Typography</h3></div>
+    
     <div class="field-row">
       <div class="field">
         <label style="font-weight:700;display:block;margin-bottom:6px">Heading</label>
@@ -19468,21 +19473,21 @@ function pageSettings(){
       <div class="field" style="flex:1"><label>Body text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setBodyColor" data-default="${PREFS.bodyColor && PREFS.bodyColor!=='default' ? 'false' : 'true'}" value="${resolveTextColorHex(PREFS.bodyColor)}" oninput="this.dataset.default='false'; previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('body')">Reset</button></div></div>
       <div class="field" style="flex:1"><label>Muted / secondary text colour</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="setMutedColor" data-default="${PREFS.mutedColor && PREFS.mutedColor!=='default' ? 'false' : 'true'}" value="${resolveMutedColorHex(PREFS.mutedColor)}" oninput="this.dataset.default='false'; previewTypography()" style="width:100%;height:38px;padding:2px"><button type="button" class="btn secondary small" onclick="resetTextColor('muted')">Reset</button></div></div>
     </div>
-    <p class="field-hint" style="margin-top:-4px">Muted covers hints, captions, subtitles and table labels — everything that isn't a heading or main body text.</p>
+    
     <p class="field-hint" style="margin-top:8px">Text size uses your browser's zoom support — it may not apply in every browser.</p>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Backgrounds</h3><div class="hint">The in-app background image, and section, modal &amp; title bar background styles — all in one place</div></div>
-    <div class="panel-head" style="margin-top:0"><h4 style="font-size:13px">In-app background image</h4><div class="hint">A subtle image behind the app content — cards stay readable on top of it</div></div>
+    <div class="panel-head"><h3>Backgrounds</h3></div>
+    <div class="panel-head" style="margin-top:0"><h4 style="font-size:13px">In-app background image</h4></div>
     <div class="field-row">
       <div class="field"><label>Background image</label><input type="file" accept="image/*" id="appBgInput" onchange="previewAppBackground()"></div>
       <div class="field"><label>Opacity (${DB.setup.appBackgroundOpacity??60}%)</label><input type="range" id="appBgOpacity" min="0" max="100" value="${DB.setup.appBackgroundOpacity??60}" oninput="previewAppBackground()"></div>
     </div>
-    <p class="field-hint" style="margin:-6px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+    
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       ${DB.setup.appBackgroundImage? `<button class="btn danger" onclick="clearAppBackground()">Remove background</button>`:''}
     </div>
-    <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Section, modal &amp; title bar backgrounds</h4><div class="hint">Applies to cards, panels, modals and the top header</div></div>
+    <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Section, modal &amp; title bar backgrounds</h4></div>
     <div class="field-row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="flex:1;min-width:200px;margin:0"><label>Section &amp; modal style</label><select id="setSectionStyle" onchange="previewSectionStyle()" style="width:100%">
         <option value="solid" ${(PREFS.sectionStyle||'solid')==='solid'?'selected':''}>Solid (default)</option>
@@ -19507,15 +19512,15 @@ function pageSettings(){
     <p class="field-hint" style="margin-top:-4px">The login container's opacity is set separately, in Lockscreen below. Colours above are only visible when the style is Transparent glassy or Picture.</p>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Icons &amp; motion</h3><div class="hint">Nav icon style and how modals animate</div></div>
-    <p class="field-hint" style="margin:-4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+    <div class="panel-head"><h3>Icons &amp; motion</h3></div>
+    
     <div class="field-row">
       <div class="field"><label>Icon pack</label><select id="setIconPack" onchange="previewPersonalizationExtras()">${Object.entries(ICON_PACKS).map(([k,v])=>`<option value="${k}" ${(PREFS.iconPack||'minimal')===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Modal transition</label><select id="setTransitionStyle" onchange="previewPersonalizationExtras()">${Object.entries(TRANSITION_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.transitionStyle||'scale')===k?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Clock &amp; date</h3><div class="hint">How the clock and date display across the app</div></div>
+    <div class="panel-head"><h3>Clock &amp; date</h3></div>
     <div class="field-row">
       <div class="field"><label>Clock format</label><select id="setClockFormat" onchange="previewClockDatePrefs()"><option value="12h" ${DB.setup.clockFormat!=='24h'?'selected':''}>12-hour (AM/PM)</option><option value="24h" ${DB.setup.clockFormat==='24h'?'selected':''}>24-hour</option></select></div>
       <div class="field"><label>Date format</label><select id="setDateFormat" onchange="previewClockDatePrefs()">
@@ -19526,23 +19531,23 @@ function pageSettings(){
       <div class="field"><label>Clock font</label><select id="setClockFont" onchange="applyClockFont(this.value)">${Object.entries(CLOCK_FONTS).map(([k,v])=>`<option value="${k}" ${(PREFS.clockFont||'digital')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="field"><label>Date font</label><select id="setDateFontDisplay" onchange="applyDateFont(this.value)">${Object.entries(DATE_FONTS).map(([k,v])=>`<option value="${k}" ${(PREFS.dateFont||'default')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:4px 0 8px">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+    
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Lockscreen (sign-in screen)</h3><div class="hint">Background image, its opacity, the login box appearance, the clock style, decoration and quotes shown in the carousel</div></div>
+    <div class="panel-head"><h3>Lockscreen (sign-in screen)</h3></div>
     <div class="field-row field-row-3">
       <div class="field"><label>Sign-in background image</label><input type="file" accept="image/*" id="authBgInput" onchange="previewAuthBackground()"></div>
       <div class="field"><label>Background opacity (${DB.setup.authBackgroundOpacity??45}%)</label><input type="range" id="authBgOpacity" min="10" max="90" value="${DB.setup.authBackgroundOpacity??45}" oninput="this.previousElementSibling.textContent=this.previousElementSibling.textContent.replace(/\\d+/,this.value); previewAuthBackground();"></div>
       <div class="field"><label>Login box opacity (<span id="authBoxOpacityVal">${PREFS.authBoxOpacity??90}</span>%)</label><input type="range" id="setAuthBoxOpacity" min="30" max="100" value="${PREFS.authBoxOpacity??90}" oninput="document.getElementById('authBoxOpacityVal').textContent=this.value; document.documentElement.style.setProperty('--auth-box-opacity', this.value/100);"></div>
     </div>
     <p class="field-hint">Login box opacity controls how see-through the frosted glass sign-in form container is over the background. Its colour is set above, in Backgrounds → Login container colour. The background image and opacity above preview live on the (currently hidden) sign-in screen — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
-    <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Sign-in screen clock &amp; decoration style</h4><div class="hint">Clock style, and the corner flourish behind the sign-in form</div></div>
+    <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Sign-in screen clock &amp; decoration style</h4></div>
     <div class="field-row">
       <div class="field"><label>Clock style</label><select id="setAuthClockStyle" onchange="previewClockDatePrefs()">${Object.entries(AUTH_CLOCK_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.authClockStyle||'digital')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="field"><label>Decoration style</label><select id="setLockscreenDecorStyle" onchange="previewLockscreenDecorStyle(this.value)">${Object.entries(LOCKSCREEN_DECOR_STYLES).map(([k,v])=>`<option value="${k}" ${(PREFS.lockscreenDecorStyle||'circle')===k?'selected':''}>${v}</option>`).join('')}</select></div>
     </div>
-    <p class="field-hint" style="margin:4px 0 10px">Tip: clicking the clock on the sign-in screen also cycles through the decoration styles.</p>
-    <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Elements shown on the lockscreen</h4><div class="hint">Pick which pieces appear</div></div>
+    
+    <div class="panel-head" style="margin-top:4px"><h4 style="font-size:13px">Elements shown on the lockscreen</h4></div>
     <div class="ribbon-picker" id="lockscreenRibbon">${renderLockscreenRibbon()}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       ${DB.setup.authBackgroundImage? `<button class="btn danger" onclick="clearAuthBackground()">Remove background</button>`:''}
@@ -19553,7 +19558,7 @@ function pageSettings(){
       <div class="field"><label>Quote</label><input type="text" id="newQuoteText" placeholder="e.g. Knowledge is power." oninput="updateQuoteLivePreview()"></div>
       <div class="field"><label>Author</label><input type="text" id="newQuoteAuthor" placeholder="e.g. Francis Bacon" oninput="updateQuoteLivePreview()"></div>
     </div>
-    <p class="field-hint" style="margin:6px 0 4px">Live preview — how this will look in the sign-in carousel:</p>
+    
     <div class="quote-live-preview">
       <div class="auth-slide active" style="animation:none">
         <div class="big">"</div>
@@ -19565,16 +19570,16 @@ function pageSettings(){
     <button class="btn secondary" onclick="addCustomQuote()">+ Add quote</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Weather ambience</h3><div class="hint">A soft touch on the Home greeting — 10 times of day (late night, dawn, sunrise, morning, noon, afternoon, golden hour, sunset, evening, night), each with its own look</div></div>
+    <div class="panel-head"><h3>Weather ambience</h3></div>
     <div class="field"><label><input type="checkbox" id="setWeatherAmbience" ${PREFS.weatherAmbience?'checked':''} onchange="previewWeatherAmbiencePrefs()"> Show weather ambience on the Home greeting</label></div>
     <div class="field-row">
       <div class="field"><label>Scene</label><select id="setWeatherSet" onchange="previewWeatherAmbiencePrefs()">${Object.entries(WEATHER_SETS).map(([k,v])=>`<option value="${k}" ${(PREFS.weatherAmbienceSet||'hills')===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Intensity</label><select id="setWeatherStyle" onchange="previewWeatherAmbiencePrefs()"><option value="soft" ${PREFS.weatherAmbienceStyle==='soft'?'selected':''}>Soft (subtle)</option><option value="vivid" ${PREFS.weatherAmbienceStyle==='vivid'?'selected':''}>Vivid (more visible)</option></select></div>
     </div>
     <p class="field-hint">Pick the scene that's drawn behind the greeting — the colours still change automatically with the time of day.</p>
-    <p class="field-hint" style="margin:6px 0 4px">Live preview — how this will look on the Home greeting:</p>
+    
     <div class="quote-live-preview" id="weatherAmbiencePreviewBox">${PREFS.weatherAmbience ? renderWeatherAmbience() : '<p class="field-hint">Ambience is off — nothing will show on the Home greeting.</p>'}</div>
-    <p class="field-hint" style="margin:8px 0">Previewing live — changes apply live as you edit; use the Save button at the bottom of the page to keep them.</p>
+    
   </div>
   <div style="height:70px" aria-hidden="true"></div>`;
 }
@@ -19781,7 +19786,7 @@ function pageBackup(){
   </div>
   <div class="grid two-col">
     <div class="card panel">
-      <div class="panel-head"><h3>Data backup</h3><div class="hint">Library &amp; institution data</div></div>
+      <div class="panel-head"><h3>Data backup</h3></div>
       <p style="font-size:12.5px;color:var(--muted);line-height:1.6">Catalogue, members, circulation, feedback, register, schedule, and setup — including the institution name and institution logo.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
         <button class="btn secondary" onclick="downloadDataBackup()">⭳ Download data backup</button>
@@ -19791,7 +19796,7 @@ function pageBackup(){
       </div>
     </div>
     <div class="card panel">
-      <div class="panel-head"><h3>Account backup</h3><div class="hint">Accounts &amp; personalization</div></div>
+      <div class="panel-head"><h3>Account backup</h3></div>
       <p style="font-size:12.5px;color:var(--muted);line-height:1.6">All user accounts — including each person's profile picture — plus theme, colour palette, and clock/date preferences.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
         <button class="btn secondary" onclick="downloadAccountBackup()">⭳ Download account backup</button>
@@ -19851,12 +19856,12 @@ function pageBackup(){
     </div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Google Drive</h3><div class="hint">Save a backup copy to your Drive</div></div>
+    <div class="panel-head"><h3>Google Drive</h3></div>
     <p style="font-size:12.5px;color:var(--muted);line-height:1.6">This app runs entirely in your browser with no server of its own, so it can't connect to a Google account and upload directly the way GitHub sync does. This button downloads today's backup file and opens Google Drive in a new tab — just drag the downloaded file in (or use Drive's "New → File upload").</p>
     <button class="btn secondary" onclick="saveToGoogleDrive()">📁 Download backup &amp; open Google Drive</button>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Data portal — export/import by category</h3><div class="hint">Independent JSON files, one per data type</div></div>
+    <div class="panel-head"><h3>Data portal — export/import by category</h3></div>
     <p style="font-size:12.5px;color:var(--muted);line-height:1.6">Unlike the combined data backup above, each row here is its own self-contained JSON file — download just the catalogue, just members, just Assets &amp; Equipment, and so on. Import an individual file to overwrite <em>only</em> that one category, leaving everything else untouched. Useful for editing one dataset offline (e.g. in a spreadsheet-to-JSON tool) and pushing just that piece back in.</p>
     <div class="table-wrap" style="margin-top:10px">
       <table class="datatable"><thead><tr><th>Category</th><th>Records</th><th></th></tr></thead>
@@ -19864,7 +19869,7 @@ function pageBackup(){
         const val = DB[c.key];
         const count = Array.isArray(val) ? val.length : (val && typeof val==='object' ? Object.keys(val).length : 0);
         return `<tr>
-          <td><strong>${esc(c.label)}</strong><div class="field-hint" style="margin-top:2px">${esc(c.hint)}</div></td>
+          <td><strong>${esc(c.label)}</strong>${c.hint? `<div class="field-hint" style="margin-top:2px">${esc(c.hint)}</div>`:''}</td>
           <td>${count}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn secondary small" onclick="downloadCategoryJSON('${c.key}')">⭳ Export</button>
@@ -19883,22 +19888,22 @@ function pageBackup(){
    label, and a short note on what shape the JSON is (array of records vs a single settings
    object), so restoring one category never touches any other. */
 const DATA_PORTAL_CATEGORIES = [
-  {key:'catalogue', label:'Catalogue (titles)', hint:'Array of book/title records'},
-  {key:'users', label:'Members', hint:'Array of member records'},
-  {key:'equipment', label:'Assets & Equipment', hint:'Array of asset/equipment records'},
-  {key:'circulation', label:'Circulation transactions', hint:'Array of issue/return records'},
-  {key:'feedback', label:'Feedback', hint:'Array of feedback entries'},
-  {key:'registerLog', label:'Register / visit log', hint:'Array of desk sign-in & class period visit entries'},
-  {key:'reservations', label:'Reservations', hint:'Array of reservation records'},
-  {key:'notifications', label:'Notifications', hint:'Array of notification records'},
-  {key:'consequenceLog', label:'Consequence log', hint:'Array of discipline/consequence records'},
-  {key:'scheduleDays', label:'Schedule — days', hint:'Array of schedule day rows'},
-  {key:'scheduleRoster', label:'Schedule — roster', hint:'Array of roster rows'},
-  {key:'scheduleSubjects', label:'Schedule — subjects', hint:'Array of subject codes'},
-  {key:'scheduleActivities', label:'Schedule — activities', hint:'Array of activity names (Break, Assembly, etc.)'},
-  {key:'classTimetable', label:'Schedule — class timetables', hint:'Single object of per-class subject timetables'},
-  {key:'classTimings', label:'Schedule — class timings', hint:'Per-class time overrides for specific periods'},
-  {key:'setup', label:'Setup & settings', hint:'Single settings object (Dewey lists, classes, fines, codes, etc.)'},
+  {key:'catalogue', label:'Catalogue (titles)', hint:''},
+  {key:'users', label:'Members', hint:''},
+  {key:'equipment', label:'Assets & Equipment', hint:''},
+  {key:'circulation', label:'Circulation transactions', hint:''},
+  {key:'feedback', label:'Feedback', hint:''},
+  {key:'registerLog', label:'Register / visit log', hint:''},
+  {key:'reservations', label:'Reservations', hint:''},
+  {key:'notifications', label:'Notifications', hint:''},
+  {key:'consequenceLog', label:'Consequence log', hint:''},
+  {key:'scheduleDays', label:'Schedule — days', hint:''},
+  {key:'scheduleRoster', label:'Schedule — roster', hint:''},
+  {key:'scheduleSubjects', label:'Schedule — subjects', hint:''},
+  {key:'scheduleActivities', label:'Schedule — activities', hint:''},
+  {key:'classTimetable', label:'Schedule — class timetables', hint:''},
+  {key:'classTimings', label:'Schedule — class timings', hint:''},
+  {key:'setup', label:'Setup & settings', hint:''},
 ];
 function downloadCategoryJSON(key){
   if(!isAdmin()) return requireAdmin('export data');
@@ -21378,7 +21383,7 @@ function pageActivityLog(){
   }
   activityLogModule = GenericModule({
     state:activityLogModuleState, key:'activitylog', title:'Activity Log',
-    hint:'A running trail of every add, edit, delete, issue, return and other change made across the app — newest first',
+    hint:'',
     cap:300,
     data:()=>DB.activityLog||[],
     searchKeys:['summary','by','module','action'],
@@ -21476,14 +21481,14 @@ function pageSecurity(){
   <div class="card panel">
     <div class="panel-head"><h3>Login lockout</h3><div class="hint">Blocks further sign-in attempts on this device after repeated wrong passwords</div></div>
     <div class="field"><label>Lock out after this many wrong passwords</label><input type="number" id="setLoginAttemptLimit" min="1" max="10" value="${limit}" style="max-width:120px"></div>
-    <p class="field-hint">Once locked, the sign-in screen requires the admin key above before anyone can try again.</p>
+    
     <button class="btn secondary" onclick="saveLoginLockoutSettings()">Save</button>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Inactivity auto-lock</h3><div class="hint">Signs everyone out automatically after the app sits idle</div></div>
     <div class="field"><label><input type="checkbox" id="setIdleLockEnabled" ${idleOn?'checked':''}> Automatically lock after a period of inactivity</label></div>
     <div class="field"><label>Lock after (minutes)</label><input type="number" id="setIdleLockMinutes" min="2" max="120" value="${idleMins}" style="max-width:120px"></div>
-    <p class="field-hint">A 60-second warning with a countdown appears one minute before the lock, so there's a chance to stay signed in.</p>
+    
     <button class="btn secondary" onclick="saveIdleLockSettings()">Save</button>
   </div>
   <div class="card panel">
@@ -21499,7 +21504,7 @@ function pageSecurity(){
     <tbody id="otherAccountsBody">${renderOtherAccountRows()}</tbody></table></div>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>Data &amp; privacy</h3><div class="hint">What this app stores, and where</div></div>
+    <div class="panel-head"><h3>Data &amp; privacy</h3></div>
     <p style="font-size:12.5px;color:var(--muted);line-height:1.7">Everything — catalogue, members, loans, accounts, preferences — is stored only in this browser (or wherever you explicitly sync it: GitHub, a downloaded backup, or Google Drive). Nothing is sent to any third party automatically. WhatsApp receipts and reminders, when enabled, render a designed image (or PDF) card on your device and share it via WhatsApp, your clipboard, or a download — the card itself isn't stored or sent anywhere by this app besides that.</p>
   </div>`;
 }
@@ -22536,7 +22541,7 @@ function openIssueReturnModal() {
         <div class="quick-modal-body">
           <div class="grid two-col">
             <div class="card panel" style="box-shadow:none;border:1px solid var(--line)">
-              <div class="panel-head"><h3>Issue a title</h3><div class="hint">Type an ID to fetch it instantly · 7-day loan period · capped at each member's max allowed</div></div>
+              <div class="panel-head"><h3>Issue a title</h3><div class="hint">7-day loan period · capped at each member's max allowed</div></div>
               <div class="field"><label>Member ID</label>${quickPickerHtml('issueUser','Type a member ID, e.g. ACL-045')}</div>
               <div class="field"><label>Accession No.</label>${quickPickerHtml('issueBook','Type an accession no., e.g. ACC-512')}</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -22547,7 +22552,7 @@ function openIssueReturnModal() {
               <div id="issueStagingArea"></div>
             </div>
             <div class="card panel" style="box-shadow:none;border:1px solid var(--line)">
-              <div class="panel-head"><h3>Return a title</h3><div class="hint">${active.length} loan(s) currently out · type transaction, member or acc. no.</div></div>
+              <div class="panel-head"><h3>Return a title</h3><div class="hint">${active.length} loan(s) currently out</div></div>
               <div class="field"><label>Active loan</label>${quickPickerHtml('returnTrx','Type member ID or accession no.')}</div>
               <div class="field"><label>Returned condition</label><select id="returnCondition">${(DB.setup.conditions||['GOOD','FAIR','DAMAGED','MISSING']).map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
