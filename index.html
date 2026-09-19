@@ -4894,7 +4894,7 @@ function logActivity(module, action, summary){
   DB.activityLog.unshift({
     id:'ACT-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),
     ts:new Date().toISOString(), module, action,
-    by:(typeof SESSION!=='undefined' && SESSION && SESSION.fullName)||'—',
+    by:actorName()||'—',
     summary
   });
   if(DB.activityLog.length > ACTIVITY_LOG_CAP) DB.activityLog.length = ACTIVITY_LOG_CAP;
@@ -5789,17 +5789,91 @@ async function persistSession(sess){
   if(sess) await storeSet(SESSION_KEY, JSON.stringify(sess));
   else await storeDelete(SESSION_KEY);
 }
-function isAdmin(){ return SESSION && SESSION.role === 'ADMIN'; }
-function requireAdmin(actionLabel){
-  if(!isAdmin()){ toast(`Guests can't ${actionLabel||'do that'} — sign in as an admin`); return false; }
-  return true;
+/* ---- Access: signed-in role, or a short-lived admin-key elevation ----
+   Someone who isn't signed in (the lock screen), a guest, or a staff member who hits something
+   admin-only is asked what they'd like to do — sign in as an admin, or enter the admin key to
+   carry out just that operation — instead of being told they're "a guest". A correct key grants
+   admin rights WITHOUT signing anyone in: it lasts only while the dialog/form it opened is on
+   screen (or a few minutes when there is nothing to keep open), and anything done under it is
+   logged as "Admin key". */
+var KEY_ELEVATION = null;          // {since, until, scoped}  (var: safe even if something asks before this line runs)
+var keyElevationTimer = null;
+const KEY_ELEVATION_TIMED_MS = 3*60*1000;     // when the person has to retry the action themselves
+const KEY_ELEVATION_MAX_MS   = 15*60*1000;    // hard ceiling even while a dialog stays open
+function keyElevated(){
+  if(KEY_ELEVATION && Date.now() < KEY_ELEVATION.until) return true;
+  KEY_ELEVATION = null; return false;
 }
+function grantKeyElevation(scoped){
+  const now = Date.now();
+  KEY_ELEVATION = {since:now, until: now + (scoped ? KEY_ELEVATION_MAX_MS : KEY_ELEVATION_TIMED_MS), scoped:!!scoped};
+  clearInterval(keyElevationTimer);
+  keyElevationTimer = setInterval(()=>{
+    if(!keyElevated()){ clearInterval(keyElevationTimer); keyElevationTimer = null; return; }
+    // Scoped to the operation's dialog: once every dialog has closed, the rights go with it.
+    if(KEY_ELEVATION.scoped && Date.now()-KEY_ELEVATION.since > 1500 && !document.querySelector('.modal-backdrop, .quick-modal-overlay.show')){
+      KEY_ELEVATION = null; clearInterval(keyElevationTimer); keyElevationTimer = null;
+    }
+  }, 700);
+}
+function actorName(){ return (SESSION && SESSION.fullName) || (keyElevated() ? 'Admin key' : ''); }
+function isAdmin(){ return !!((SESSION && SESSION.role === 'ADMIN') || keyElevated()); }
 // STAFF sits between GUEST and ADMIN: day-to-day desk work (issue/return/renew, reminders,
 // reservations, check-ins, fine payments, feedback status) without access to Setup, Security,
 // Backup, Activity Log, or structural catalogue/member edits — those stay isAdmin()-only.
-function isStaff(){ return SESSION && (SESSION.role === 'ADMIN' || SESSION.role === 'STAFF'); }
+function isStaff(){ return !!((SESSION && (SESSION.role === 'ADMIN' || SESSION.role === 'STAFF')) || keyElevated()); }
+async function goToSignIn(){
+  closeQuickPanel();
+  if(SESSION) await signOut();                   // a guest/staff session → back to the lock screen
+  const scr = document.getElementById('authScreen');
+  if(scr && !scr.classList.contains('show')) showAuthScreen();
+  if(window.innerWidth<=900) mobileAuthGo('signin'); else setAuthTab('signin');
+  setTimeout(()=>{ const u = document.getElementById('siUser'); if(u) u.focus(); }, 80);
+}
+/* level: 'ADMIN' or 'STAFF'. label: a verb phrase ("add or edit titles"). proceed: what to run once
+   access is granted by key (omit it when the caller can't resume — the person just retries). */
+function promptAccess(level, label, proceed){
+  if(document.getElementById('accessPromptModal')) return;
+  const needAdmin = level==='ADMIN';
+  const need = needAdmin ? 'an admin' : 'a staff or admin';
+  const who = !SESSION ? "You're not signed in." : SESSION.role==='GUEST' ? "You're browsing as a guest." : "You're signed in as staff.";
+  const what = String(label||'do that');
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'accessPromptModal';
+  wrap.innerHTML = `
+    <div class="modal confirm-modal">
+      <div class="modal-head"><h3>${needAdmin ? 'Admin access needed' : 'Sign-in needed'}</h3><button id="apClose" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <p style="margin:0;font-size:13.5px;line-height:1.6;color:var(--muted)">To ${esc(what)}, you need ${need} account. ${who}</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" id="apCancel">Cancel</button>
+        <button class="btn secondary" id="apKey">Enter admin key</button>
+        <button class="btn" id="apSignin">${needAdmin ? 'Sign in as admin' : 'Sign in'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#apClose').onclick = close;
+  wrap.querySelector('#apCancel').onclick = close;
+  wrap.querySelector('#apSignin').onclick = ()=>{ close(); goToSignIn(); };
+  wrap.querySelector('#apKey').onclick = ()=>{
+    close();
+    verifyAdminKeyAsync(`Enter the admin key to ${what}:`, ()=>{
+      grantKeyElevation(!!proceed);
+      if(proceed) proceed();
+      else toast('Admin key accepted — you have admin access for 3 minutes. Repeat the action.');
+    });
+  };
+  setTimeout(()=> wrap.querySelector('#apSignin').focus(), 30);
+}
+function requireAdmin(actionLabel){
+  if(!isAdmin()){ promptAccess('ADMIN', actionLabel); return false; }
+  return true;
+}
 function requireStaff(actionLabel){
-  if(!isStaff()){ toast(`Guests can't ${actionLabel||'do that'} — sign in as staff or an admin`); return false; }
+  if(!isStaff()){ promptAccess('STAFF', actionLabel); return false; }
   return true;
 }
 
@@ -11601,7 +11675,7 @@ function bindIsbnAutoLookup(){
   isbnEl.addEventListener('blur', maybeLookup);
 }
 function openBookForm(acc){
-  if(!isAdmin()) return requireAdmin('edit the catalogue');
+  if(!isAdmin()) return promptAccess('ADMIN', acc ? 'edit catalogue titles' : 'add titles to the catalogue', ()=> openBookForm(acc));
   const existing = acc ? DB.catalogue.find(b=>b.acc===acc) : null;
   openModal({
     title: existing? 'Edit title' : 'Add title to catalogue',
@@ -12079,7 +12153,7 @@ function userFields(u={}){
   ];
 }
 function openUserForm(id){
-  if(!isAdmin()) return requireAdmin('edit members');
+  if(!isAdmin()) return promptAccess('ADMIN', id ? 'edit members' : 'add members', ()=> openUserForm(id));
   const existing = id ? DB.users.find(u=>u.id===id) : null;
   openModal({
     title: existing? 'Edit member' : 'Register new member',
@@ -13551,7 +13625,7 @@ function autoCheckInForCirculation(user, purpose, borrowFlag, actionLabel, title
   DB.registerLog.unshift({
     entryId: uid('REG'), source:'DESK', date: todayISO(), timeIn: new Date().toTimeString().slice(0,5), timeOut:'', period:'',
     id:user.id, name:user.name, category:user.category, cls:user.cls, purpose,
-    conduct:'NONE', action:'NONE', borrow: borrowFlag?'YES':'NO', verifiedBy:(typeof SESSION!=='undefined' && SESSION.fullName)||'',
+    conduct:'NONE', action:'NONE', borrow: borrowFlag?'YES':'NO', verifiedBy:actorName(),
     note: `Auto checked-in — ${line}`, offense:'', offenseOther:'', consequence:'', consequenceOther:''
   });
   logActivity('register', 'auto-checkin', `${user.name} (${user.id}) auto checked-in via ${purpose.toLowerCase()}`);
@@ -13671,7 +13745,7 @@ function applyReturnConsequences(user, trx, condition, wasOverdue){
     DB.registerLog.unshift({
       entryId: uid('CSQ'), source:'DESK', date: todayISO(), timeIn:'', timeOut:'', period:'',
       id:user.id, name:user.name, category:user.category, cls:user.cls, purpose:'CIRCULATION',
-      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy: (typeof SESSION!=='undefined' && SESSION.fullName)||'',
+      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy: actorName(),
       note: ev.detail, offense: ev.offense, offenseOther:'', consequence: ev.rule.consequence, consequenceOther:''
     });
   });
@@ -13835,7 +13909,7 @@ function openFinePaymentModal(trxId){
     DB.registerLog.unshift({
       entryId: uid('FWV'), source:'DESK', date: todayISO(), timeIn:'', timeOut:'', period:'',
       id:t.userId, name:t.name||(user&&user.name)||'', category:(user&&user.category)||'', cls:(user&&user.cls)||'', purpose:'CIRCULATION',
-      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:(typeof SESSION!=='undefined' && SESSION.fullName)||'',
+      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:actorName(),
       note:`Fine of ${fmtCurrency(st.outstanding)} waived — "${reason}"`, offense:'FINE WAIVED', offenseOther:'', consequence:reason, consequenceOther:''
     });
     saveDB(`Fine waived: ${fmtCurrency(st.outstanding)} for ${t.name}`); render(); close(); toast('Remaining fine waived');
@@ -16261,7 +16335,7 @@ function submitBatch(){
     DB.registerLog.unshift({
       entryId: uid('REG'), source:'DESK', date:todayISO(), timeIn, timeOut:'', period:'',
       id:s.id, name:s.name, category:s.category, cls:s.cls, purpose,
-      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:SESSION.fullName, note: note || 'Batch check-in',
+      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:actorName(), note: note || 'Batch check-in',
       offense:'', offenseOther:'', consequence:'', consequenceOther:''
     });
     sendScanWebhook('checkin', {memberId:s.id, memberName:s.name, purpose});
@@ -18404,7 +18478,7 @@ function openFeedbackForm(entryId){
   openModal({
     title: existing ? 'Edit feedback' : 'Submit feedback',
     fields:[
-      {row:[{key:'userId',label:'Member ID', default:existing?existing.userId:''},{key:'userName',label:'Full name', required:true, default:existing?existing.userName:SESSION.fullName}]},
+      {row:[{key:'userId',label:'Member ID', default:existing?existing.userId:''},{key:'userName',label:'Full name', required:true, default:existing?existing.userName:actorName()}]},
       {row:[{key:'type',label:'Type', type:'select', options:['SUGGESTION','COMPLAINT','REQUEST','COMPLIMENT'], default:existing?existing.type:'SUGGESTION'},{key:'priority',label:'Priority', type:'select', options:['LOW','MEDIUM','HIGH'], default:existing?existing.priority:'MEDIUM'}]},
       {key:'subject', label:'Subject', required:true, default:existing?existing.subject:''},
       {key:'text', label:'Feedback', type:'textarea', required:true, default:existing?existing.text:''},
@@ -21872,7 +21946,7 @@ async function createCheckpoint(label){
   // giving up, so a checkpoint you just asked for doesn't just quietly disappear.
   const snapshot = JSON.stringify(Object.assign({}, DB, {versions:undefined}));
   DB.versions = DB.versions || [];
-  DB.versions.unshift({ id: uid('VER'), at: new Date().toISOString(), by: (SESSION&&SESSION.fullName)||'—', label: label||'Manual save', snapshot });
+  DB.versions.unshift({ id: uid('VER'), at: new Date().toISOString(), by: actorName()||'—', label: label||'Manual save', snapshot });
   if(DB.versions.length > MAX_VERSIONS) DB.versions.length = MAX_VERSIONS;
   let ok = await saveDB(`Checkpoint saved: ${label||'Manual save'}`);
   while(!ok && DB.versions.length > 1){
@@ -22610,9 +22684,11 @@ function openQuickAction(actionType) {
   
   switch(actionType) {
     case 'checkin':
+      if(!isStaff()) return promptAccess('STAFF', 'check members in and out', openCheckInOutModal);
       openCheckInOutModal();
       break;
     case 'issue':
+      if(!isStaff()) return promptAccess('STAFF', 'issue and return titles', openIssueReturnModal);
       openIssueReturnModal();
       break;
     case 'addtitle':
