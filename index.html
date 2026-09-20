@@ -11338,11 +11338,11 @@ function pageAnalytics(){
   });
   ANALYTICS_TOP_TITLES = topT.map(e=>({title:e[0], count:e[1], loans:t.filter(x=>x.title===e[0])}));
   return `
-  <div class="panel-head" style="margin-bottom:14px">
+  <div class="panel-head panel-head-row" style="margin-bottom:14px">
     <div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn secondary" onclick="printAnalyticsReport()">🖨 Print</button>
-      <button class="btn secondary" onclick="exportAnalyticsAll()">⭳ Export</button>
+    <div class="panel-head-actions">
+      <button class="btn secondary small" onclick="printAnalyticsReport()">🖨 Print</button>
+      <button class="btn secondary small" onclick="exportAnalyticsAll()">⭳ Export</button>
     </div>
   </div>
   <div class="grid two-col">
@@ -20309,7 +20309,6 @@ function pageSettings(){
   <div class="settings-toolbar">
     <button class="btn" onclick="saveAllPersonalization()">${SAVE_ICON_INLINE} Save changes</button>
     <button class="btn danger" onclick="resetPersonalization()">↺ Reset personalization to default</button>
-    <div class="hint">Every section below previews live as you edit it — nothing is kept until you click Save.</div>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Theme sets</h3></div>
