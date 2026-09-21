@@ -2455,6 +2455,9 @@ html[data-theme="dark"] .stamp.missing{ background:#3a1f1f; color:#f0a08c;}
 html[data-theme="dark"] .stamp.withdrawn{ background:#2c2c2c; color:#a8a8a8; border-color:#6b6b6b;}
 html[data-theme="dark"] .stamp.reserved{ background:#1f2e33; color:#8fc2d3; border-color:#3E6B7A;}
 html[data-theme="dark"] table.datatable tr:hover td{ background:rgba(255,255,255,.05);}
+html[data-theme="dark"] table.datatable.timetable-frozen th.frozen-col,
+html[data-theme="dark"] table.datatable.timetable-frozen td.frozen-col{ background:var(--bg-secondary);}
+html[data-theme="dark"] table.datatable.timetable-frozen tr:hover td.frozen-col{ background:rgba(255,255,255,.08);}
 html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,html[data-theme="dark"] .field textarea,
 html[data-theme="dark"] .toolbar input,html[data-theme="dark"] .toolbar select{ background:rgba(255,255,255,.06); color:var(--ink);}
 /* Covers every select, not just ones inside .field/.toolbar — several selects in the app
@@ -3340,6 +3343,13 @@ table.datatable th{
 }
 table.datatable td{ padding:8px 10px; border-bottom:1px solid #efe8d4; vertical-align:top;}
 table.datatable tr:hover td{ background:#fbf8ee;}
+/* Frozen class column in timetables — stays visible when scrolling horizontally */
+table.datatable.timetable-frozen th.frozen-col,
+table.datatable.timetable-frozen td.frozen-col{
+  position:sticky; left:0; background:var(--parchment-dim); z-index:1;
+  font-weight:600; min-width:100px;
+}
+table.datatable.timetable-frozen tr:hover td.frozen-col{ background:var(--parchment);}
 .table-wrap{ overflow:auto; max-height:60vh; border:1px solid var(--line); border-radius:8px;}
 .table-count{ font-size:11.5px; color:var(--muted); margin-top:8px;}
 .row-muted{ opacity:.55;}
@@ -11506,10 +11516,10 @@ function pageDashboard(){
           return esc(val);
         }).join('<span style="color:var(--muted-label)"> / </span>');
       };
-      return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
+      return `<div class="table-wrap"><table class="datatable timetable-frozen"><thead><tr><th class="frozen-col">Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
       <tbody>${classes.map(c=>{
         const tt = classTimetableFor(c)[weekday]||{};
-        return `<tr><td>${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
+        return `<tr><td class="frozen-col">${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
       }).join('')}</tbody></table></div>`;
     })()}
   </div>`;
@@ -23863,10 +23873,10 @@ function openTimetableModal() {
         return esc(val);
       }).join('<span style="color:var(--muted-label)"> / </span>');
     };
-    timetableContent = `<div class="table-wrap" style="max-height: 400px; overflow: auto;"><table class="datatable"><thead><tr><th>Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
+    timetableContent = `<div class="table-wrap" style="max-height: 400px; overflow: auto;"><table class="datatable timetable-frozen"><thead><tr><th class="frozen-col">Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
     <tbody>${classes.map(c=>{
       const tt = classTimetableFor(c)[weekday]||{};
-      return `<tr><td>${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
+      return `<tr><td class="frozen-col">${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
     }).join('')}</tbody></table></div>`;
   }
   
