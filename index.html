@@ -14591,7 +14591,10 @@ function issueBook(){
   if(user.borrowed >= user.maxAllowed){ toast(`${user.name} has reached their borrowing limit`); return; }
   warnIfStrikes(user, ()=>{
     const trx = doIssueOne(user, book);
-    saveDB(`${book.title} issued to ${user.name}`); render(); toast(`${book.title} issued to ${user.name} — due ${fmtDate(trx.dueDate)}`);
+    saveDB(`${book.title} issued to ${user.name}`); render(); 
+    // QUICK ACTION MODAL FIX: Refresh the modal pickers after action (don't wait for manual close/reopen)
+    setTimeout(()=>{ bindCirculationPickers(); }, 0);
+    toast(`${book.title} issued to ${user.name} — due ${fmtDate(trx.dueDate)}`);
   });
 }
 /* ---- batch borrow: stage several titles for one member, capped at their max allowed ---- */
@@ -14644,7 +14647,10 @@ function issueStagedBooks(){
     if(book && book.available==='AVAILABLE' && user.borrowed < user.maxAllowed){ doIssueOne(user, book, {quiet:true}); issued++; }
   });
   issueStaging = [];
-  saveDB(`${issued} item(s) issued to ${user.name}`); render(); toast(`${issued} item(s) issued to ${user.name}`);
+  saveDB(`${issued} item(s) issued to ${user.name}`); render(); 
+  // QUICK ACTION MODAL FIX: Refresh the modal pickers and staging area (don't wait for manual close/reopen)
+  setTimeout(()=>{ bindCirculationPickers(); renderIssueStaging(); renderReturnStaging(); }, 0);
+  toast(`${issued} item(s) issued to ${user.name}`);
 }
 /* Evaluates the school's configured discipline policy (Setup → Discipline & consequences)
    after a return, and — if a rule is triggered — updates the member's discipline status,
@@ -14709,6 +14715,8 @@ function returnBook(){
   if(!trx) return;
   const {wasOverdue, isMissing, book, consequences} = doReturnOne(trx, condition);
   saveDB(`Item returned: ${book?book.title:'Title'}`); render();
+  // QUICK ACTION MODAL FIX: Refresh the modal pickers after action (don't wait for manual close/reopen)
+  setTimeout(()=>{ bindCirculationPickers(); }, 0);
   if(consequences && consequences.length){
     toast(`⚠ Consequence triggered: ${consequences.map(c=>c.rule.consequence).join(' · ')}`);
   } else {
@@ -14750,6 +14758,8 @@ function returnStagedBooks(){
   });
   returnStaging = [];
   saveDB(`${count} item(s) returned`); render();
+  // QUICK ACTION MODAL FIX: Refresh the modal pickers and staging area (don't wait for manual close/reopen)
+  setTimeout(()=>{ bindCirculationPickers(); renderIssueStaging(); renderReturnStaging(); }, 0);
   toast(`${count} item(s) returned${csqCount? ` — ⚠ ${csqCount} consequence(s) triggered, see Register`:''}`);
 }
 /* ================= FINES ================= */
@@ -17269,6 +17279,8 @@ function submitBatch(){
   batchStaging = batchStaging.filter(s=>!batchChecked[s.id] || blockedIds.has(s.id));
   batchChecked = {};
   saveDB(`${eligible.length} student(s) checked in`); render();
+  // QUICK ACTION MODAL FIX: Refresh the modal UI after action completes (don't wait for manual close/reopen)
+  setTimeout(()=>{ mountBatchStaging(); mountCheckoutStaging(); }, 0);
   if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive): ${blockedNames.join(', ')}. ${eligible.length} checked in.`);
   else toast(`${eligible.length} student(s) checked in`);
 }
@@ -17315,7 +17327,10 @@ function submitCheckout(){
   const selected = currentlyInLibrary().filter(r=>checkoutChecked[r.entryId]);
   if(!selected.length){ toast('Select at least one person to check out'); return; }
   selected.forEach(r=>{ r.timeOut = now; checkoutChecked[r.entryId]=false; });
-  saveDB(`${selected.length} people checked out`); render(); toast(`${selected.length} checked out`);
+  saveDB(`${selected.length} people checked out`); render(); 
+  // QUICK ACTION MODAL FIX: Refresh the modal UI after action completes (don't wait for manual close/reopen)
+  setTimeout(()=>{ mountCheckoutStaging(); }, 0);
+  toast(`${selected.length} checked out`);
 }
 
 function mountBatchStaging(){
