@@ -2456,12 +2456,16 @@ html[data-theme="dark"] .stamp.withdrawn{ background:#2c2c2c; color:#a8a8a8; bor
 html[data-theme="dark"] .stamp.reserved{ background:#1f2e33; color:#8fc2d3; border-color:#3E6B7A;}
 html[data-theme="dark"] table.datatable tr:hover td{ background:rgba(255,255,255,.05);}
 html[data-theme="dark"] table.datatable.timetable-frozen th.frozen-col{
-  background:var(--bg-secondary); color:var(--text-dim); border-right:2px solid var(--line);
+  background-color:var(--parchment-dim); color:var(--muted-label);
 }
-html[data-theme="dark"] table.datatable.timetable-frozen td.frozen-col{ 
-  background:var(--bg-secondary); border-right:2px solid var(--line);
+html[data-theme="dark"] table.datatable.timetable-frozen td.frozen-col{
+  background-color:var(--parchment-dim);
 }
-html[data-theme="dark"] table.datatable.timetable-frozen tr:hover td.frozen-col{ background:rgba(255,255,255,.08);}
+/* Solid base + translucent overlay = still opaque on hover */
+html[data-theme="dark"] table.datatable.timetable-frozen tr:hover td.frozen-col{
+  background-color:var(--parchment-dim);
+  background-image:linear-gradient(rgba(255,255,255,.08), rgba(255,255,255,.08));
+}
 html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,html[data-theme="dark"] .field textarea,
 html[data-theme="dark"] .toolbar input,html[data-theme="dark"] .toolbar select{ background:rgba(255,255,255,.06); color:var(--ink);}
 /* Covers every select, not just ones inside .field/.toolbar — several selects in the app
@@ -3347,16 +3351,25 @@ table.datatable th{
 }
 table.datatable td{ padding:8px 10px; border-bottom:1px solid #efe8d4; vertical-align:top;}
 table.datatable tr:hover td{ background:#fbf8ee;}
-/* Frozen class column in timetables — stays visible when scrolling horizontally */
+/* Frozen class column in timetables — stays visible when scrolling horizontally.
+   Fully opaque (same solid colour as the frozen period header row) so timetable cells slide
+   UNDER it instead of showing through. The right edge is drawn with an inset box-shadow, not
+   border-right: with border-collapse:collapse a border doesn't travel with a sticky cell, so
+   it would scroll away and leave the column edge undefined. */
 table.datatable.timetable-frozen th.frozen-col{
-  position:sticky; left:0; background:var(--parchment-dim); z-index:2;
+  position:sticky; left:0; top:0; background-color:var(--parchment-dim); z-index:4;
   font-weight:600; min-width:100px; color:var(--muted-label);
+  box-shadow:inset -2px 0 0 var(--line);
 }
 table.datatable.timetable-frozen td.frozen-col{
-  position:sticky; left:0; background:var(--parchment-dim); z-index:1;
-  font-weight:600; min-width:100px; border-right:2px solid var(--line);
+  position:sticky; left:0; background-color:var(--parchment-dim); z-index:1; /* below the sticky period headers (z 2) so they still cover it on vertical scroll */
+  font-weight:600; min-width:100px; box-shadow:inset -2px 0 0 var(--line);
 }
-table.datatable.timetable-frozen tr:hover td.frozen-col{ background:var(--parchment);}
+/* Hover tint is layered as an image over the solid colour, so the cell stays opaque */
+table.datatable.timetable-frozen tr:hover td.frozen-col{
+  background-color:var(--parchment-dim);
+  background-image:linear-gradient(var(--parchment), var(--parchment));
+}
 .table-wrap{ overflow:auto; max-height:60vh; border:1px solid var(--line); border-radius:8px;}
 .table-count{ font-size:11.5px; color:var(--muted); margin-top:8px;}
 .row-muted{ opacity:.55;}
@@ -4141,6 +4154,9 @@ body.pdf-capturing #printArea{ display:block !important; position:fixed; left:-1
      scroll instead of pushing the whole page wide (thead/tbody keep their default table display
      so columns stay aligned — only the outer <table> becomes a scrollable block). */
   table.datatable{ display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; max-width:100%;}
+  /* Frozen timetables must scroll inside .table-wrap, not inside the <table> itself — otherwise the
+     sticky class column / period header would stick to the table's own (non-scrolling) box. */
+  table.datatable.timetable-frozen{ display:table; overflow:visible; max-width:none; width:max-content; min-width:100%;}
   /* Tap feedback — a quick press-down instead of the desktop hover lift, which doesn't exist
      on touch and otherwise leaves taps feeling unresponsive. */
   .qlink:active{ transform:scale(.98); transition:transform .08s;}
