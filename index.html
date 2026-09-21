@@ -5094,7 +5094,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'boltEmoji',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -5290,6 +5290,7 @@ async function loadPrefs(){
   if(savedTopbarRgb) document.documentElement.style.setProperty('--topbar-bg-rgb', savedTopbarRgb);
   applyLockscreenElements(PREFS.lockscreenElements);
   applyLockscreenDecorStyle(PREFS.lockscreenDecorStyle);
+  applyQuickActionIcon();
   applyAccessibility();
 }
 function applyAccessibility(){
@@ -5299,6 +5300,51 @@ function applyAccessibility(){
 function toggleA11yLargeText(on){ PREFS.a11yLargeText = !!on; applyAccessibility(); savePrefs(); }
 function toggleA11yHighContrast(on){ PREFS.a11yHighContrast = !!on; applyAccessibility(); savePrefs(); }
 async function savePrefs(){ await storeSet(PREFS_KEY, JSON.stringify(PREFS)); }
+/* ---- Quick Actions button icon (Personalization → Quick actions) ----
+   #quickActionBtn is the floating ⚡ button that opens the check-in / issue-return / add-title /
+   schedule panel. Its icon is picked here rather than hardcoded in the markup, so applyQuickActionIcon()
+   is what actually paints it — both on load (from loadPrefs) and live as someone previews a choice. */
+const QUICK_ACTION_ICONS = {
+  boltEmoji: {label:'⚡ Emoji', desc:"The original lightning-bolt emoji.", svg:`<text x="11" y="17" font-size="19" text-anchor="middle">⚡</text>`},
+  boltSvg:   {label:'Crisp Bolt', desc:'A drawn lightning bolt, pixel-identical on every device.', svg:`<path d="M12 2 4 13h6l-1 9 9-13h-6l1-9z" fill="currentColor"/>`},
+  grid:      {label:'App Grid', desc:'A 2×2 dot grid — reads as "several shortcuts live here".', svg:`<g fill="currentColor"><circle cx="7" cy="7" r="2.6"/><circle cx="15" cy="7" r="2.6"/><circle cx="7" cy="15" r="2.6"/><circle cx="15" cy="15" r="2.6"/></g>`},
+  starburst: {label:'Starburst', desc:'A four-point sparkle — friendlier, still says "shortcut".', svg:`<path d="M11 2 13 9 20 11 13 13 11 20 9 13 2 11 9 9Z" fill="currentColor"/>`},
+  compass:   {label:'Compass Target', desc:'A ringed dot — "jump straight to what you need".', svg:`<circle cx="11" cy="11" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11" cy="11" r="3" fill="currentColor"/>`},
+  boltBadge: {label:'Bolt + Badge', desc:'The bolt kept as the main mark, with a small dot badge.', svg:`<path d="M11 2 4.5 12.5h5.5l-1 8.5 8-11h-5.5l1-8Z" fill="currentColor"/><circle cx="18" cy="5" r="2.4" fill="currentColor" opacity=".55"/>`},
+};
+function applyQuickActionIcon(id){
+  const btn = document.getElementById('quickActionBtn'); if(!btn) return;
+  const icon = QUICK_ACTION_ICONS[id || PREFS.quickActionIcon] || QUICK_ACTION_ICONS.boltEmoji;
+  btn.innerHTML = `<svg viewBox="0 0 22 22" width="24" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${icon.svg}</svg>`;
+}
+let pendingQuickActionIcon = null;
+function quickActionIconPickerHtml(){
+  const current = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
+  return `<div class="sound-chip-grid">
+    ${Object.entries(QUICK_ACTION_ICONS).map(([id,ic])=>`
+      <div class="sound-chip ${current===id?'selected':''}" data-qa-icon-id="${id}" onclick="previewQuickActionIcon('${id}')" title="${esc(ic.desc)}">
+        <span class="sound-chip-icon"><svg viewBox="0 0 22 22" width="20" height="20" style="color:var(--brass)" xmlns="http://www.w3.org/2000/svg">${ic.svg}</svg></span>
+        <span class="sound-chip-info">
+          <span class="sound-chip-name">${esc(ic.label)}</span>
+          <span class="sound-chip-desc">${esc(ic.desc)}</span>
+        </span>
+      </div>`).join('')}
+  </div>`;
+}
+function previewQuickActionIcon(id){
+  pendingQuickActionIcon = id;
+  applyQuickActionIcon(id);
+  document.querySelectorAll('[data-qa-icon-id]').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.qaIconId === id);
+  });
+}
+function saveQuickActionIconPrefs(silent){
+  PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
+  pendingQuickActionIcon = null;
+  applyQuickActionIcon();
+  savePrefs();
+  if(!silent) toast('Quick actions icon updated');
+}
 /* ---- Notification sound picker (Personalization → Notifications) ----
    Selecting a chip both previews the sound immediately and marks it as the pending choice;
    like every other Personalization control it isn't written into PREFS/storage until the
@@ -5348,6 +5394,8 @@ function resetPersonalization(){
   confirmModal('Reset all Personalization settings to their defaults? This resets theme, colours, typography, icons, backgrounds and the lockscreen — it does not delete any uploaded images or accounts.', ()=>{
     PREFS = JSON.parse(JSON.stringify(DEFAULT_PREFS));
   pendingNotificationSound = null;
+  pendingQuickActionIcon = null;
+  applyQuickActionIcon();
   delete PREFS.sectionBgColor; delete PREFS.modalBgColor; delete PREFS.topbarBgColor; delete PREFS.authBoxColor;
   applyTheme(); applyPalette(PREFS.palette); applyTypography(); applyClockFont(PREFS.clockFont); applyDateFont(PREFS.dateFont);
   applyIconPack();
@@ -5380,6 +5428,7 @@ function saveAllPersonalization(){
   saveLockscreenAppearance(true);
   saveWeatherAmbiencePrefs(true);
   saveNotificationSoundPrefs(true);
+  saveQuickActionIconPrefs(true);
   render();
   toast('Personalization saved');
 }
@@ -20611,6 +20660,11 @@ function pageSettings(){
     <div class="panel-head"><h3>Notifications</h3><div class="hint">Plays when a class period starts or a loan alert appears</div></div>
     <p class="field-hint" style="margin-top:0">Tap any sound to hear it and set it as your notification sound.</p>
     ${notificationSoundPickerHtml()}
+  </div>
+  <div class="card panel">
+    <div class="panel-head"><h3>Quick actions button</h3><div class="hint">The floating button that opens check-in, issue/return, add title, schedule, etc.</div></div>
+    <p class="field-hint" style="margin-top:0">Tap an icon to preview it on the button and set it.</p>
+    ${quickActionIconPickerHtml()}
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Clock &amp; date</h3></div>
