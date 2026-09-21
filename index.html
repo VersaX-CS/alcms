@@ -10806,13 +10806,16 @@ function cycleWeatherAmbienceSet(){
 }
 /* ================= HOME HERO: SKY ACTIVITIES =================
    Now and then something happens in the hero's sky — a plane or jet crosses, a hot-air balloon
-   drifts by, a rocket lifts off, it rains, snows or storms, a UFO zips past at night… One thing
-   at a time (plus one bit of weather), every 7–15 seconds at most, and only while the Home page
-   is actually on screen. Each activity draws itself into the ambience SVG and animates with the
-   Web Animations API, then removes itself. Off with "Show sky activities" in Personalization,
-   and never runs for anyone whose system asks for reduced motion. */
+   drifts by, a rocket lifts off, it rains, snows or storms, a UFO zips past at night… and now and
+   then something happens on the ground too — a car, bus or delivery truck drives past, a
+   pedestrian, jogger, dog walker, cyclist or skateboarder crosses, or a parachutist drifts down
+   and, once they land, actually gets up and walks a short distance before fading out.
+   One thing at a time (plus one bit of weather), every 7–15 seconds at most, and only while the
+   Home page is actually on screen. Each activity draws itself into the ambience SVG and animates
+   with the Web Animations API, then removes itself. Off with "Show sky activities" in
+   Personalization, and never runs for anyone whose system asks for reduced motion. */
 const SKY_NS = 'http://www.w3.org/2000/svg';
-const skyState = {timer:null, flyerUntil:0, precipUntil:0, last:''};
+const skyState = {timer:null, flyerUntil:0, precipUntil:0, groundUntil:0, last:''};
 const skyRnd = (a,b)=> a + Math.random()*(b-a);
 const skyPick = arr => arr[Math.floor(Math.random()*arr.length)];
 const skyDeg = r => r*180/Math.PI;
@@ -10944,12 +10947,170 @@ const SKY_ACTIVITIES = [
     g.querySelectorAll('.wx-rotor').forEach(p=> skyLoop(p, [{transform:'scaleX(1)'},{transform:'scaleX(.25)'},{transform:'scaleX(1)'}], 90));
     skyBlink(g, 900); return {nodes:[g], duration:T};
   }},
-  {name:'parachutist', when:'day', slot:'flyer', weight:3, run(c){
-    const col = skyPick(['#E4573D','#3A86FF','#F2B632','#9B5DE5']), x = skyRnd(c.x0+c.vis*.25, c.x0+c.vis*.85), T = skyRnd(11000,14000);
-    const g = skyEl(c.sky, `<path d="M-14,0 Q0,-20 14,0 Q7,-3 0,0 Q-7,-3 -14,0Z" fill="${col}"/><path d="M-14,0 L0,24 M14,0 L0,24 M0,0 L0,24" stroke="${c.ink}" stroke-width=".5" fill="none"/>
-      <circle cx="0" cy="26" r="2.2" fill="${c.ink}"/><rect x="-1.4" y="28" width="2.8" height="6" rx="1" fill="${c.ink}"/>`, `transform:translate(${x}px,-40px)`);
-    const fr = []; for(let i=0;i<=20;i++){ const t=i/20; fr.push({transform:`translate(${(x+Math.sin(t*Math.PI*3)*14).toFixed(1)}px,${(-40+(c.H-6)*t).toFixed(1)}px) rotate(${(Math.sin(t*Math.PI*3+1)*8).toFixed(1)}deg)`, offset:t}); }
-    skyGo(g, fr, {duration:T, easing:'linear'}); return {nodes:[g], duration:T};
+  {name:'parachutist', when:'any', slot:'ground', weight:4, run(c){
+    // Two phases: (1) drift down from off-screen on a swaying canopy, same path shape as before;
+    // (2) once the feet reach the ground, the canopy collapses away and the little figure gets up
+    // and walks a short distance before the whole scene fades out. The same <g> is reused for both
+    // phases — the landing setTimeout fires exactly when phase 1's translate animation completes,
+    // so phase 2's keyframes pick up from precisely where phase 1 left off.
+    const col = skyPick(['#E4573D','#3A86FF','#F2B632','#9B5DE5']);
+    const x = skyRnd(c.x0+c.vis*.25, c.x0+c.vis*.85);
+    const groundY = c.H-6, descendT = skyRnd(9000,12000), walkT = skyRnd(3200,5200), totalT = descendT+walkT+500;
+    const g = skyEl(c.sky, `
+      <g class="wx-chute"><path d="M-14,0 Q0,-20 14,0 Q7,-3 0,0 Q-7,-3 -14,0Z" fill="${col}"/><path d="M-14,0 L0,24 M14,0 L0,24 M0,0 L0,24" stroke="${c.ink}" stroke-width=".5" fill="none"/></g>
+      <g class="wx-person">
+        <circle cx="0" cy="26" r="2.2" fill="${c.ink}"/>
+        <path d="M0,28 L0,34" stroke="${c.ink}" stroke-width="1.8" stroke-linecap="round"/>
+        <path class="wx-arm1" d="M0,29 L-4,25" stroke="${c.ink}" stroke-width="1.3" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px 29px"/>
+        <path class="wx-arm2" d="M0,29 L4,25" stroke="${c.ink}" stroke-width="1.3" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px 29px"/>
+        <path class="wx-leg1" d="M0,34 L-2.4,40" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px 34px"/>
+        <path class="wx-leg2" d="M0,34 L2.4,40" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px 34px"/>
+      </g>`, `transform:translate(${x}px,-40px)`);
+    // Phase 1 — descend, swaying under the canopy, the sway damping out as it nears the ground
+    const fr = [];
+    for(let i=0;i<=20;i++){ const t=i/20; fr.push({transform:`translate(${(x+Math.sin(t*Math.PI*3)*14).toFixed(1)}px,${(-40+(groundY+40)*t).toFixed(1)}px) rotate(${(Math.sin(t*Math.PI*3+1)*8*(1-t)).toFixed(1)}deg)`, offset:t}); }
+    const descendAnim = skyGo(g, fr, {duration:descendT, easing:'ease-in'});
+    // One continuous fade for the whole sequence, independent of the position animations above
+    skyGo(g, [{opacity:1, offset:0},{opacity:1, offset:.93},{opacity:0, offset:1}], {duration:totalT, easing:'linear'});
+    setTimeout(()=>{
+      if(!g.isConnected) return;
+      if(descendAnim) descendAnim.finish(); // lock phase 1 at its landed position before phase 2 takes over
+      skyGo(g.querySelector('.wx-chute'), [{opacity:1},{opacity:0}], {duration:450, easing:'ease-out'});
+      g.querySelectorAll('.wx-leg1,.wx-arm2').forEach(p=> skyLoop(p, [{transform:'rotate(16deg)'},{transform:'rotate(-16deg)'}], 400, {direction:'alternate'}));
+      g.querySelectorAll('.wx-leg2,.wx-arm1').forEach(p=> skyLoop(p, [{transform:'rotate(-16deg)'},{transform:'rotate(16deg)'}], 400, {direction:'alternate'}));
+      // Phase 2 — landed: walk a short, random distance along the ground before the fade finishes
+      const dir = Math.random()<0.5 ? -1 : 1;
+      const walkTo = Math.min(c.x1-16, Math.max(c.x0+16, x + dir*skyRnd(30,65)));
+      skyGo(g, [{transform:`translate(${x}px,${groundY}px)`, offset:0},{transform:`translate(${walkTo}px,${groundY}px)`, offset:1}], {duration:walkT, easing:'linear'});
+    }, descendT);
+    return {nodes:[g], duration:totalT};
+  }},
+  /* ---------- land activities: simple figures crossing the ground, reusing skyCross's
+     horizontal-flight machinery with amp/cycles/tilt all zeroed out for a flat walk/ride ---------- */
+  {name:'pedestrian', when:'any', slot:'ground', weight:5, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-6, dur = skyRnd(12000,17000);
+    const body = `<g fill="${c.ink}">
+      <circle cx="0" cy="-9" r="2.4"/>
+      <path d="M0,-7 L0,-1" stroke="${c.ink}" stroke-width="1.8" stroke-linecap="round"/>
+      <path class="wx-arm1" d="M0,-6 L-4,-3" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -6px"/>
+      <path class="wx-arm2" d="M0,-6 L4,-3" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -6px"/>
+      <path class="wx-leg1" d="M0,-1 L-2.6,5" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -1px"/>
+      <path class="wx-leg2" d="M0,-1 L2.6,5" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -1px"/>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-leg1,.wx-arm2').forEach(p=> skyLoop(p, [{transform:'rotate(18deg)'},{transform:'rotate(-18deg)'}], 380, {direction:'alternate'}));
+    r.outer.querySelectorAll('.wx-leg2,.wx-arm1').forEach(p=> skyLoop(p, [{transform:'rotate(-18deg)'},{transform:'rotate(18deg)'}], 380, {direction:'alternate'}));
+    return r;
+  }},
+  {name:'cyclist', when:'any', slot:'ground', weight:4, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-5, dur = skyRnd(7000,10000);
+    const body = `<g fill="none" stroke="${c.ink}" stroke-width="1.4">
+      <circle class="wx-wheel1" cx="-7" cy="0" r="5" style="transform-box:fill-box;transform-origin:center"/>
+      <circle class="wx-wheel2" cx="7" cy="0" r="5" style="transform-box:fill-box;transform-origin:center"/>
+      <path d="M-7,0 L0,-8 L7,0 M0,-8 L-2,-12 M-7,0 L2,-9"/>
+      <circle cx="-2" cy="-12.5" r="1.6" fill="${c.ink}" stroke="none"/>
+      <path d="M-2,-11 L0,-8 L2,-3" stroke-linecap="round"/>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-wheel1,.wx-wheel2').forEach(w=> skyLoop(w, [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}], 550, {easing:'linear'}));
+    return r;
+  }},
+  {name:'jogger', when:'any', slot:'ground', weight:4, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-6, dur = skyRnd(6500,9000);
+    const body = `<g fill="${c.ink}">
+      <circle cx="0" cy="-9" r="2.4"/>
+      <path d="M0,-7 L0,-1" stroke="${c.ink}" stroke-width="1.8" stroke-linecap="round"/>
+      <path class="wx-arm1" d="M0,-6 L-5,-8" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -6px"/>
+      <path class="wx-arm2" d="M0,-6 L5,-2" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -6px"/>
+      <path class="wx-leg1" d="M0,-1 L-4,4" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -1px"/>
+      <path class="wx-leg2" d="M0,-1 L4,4" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -1px"/>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-leg1,.wx-arm2').forEach(p=> skyLoop(p, [{transform:'rotate(30deg)'},{transform:'rotate(-30deg)'}], 240, {direction:'alternate'}));
+    r.outer.querySelectorAll('.wx-leg2,.wx-arm1').forEach(p=> skyLoop(p, [{transform:'rotate(-30deg)'},{transform:'rotate(30deg)'}], 240, {direction:'alternate'}));
+    return r;
+  }},
+  {name:'dog walker', when:'any', slot:'ground', weight:4, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-6, dur = skyRnd(13000,18000);
+    const body = `<g fill="${c.ink}">
+      <circle cx="0" cy="-9" r="2.4"/>
+      <path d="M0,-7 L0,-1" stroke="${c.ink}" stroke-width="1.8" stroke-linecap="round"/>
+      <path class="wx-arm1" d="M0,-6 L-4,-3" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -6px"/>
+      <path d="M-4,-3 L-11,3" stroke="${c.soft}" stroke-width=".8" fill="none"/>
+      <path class="wx-arm2" d="M0,-6 L4,-3" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -6px"/>
+      <path class="wx-leg1" d="M0,-1 L-2.6,5" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -1px"/>
+      <path class="wx-leg2" d="M0,-1 L2.6,5" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round" style="transform-box:fill-box;transform-origin:0px -1px"/>
+      <g transform="translate(-13,3)">
+        <path d="M-4,0 Q-6,-3 -3,-4 Q1,-5 4,-2 L4,1 Q2,3 -1,2Z"/><path d="M4,-2 L7,-3 L6,-1Z"/>
+        <path class="wx-dogleg1" d="M-2,2 L-2,5" stroke="${c.ink}" stroke-width="1" stroke-linecap="round" style="transform-box:fill-box;transform-origin:-2px 2px"/>
+        <path class="wx-dogleg2" d="M2,2 L2,5" stroke="${c.ink}" stroke-width="1" stroke-linecap="round" style="transform-box:fill-box;transform-origin:2px 2px"/>
+      </g>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-leg1,.wx-arm2').forEach(p=> skyLoop(p, [{transform:'rotate(18deg)'},{transform:'rotate(-18deg)'}], 380, {direction:'alternate'}));
+    r.outer.querySelectorAll('.wx-leg2,.wx-arm1').forEach(p=> skyLoop(p, [{transform:'rotate(-18deg)'},{transform:'rotate(18deg)'}], 380, {direction:'alternate'}));
+    r.outer.querySelectorAll('.wx-dogleg1,.wx-dogleg2').forEach((p,i)=> skyLoop(p, [{transform:'rotate(20deg)'},{transform:'rotate(-20deg)'}], 260, {direction:'alternate', delay:i*130}));
+    return r;
+  }},
+  {name:'skateboarder', when:'any', slot:'ground', weight:3, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-5, dur = skyRnd(6000,8500);
+    const body = `<g fill="${c.ink}">
+      <circle cx="1" cy="-10" r="2.2"/>
+      <path d="M1,-8 L-2,-2" stroke="${c.ink}" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M1,-8 L5,-3" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M-2,-2 L-6,1" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M-2,-2 L2,1" stroke="${c.ink}" stroke-width="1.4" stroke-linecap="round"/>
+      <rect x="-8" y="1.4" width="16" height="1.6" rx=".8"/>
+      <circle class="wx-wheel1" cx="-5" cy="3.4" r="1.4" style="transform-box:fill-box;transform-origin:center"/>
+      <circle class="wx-wheel2" cx="5" cy="3.4" r="1.4" style="transform-box:fill-box;transform-origin:center"/>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-wheel1,.wx-wheel2').forEach(w=> skyLoop(w, [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}], 200, {easing:'linear'}));
+    return r;
+  }},
+  {name:'car', when:'any', slot:'ground', weight:6, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-4, dur = skyRnd(5500,8000);
+    const col = skyPick(['#E4573D','#3A86FF','#4CAF6A','#F2B632','#9B5DE5','#F28C38']);
+    const body = `<g>
+      <path d="M-16,0 L-14,-6 Q-11,-10 -4,-10 L4,-10 Q9,-10 12,-6 L16,-2 L16,0Z" fill="${col}"/>
+      <path d="M-10,-9.5 L-6,-9.5 L-6,-5 L-12,-5Z" fill="${c.light}" opacity=".85"/>
+      <path d="M-4,-9.5 L2,-9.5 L4,-5 L-4,-5Z" fill="${c.light}" opacity=".85"/>
+      <circle class="wx-wheel1" cx="-9" cy="1" r="3.4" fill="${c.ink}" style="transform-box:fill-box;transform-origin:center"/>
+      <circle class="wx-wheel2" cx="9" cy="1" r="3.4" fill="${c.ink}" style="transform-box:fill-box;transform-origin:center"/>
+      ${skyLights(c,15,-2,'#FFD166')}
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-wheel1,.wx-wheel2').forEach(w=> skyLoop(w, [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}], 260, {easing:'linear'}));
+    return r;
+  }},
+  {name:'bus', when:'any', slot:'ground', weight:3, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-4, dur = skyRnd(8500,11500);
+    const body = `<g>
+      <rect x="-22" y="-16" width="44" height="16" rx="2" fill="#F2C230"/>
+      <rect x="-18" y="-13" width="6" height="6" fill="${c.light}" opacity=".85"/>
+      <rect x="-9" y="-13" width="6" height="6" fill="${c.light}" opacity=".85"/>
+      <rect x="0" y="-13" width="6" height="6" fill="${c.light}" opacity=".85"/>
+      <rect x="9" y="-13" width="6" height="6" fill="${c.light}" opacity=".85"/>
+      <rect x="-22" y="-6" width="44" height="4" fill="${c.ink}" opacity=".25"/>
+      <circle class="wx-wheel1" cx="-13" cy="1" r="3.6" fill="${c.ink}" style="transform-box:fill-box;transform-origin:center"/>
+      <circle class="wx-wheel2" cx="13" cy="1" r="3.6" fill="${c.ink}" style="transform-box:fill-box;transform-origin:center"/>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-wheel1,.wx-wheel2').forEach(w=> skyLoop(w, [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}], 320, {easing:'linear'}));
+    return r;
+  }},
+  {name:'delivery truck', when:'any', slot:'ground', weight:3, run(c){
+    const dir = Math.random()<0.5 ? -1 : 1, groundY = c.H-4, dur = skyRnd(7000,9500);
+    const body = `<g>
+      <rect x="-20" y="-14" width="26" height="14" rx="1.5" fill="${c.light}" stroke="${c.ink}" stroke-width=".6"/>
+      <path d="M6,-14 L16,-14 Q20,-14 20,-9 L20,0 L6,0Z" fill="${c.ink}" opacity=".75"/>
+      <rect x="11" y="-11" width="6" height="5" fill="#9ADBE8" opacity=".9"/>
+      <circle class="wx-wheel1" cx="-11" cy="1" r="3.4" fill="${c.ink}" style="transform-box:fill-box;transform-origin:center"/>
+      <circle class="wx-wheel2" cx="11" cy="1" r="3.4" fill="${c.ink}" style="transform-box:fill-box;transform-origin:center"/>
+    </g>`;
+    const r = skyCross(c, body, {y:groundY, dur, amp:0, cycles:0, tilt:0, dir, layer:c.sky});
+    r.outer.querySelectorAll('.wx-wheel1,.wx-wheel2').forEach(w=> skyLoop(w, [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}], 300, {easing:'linear'}));
+    return r;
   }},
   {name:'balloon bunch', when:'day', slot:'flyer', weight:3, run(c){
     const cols = ['#E4573D','#F2B632','#3A86FF','#4CAF6A','#9B5DE5','#F28C38'], x = skyRnd(c.x0+c.vis*.2, c.x0+c.vis*.85), T = skyRnd(14000,18000);
