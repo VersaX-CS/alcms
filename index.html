@@ -5787,23 +5787,41 @@ async function storeGet(key){
   }catch(e){ /* key missing or storage unavailable — fall through */ }
   return __mem[key] !== undefined ? __mem[key] : null;
 }
+/* Writes to the same key can be fired off in quick succession without being awaited — e.g.
+   "Save changes" in Personalization runs 8 separate section-save functions back to back, each
+   of which calls savePrefs() itself. Those are all async persistent-storage writes to the same
+   PREFS_KEY; without ordering, a slower-finishing earlier write (still holding a stale snapshot
+   of PREFS, taken before a later section's change) can land AFTER a faster-finishing later write
+   and silently overwrite it — which is exactly how a just-picked Quick Action icon (or any other
+   Personalization change saved in that batch) could revert back on the next reload. Chaining every
+   storeSet through one queue guarantees writes finish in the same order they were started, so the
+   last change made is always the last — and therefore winning — write. */
+let __storeWriteQueue = Promise.resolve();
 async function storeSet(key, value){
   __mem[key] = value; // always keep an in-memory copy so the app works even if persistence fails
-  try{
-    if(STORAGE_BACKEND==='claude'){ await window.storage.set(key, value, false); return true; }
-    if(STORAGE_BACKEND==='local'){ localStorage.setItem(LOCAL_PREFIX+key, value); return true; }
-  }catch(e){
-    console.warn('Persistent storage unavailable — change was kept in-memory only for this tab.', e);
-    return false;
-  }
-  return true;
+  const write = async ()=>{
+    try{
+      if(STORAGE_BACKEND==='claude'){ await window.storage.set(key, value, false); return true; }
+      if(STORAGE_BACKEND==='local'){ localStorage.setItem(LOCAL_PREFIX+key, value); return true; }
+    }catch(e){
+      console.warn('Persistent storage unavailable — change was kept in-memory only for this tab.', e);
+      return false;
+    }
+    return true;
+  };
+  __storeWriteQueue = __storeWriteQueue.then(write, write);
+  return __storeWriteQueue;
 }
 async function storeDelete(key){
   delete __mem[key];
-  try{
-    if(STORAGE_BACKEND==='claude'){ await window.storage.delete(key, false); return; }
-    if(STORAGE_BACKEND==='local'){ localStorage.removeItem(LOCAL_PREFIX+key); return; }
-  }catch(e){ /* ignore */ }
+  const del = async ()=>{
+    try{
+      if(STORAGE_BACKEND==='claude'){ await window.storage.delete(key, false); }
+      else if(STORAGE_BACKEND==='local'){ localStorage.removeItem(LOCAL_PREFIX+key); }
+    }catch(e){ /* ignore */ }
+  };
+  __storeWriteQueue = __storeWriteQueue.then(del, del);
+  return __storeWriteQueue;
 }
 /* Clears everything alcms has cached/stored in this browser (localStorage under the 'alcms:'
    prefix — database, preferences, saved login/session, admin key, GitHub sync config, auto-
@@ -7284,12 +7302,17 @@ function getReservationsReadyForPickup(){
   return (DB.reservations || []).filter(r => r.status === 'READY').length;
 }
 
-/* live status of a loan */
+/* live status of a loan. A loan only becomes OVERDUE the day *after* its due date — the due
+   date itself still reads BORROWED so the borrower isn't flagged overdue before the day is even
+   over. */
 function txnStatus(t){
   if(t.finalStatus) return t.finalStatus; // e.g. MISSING, set explicitly on return
   if(t.returnDate) return 'RETURNED';
   const due = parseAnyDate(t.dueDate);
-  if(due && new Date() > due) return 'OVERDUE';
+  if(due){
+    const overdueFrom = new Date(due.getFullYear(), due.getMonth(), due.getDate()+1);
+    if(new Date() >= overdueFrom) return 'OVERDUE';
+  }
   return 'BORROWED';
 }
 
@@ -7653,9 +7676,7 @@ function checkScheduleAlerts(){
   // to duplicate the same info as a plain line above the interactive one.
   const bodyHtml = due.map(r=>{
     const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const individualHtml = renderIndividualFreeHtml(r[5]);
-    const classesLabel = classes.length ? esc(classes.join(', ')) : (individualHtml ? '' : 'No class assigned');
-    return `<div style="margin:0 0 8px"><strong>${esc(r[1])} period</strong>${classesLabel? ` — ${classesLabel}`:''}${r[4]?` <span style="color:var(--muted)">(${esc(r[4])})</span>`:''}${individualHtml}</div>`;
+    const individualHtml = renderIndividualFreeHtml(r[5], todayISO());
   }).join('');
   pushNotification({type:'schedule', title:'Class period starting now', body:due.map(r=>r[1]+' — '+scheduleRowClassSummary(r)).join(', '), route:'schedule'});
   openTimedAlert({title:'Class period starting now', bodyHtml, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; render(); }}]});
@@ -11502,7 +11523,7 @@ function pageDashboard(){
           // how many of its students are free, and the subject they're not offered — with the
           // actual names tucked behind a hint (renderIndividualFreeHtml's own <details>) rather
           // than crowding the dashboard row.
-          const individualHtml = renderIndividualFreeHtml(r[5]);
+          const individualHtml = renderIndividualFreeHtml(r[5], today);
           const classesLabel = classes.length ? esc(classes.join(', '))
             : (individualHtml ? '' : 'No class assigned');
           return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
@@ -13528,10 +13549,10 @@ function viewSubjects(userId){
   if(saveBtn) saveBtn.onclick = ()=>{
     const chosen = $$('.subjChk').filter(c=>c.checked).map(c=>c.value);
     u.subjects = chosen;
-    saveDB('Subjects updated for '+u.name); close(); render(); toast('Subjects updated for '+u.name);
+    syncLibrarySchedulePersonalFree(); saveDB('Subjects updated for '+u.name); close(); render(); toast('Subjects updated for '+u.name);
   };
   const resetBtn = $('#mResetDefault');
-  if(resetBtn) resetBtn.onclick = ()=>{ delete u.subjects; saveDB('Subjects reset to class default'); close(); render(); toast('Reset to class default'); };
+  if(resetBtn) resetBtn.onclick = ()=>{ delete u.subjects; syncLibrarySchedulePersonalFree(); saveDB('Subjects reset to class default'); close(); render(); toast('Reset to class default'); };
 }
 
 /* ================= PAGE: CIRCULATION ================= */
@@ -13545,12 +13566,12 @@ function saveMemberSubjectsTab(id){
   if(!isAdmin()) return requireAdmin('edit member subjects');
   const u = DB.users.find(x=>x.id===id); if(!u) return;
   const chosen = $$('.subjChkProfile').filter(c=>c.checked).map(c=>c.value);
-  u.subjects = chosen; saveDB('Subjects updated for '+u.name); render(); toast('Subjects updated for '+u.name);
+  u.subjects = chosen; syncLibrarySchedulePersonalFree(); saveDB('Subjects updated for '+u.name); render(); toast('Subjects updated for '+u.name);
 }
 function resetMemberSubjectsTab(id){
   if(!isAdmin()) return requireAdmin('edit member subjects');
   const u = DB.users.find(x=>x.id===id); if(!u) return;
-  delete u.subjects; saveDB('Subjects reset to class default'); render(); toast('Reset to class default');
+  delete u.subjects; syncLibrarySchedulePersonalFree(); saveDB('Subjects reset to class default'); render(); toast('Reset to class default');
 }
 function printMemberSubjectsTab(id){
   const u = DB.users.find(x=>x.id===id); if(!u) return;
@@ -13581,7 +13602,7 @@ function memberProfileBodyHtml(u){
   const tabs = [
     {key:'loans', label:`Loans (${active.length})`},
   ];
-  if(u.category!=='STAFF') tabs.push({key:'subjects', label:'Subjects'});
+  if(u.category!=='STAFF') tabs.push({key:'subjects', label:`Subjects (${studentSubjects(u).length})`});
   tabs.push({key:'visits', label:`Visits (${visits.length})`});
   if(DB.setup.fineEnabled && fines.length) tabs.push({key:'fines', label:`Fines (${fines.length})`});
   if(holds.length) tabs.push({key:'reservations', label:`Reservations (${holds.length})`});
@@ -18943,16 +18964,41 @@ function scheduleRowClassSummary(r){
   }
   return 'No class assigned';
 }
-function renderIndividualFreeHtml(breakdown){
+/* True once a free student has actually walked in and signed the register on `dateKey`. Check-in
+   isn't tracked per period in the register, so this only asks "did they come to the library at
+   all that day" — any DESK or CLASS entry for them on that date counts. */
+function studentCheckedInOnDate(userId, dateKey){
+  if(!userId || !dateKey) return false;
+  return (DB.registerLog||[]).some(r=> r.id===userId && (r.date||'').slice(0,10)===dateKey);
+}
+function renderIndividualFreeHtml(breakdown, dateKey){
   if(!breakdown || typeof breakdown!=='object') return '';
   const parts = Object.entries(breakdown).filter(([,info])=>info && info.students && info.students.length);
   if(!parts.length) return '';
-  return parts.map(([cls,info])=>`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--muted-label)">${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})</summary><div style="font-size:12px;margin:4px 0 0 10px">${info.students.map(esc).join(', ')}</div></details>`).join('');
+  // Without a dateKey (the weekly template view, which isn't tied to an actual calendar date)
+  // this renders exactly as before — just the names, no check-in status.
+  return parts.map(([cls,info])=>{
+    let checkedCount = 0;
+    const rows = info.students.map(name=>{
+      if(!dateKey) return esc(name);
+      const u = classStudents(cls).find(s=>s.name===name);
+      const checkedIn = u ? studentCheckedInOnDate(u.id, dateKey) : false;
+      if(checkedIn) checkedCount++;
+      const badge = u
+        ? (checkedIn ? ' <span class="badge green" style="font-size:9.5px;padding:1px 5px;margin-left:3px">✓ checked in</span>' : ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>')
+        : '';
+      return `<span style="white-space:nowrap">${esc(name)}${badge}</span>`;
+    });
+    const summarySuffix = dateKey ? ` — <strong>${checkedCount}/${info.students.length}</strong> checked in` : '';
+    return `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--muted-label)">${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div style="font-size:12px;margin:4px 0 0 10px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></details>`;
+  }).join('');
 }
-function autoBuildLibrarySchedule(){
-  if(!isAdmin()) return requireAdmin('auto-build the library schedule');
+/* Shared by autoBuildLibrarySchedule (the explicit, confirm-then-apply admin action) and
+   syncLibrarySchedulePersonalFree (a silent refresh fired whenever a student's own subject
+   combination changes). Both need the exact same "who's personally free this period" logic,
+   so it lives here once rather than drifting apart in two copies. */
+function computeLibraryScheduleProposals(){
   const classesWithTimetable = Object.keys(DB.classTimetable||{}).filter(c=> DB.classTimetable[c] && Object.keys(DB.classTimetable[c]).length);
-  if(!classesWithTimetable.length){ alertModal('Enter at least one class\'s subject timetable first, from the Class timetable tab.'); return; }
   const proposals = {};
   const individualFree = {}; // 'DAY|PERIOD' -> { [cls]: {subject, students:[names]} }
   classesWithTimetable.forEach(cls=>{
@@ -18998,6 +19044,12 @@ function autoBuildLibrarySchedule(){
       if(reason==='library') proposals[key].reason = 'library';
     });
   });
+  return {classesWithTimetable, proposals, individualFree};
+}
+function autoBuildLibrarySchedule(){
+  if(!isAdmin()) return requireAdmin('auto-build the library schedule');
+  const {classesWithTimetable, proposals, individualFree} = computeLibraryScheduleProposals();
+  if(!classesWithTimetable.length){ alertModal('Enter at least one class\'s subject timetable first, from the Class timetable tab.'); return; }
   const keys = Object.keys(proposals);
   const individualKeys = Object.keys(individualFree);
   if(!keys.length && !individualKeys.length){ alertModal('No Library-tagged, free, or partly-free periods were found in the timetables entered so far.'); return; }
@@ -19036,6 +19088,23 @@ function autoBuildLibrarySchedule(){
       row[5] = Object.assign({}, row[5], breakdown);
     });
     saveDB('Library schedule auto-built from class timetable'); render(); toast(`${added} period(s) added, ${merged} updated`);
+  });
+}
+/* Silent counterpart to autoBuildLibrarySchedule: fired automatically whenever a student's own
+   subject combination changes (member profile "Subjects" tab, the Subjects modal, or the class
+   default subject distribution in Setup). It never adds or removes schedule periods and never
+   pops a confirm/toast of its own — it only refreshes the "individually free" breakdown (row[5])
+   on periods that already exist in the weekly schedule, so that breakdown never goes stale after
+   an edit. Callers fold this into their own saveDB()/render() so nothing extra shows on screen. */
+function syncLibrarySchedulePersonalFree(){
+  if(!DB.scheduleDays || !DB.scheduleDays.length) return;
+  if(!DB.classTimetable || !Object.keys(DB.classTimetable).length) return;
+  const {individualFree} = computeLibraryScheduleProposals();
+  DB.scheduleDays.forEach(row=>{
+    const key = row[0]+'|'+row[1];
+    const fresh = individualFree[key];
+    if(fresh && Object.keys(fresh).length) row[5] = fresh;
+    else if(row[5]) delete row[5];
   });
 }
 function scheduleFields(r){
@@ -22137,7 +22206,7 @@ function saveClassSubjects(){
     if(cb.checked) map[cb.dataset.cls].push(cb.value);
   });
   DB.setup.classSubjects = Object.assign(DB.setup.classSubjects, map);
-  saveDB('Class subject distribution updated'); render(); toast('Class subject distribution saved');
+  syncLibrarySchedulePersonalFree(); saveDB('Class subject distribution updated'); render(); toast('Class subject distribution saved');
 }
 function saveClockPrefs(silent){
   if($('#setClockFormat')) DB.setup.clockFormat = $('#setClockFormat').value;
@@ -23847,14 +23916,7 @@ function openScheduleModal() {
     scheduleContent = sorted.map(r=>{
       const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
       const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
-      const individualHtml = renderIndividualFreeHtml(r[5]);
-      const classesLabel = classes.length ? esc(classes.join(', '))
-        : (individualHtml ? '' : 'No class assigned');
-      return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
-        <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
-        <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
-        ${individualHtml}</div>
-        ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
+      const individualHtml = renderIndividualFreeHtml(r[5], today);
     }).join('');
   }
   
