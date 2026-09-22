@@ -14649,7 +14649,10 @@ function issueBook(){
     const trx = doIssueOne(user, book);
     saveDB(`${book.title} issued to ${user.name}`); render(); 
     // QUICK ACTION MODAL FIX: Refresh the modal pickers after action (don't wait for manual close/reopen)
-    setTimeout(()=>{ bindCirculationPickers(); }, 0);
+    // Also explicitly clear both fields — rebinding alone leaves the just-picked member/title
+    // sitting in the input, since the modal's HTML (unlike the Circulation page) isn't rebuilt
+    // by render(), only rebound.
+    setTimeout(()=>{ bindCirculationPickers(); issuePicker && issuePicker.clear(); window.__issueBookPicker && window.__issueBookPicker.clear(); }, 0);
     toast(`${book.title} issued to ${user.name} — due ${fmtDate(trx.dueDate)}`);
   });
 }
@@ -14705,7 +14708,9 @@ function issueStagedBooks(){
   issueStaging = [];
   saveDB(`${issued} item(s) issued to ${user.name}`); render(); 
   // QUICK ACTION MODAL FIX: Refresh the modal pickers and staging area (don't wait for manual close/reopen)
-  setTimeout(()=>{ bindCirculationPickers(); renderIssueStaging(); renderReturnStaging(); }, 0);
+  // Clear the member field too — the batch for this member is done, so leaving their ID sitting
+  // in the input (rebinding alone doesn't clear it) would make the next issue look pre-picked.
+  setTimeout(()=>{ bindCirculationPickers(); issuePicker && issuePicker.clear(); renderIssueStaging(); renderReturnStaging(); }, 0);
   toast(`${issued} item(s) issued to ${user.name}`);
 }
 /* Evaluates the school's configured discipline policy (Setup → Discipline & consequences)
@@ -14772,7 +14777,10 @@ function returnBook(){
   const {wasOverdue, isMissing, book, consequences} = doReturnOne(trx, condition);
   saveDB(`Item returned: ${book?book.title:'Title'}`); render();
   // QUICK ACTION MODAL FIX: Refresh the modal pickers after action (don't wait for manual close/reopen)
-  setTimeout(()=>{ bindCirculationPickers(); }, 0);
+  // Also explicitly clear the loan field — rebinding alone leaves the just-returned loan sitting
+  // in the input, since the modal's HTML (unlike the Circulation page) isn't rebuilt by render(),
+  // only rebound.
+  setTimeout(()=>{ bindCirculationPickers(); returnPicker && returnPicker.clear(); }, 0);
   if(consequences && consequences.length){
     toast(`⚠ Consequence triggered: ${consequences.map(c=>c.rule.consequence).join(' · ')}`);
   } else {
@@ -14815,7 +14823,9 @@ function returnStagedBooks(){
   returnStaging = [];
   saveDB(`${count} item(s) returned`); render();
   // QUICK ACTION MODAL FIX: Refresh the modal pickers and staging area (don't wait for manual close/reopen)
-  setTimeout(()=>{ bindCirculationPickers(); renderIssueStaging(); renderReturnStaging(); }, 0);
+  // Also clear the loan field defensively — a loan can be left picked in it without ever being
+  // added to the staged batch, and rebinding alone wouldn't clear that leftover value either.
+  setTimeout(()=>{ bindCirculationPickers(); returnPicker && returnPicker.clear(); renderIssueStaging(); renderReturnStaging(); }, 0);
   toast(`${count} item(s) returned${csqCount? ` — ⚠ ${csqCount} consequence(s) triggered, see Register`:''}`);
 }
 /* ================= FINES ================= */
