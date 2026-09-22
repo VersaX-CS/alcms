@@ -7676,7 +7676,9 @@ function checkScheduleAlerts(){
   // to duplicate the same info as a plain line above the interactive one.
   const bodyHtml = due.map(r=>{
     const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const individualHtml = renderIndividualFreeHtml(r[5], todayISO());
+    const individualHtml = renderIndividualFreeHtml(r[5], todayISO(), r[1]);
+    const classesSummary = classes.length ? `<p style="margin:4px 0"><strong>${esc(r[1])}</strong> — ${classes.map(c=>esc(c)).join(', ')}</p>` : '';
+    return classesSummary + individualHtml;
   }).join('');
   pushNotification({type:'schedule', title:'Class period starting now', body:due.map(r=>r[1]+' — '+scheduleRowClassSummary(r)).join(', '), route:'schedule'});
   openTimedAlert({title:'Class period starting now', bodyHtml, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; render(); }}]});
@@ -11523,7 +11525,7 @@ function pageDashboard(){
           // how many of its students are free, and the subject they're not offered — with the
           // actual names tucked behind a hint (renderIndividualFreeHtml's own <details>) rather
           // than crowding the dashboard row.
-          const individualHtml = renderIndividualFreeHtml(r[5], today);
+          const individualHtml = renderIndividualFreeHtml(r[5], today, r[1]);
           const classesLabel = classes.length ? esc(classes.join(', '))
             : (individualHtml ? '' : 'No class assigned');
           return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
@@ -18971,7 +18973,19 @@ function studentCheckedInOnDate(userId, dateKey){
   if(!userId || !dateKey) return false;
   return (DB.registerLog||[]).some(r=> r.id===userId && (r.date||'').slice(0,10)===dateKey);
 }
-function renderIndividualFreeHtml(breakdown, dateKey){
+
+// Check if a student is checked in for a specific period on a specific date
+// This is more precise than studentCheckedInOnDate — it checks the exact period
+function studentCheckedInForPeriod(userId, dateKey, period){
+  if(!userId || !dateKey || !period) return false;
+  return (DB.registerLog||[]).some(r=> 
+    r.id===userId && 
+    (r.date||'').slice(0,10)===dateKey && 
+    (r.period||'').toLowerCase() === period.toLowerCase()
+  );
+}
+
+function renderIndividualFreeHtml(breakdown, dateKey, period){
   if(!breakdown || typeof breakdown!=='object') return '';
   const parts = Object.entries(breakdown).filter(([,info])=>info && info.students && info.students.length);
   if(!parts.length) return '';
@@ -18982,7 +18996,8 @@ function renderIndividualFreeHtml(breakdown, dateKey){
     const rows = info.students.map(name=>{
       if(!dateKey) return esc(name);
       const u = classStudents(cls).find(s=>s.name===name);
-      const checkedIn = u ? studentCheckedInOnDate(u.id, dateKey) : false;
+      // Use period-specific check if period is provided, otherwise check any check-in on that date
+      const checkedIn = u ? (period ? studentCheckedInForPeriod(u.id, dateKey, period) : studentCheckedInOnDate(u.id, dateKey)) : false;
       if(checkedIn) checkedCount++;
       const badge = u
         ? (checkedIn ? ' <span class="badge green" style="font-size:9.5px;padding:1px 5px;margin-left:3px">✓ checked in</span>' : ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>')
@@ -23916,7 +23931,9 @@ function openScheduleModal() {
     scheduleContent = sorted.map(r=>{
       const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
       const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
-      const individualHtml = renderIndividualFreeHtml(r[5], today);
+      const individualHtml = renderIndividualFreeHtml(r[5], today, r[1]);
+      const periodLabel = `<div style="margin-bottom:12px;padding:8px;background:var(--subtle-bg);border-radius:4px"><strong>${esc(r[1]||'Period')}</strong> — ${esc(r[2]||'')}</div>`;
+      return individualHtml ? periodLabel + individualHtml : '';
     }).join('');
   }
   
