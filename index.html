@@ -9100,7 +9100,11 @@ function openModal({title, fields, values={}, onSave, wide, validate, postRender
       if(f.required && !out[f.key]){ toast(`"${f.label}" is required`); return; }
     }
     if(validate){ const err = validate(out); if(err){ toast(err); return; } }
-    onSave(out); close();
+    // onSave can return the string 'keepOpen' to signal that it has already replaced the
+    // modal's own content (e.g. to reset the form for another entry) — in that case the modal
+    // shouldn't also be torn down here, or the freshly-rebuilt form would vanish immediately.
+    const result = onSave(out);
+    if(result!=='keepOpen') close();
   };
   if(postRender) postRender(root);
   return close;
@@ -12683,15 +12687,27 @@ function openBookForm(acc){
       } else {
         vals.dateAdded = todayISO();
         vals.history = [{date:vals.dateAdded, condition:vals.condition, shelf:vals.shelf, available:vals.available, note:'Added to catalogue'}];
-        DB.catalogue.push(vals); toast('Title added to catalogue');
+        DB.catalogue.push(vals); toast('Title added — ready for the next one');
       }
       logActivity('catalogue', existing?'edit':'add', `${existing?'Updated':'Added'} "${vals.title}" (${vals.acc})`);
       saveDB(`${existing?'Title updated':'Title added'}: ${vals.title}`); render();
+      // Adding (not editing) a title is almost always followed by adding another — keep the
+      // modal open and reopen a fresh "Add title" form (new accession number, blank fields)
+      // instead of closing, so a batch of titles can be entered without reopening the modal
+      // each time. Editing an existing title still closes as before.
+      if(!existing){
+        openBookForm();
+        return 'keepOpen';
+      }
     },
     postRender: ()=>{
       bindIsbnAutoLookup();
       if(existing) return; // don't second-guess an already-classified title being edited
       const titleEl = document.getElementById('f_title'), catEl = document.getElementById('f_category');
+      // Freshly (re)opened "Add title" form — put the cursor straight into ISBN (the usual
+      // starting point when batching in titles) so the next entry can begin without a click.
+      const isbnEl = document.getElementById('f_isbn');
+      if(isbnEl) setTimeout(()=> isbnEl.focus(), 30);
       if(titleEl) titleEl.addEventListener('blur', ()=>applyMainClassSuggestion());
       if(catEl) catEl.addEventListener('blur', ()=>applyMainClassSuggestion());
       const mainClassEl = document.getElementById('f_mainClass');
