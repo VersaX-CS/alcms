@@ -5370,6 +5370,9 @@ function previewQuickActionIcon(id){
   document.querySelectorAll('[data-qa-icon-id]').forEach(el=>{
     el.classList.toggle('selected', el.dataset.qaIconId === id);
   });
+  // Immediately save the preference when an icon is selected (don't wait for Save button)
+  // This ensures the choice persists even if the user closes/navigates away
+  saveQuickActionIconPrefs(true);
 }
 function saveQuickActionIconPrefs(silent){
   PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
@@ -14604,8 +14607,12 @@ function autoCheckInForCirculation(user, purpose, borrowFlag, actionLabel, title
   }
   if(memberCheckinBlockReason(user)) return; // e.g. INACTIVE — don't silently add them to the register
   if(!Array.isArray(DB.registerLog)) DB.registerLog = [];
+  const now = new Date();
+  const checkInTime = now.toTimeString().slice(0,5);
+  const weekday = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][now.getDay()];
+  const computedPeriod = getPeriodFromCheckInTime(checkInTime, weekday) || '';
   DB.registerLog.unshift({
-    entryId: uid('REG'), source:'DESK', date: todayISO(), timeIn: new Date().toTimeString().slice(0,5), timeOut:'', period:'',
+    entryId: uid('REG'), source:'DESK', date: todayISO(), timeIn: checkInTime, timeOut:'', period: computedPeriod,
     id:user.id, name:user.name, category:user.category, cls:user.cls, purpose,
     conduct:'NONE', action:'NONE', borrow: borrowFlag?'YES':'NO', verifiedBy:actorName(),
     note: `Auto checked-in — ${line}`, offense:'', offenseOther:'', consequence:'', consequenceOther:''
@@ -17323,9 +17330,11 @@ function submitBatch(){
     if(reason){ blockedIds.add(s.id); blockedNames.push(s.name); return false; }
     return true;
   });
+  const weekday = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][new Date().getDay()];
+  const computedPeriod = getPeriodFromCheckInTime(timeIn, weekday) || '';
   eligible.forEach(s=>{
     DB.registerLog.unshift({
-      entryId: uid('REG'), source:'DESK', date:todayISO(), timeIn, timeOut:'', period:'',
+      entryId: uid('REG'), source:'DESK', date:todayISO(), timeIn, timeOut:'', period: computedPeriod,
       id:s.id, name:s.name, category:s.category, cls:s.cls, purpose,
       conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:actorName(), note: note || 'Batch check-in',
       offense:'', offenseOther:'', consequence:'', consequenceOther:''
@@ -18974,15 +18983,50 @@ function studentCheckedInOnDate(userId, dateKey){
   return (DB.registerLog||[]).some(r=> r.id===userId && (r.date||'').slice(0,10)===dateKey);
 }
 
+// Determine which period a check-in time falls into
+// Takes a check-in time (HH:MM format) and finds which period it belongs to
+function getPeriodFromCheckInTime(timeIn, day){
+  if(!timeIn || !day) return null;
+  const checkTime = timeIn.slice(0,5); // e.g., "09:00"
+  const periods = timetablePeriods();
+  
+  // Find which period's time range contains this check-in time
+  for(const period of periods){
+    const pt = periodTime(day, period);
+    if(pt && pt.start && pt.end){
+      // Compare times: checkTime between pt.start and pt.end
+      if(checkTime >= pt.start && checkTime <= pt.end){
+        return period;
+      }
+    }
+  }
+  return null;
+}
+
 // Check if a student is checked in for a specific period on a specific date
-// This is more precise than studentCheckedInOnDate — it checks the exact period
+// Determines period from check-in time if period field is empty
 function studentCheckedInForPeriod(userId, dateKey, period){
   if(!userId || !dateKey || !period) return false;
-  return (DB.registerLog||[]).some(r=> 
-    r.id===userId && 
-    (r.date||'').slice(0,10)===dateKey && 
-    (r.period||'').toLowerCase() === period.toLowerCase()
-  );
+  const weekday = new Date(dateKey.replace(/-/g,'/')).toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
+  
+  return (DB.registerLog||[]).some(r=> {
+    if(r.id !== userId || (r.date||'').slice(0,10) !== dateKey) return false;
+    
+    // If period field is populated, use it directly
+    if(r.period){
+      return r.period.toLowerCase() === period.toLowerCase();
+    }
+    
+    // Otherwise, calculate period from check-in time
+    if(r.timeIn){
+      const computedPeriod = getPeriodFromCheckInTime(r.timeIn, weekday);
+      if(computedPeriod && computedPeriod.toLowerCase() === period.toLowerCase()){
+        return true;
+      }
+    }
+    
+    return false;
+  });
 }
 
 function renderIndividualFreeHtml(breakdown, dateKey, period){
