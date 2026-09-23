@@ -11530,12 +11530,16 @@ function pageDashboard(){
           // actual names tucked behind a hint (renderIndividualFreeHtml's own <details>) rather
           // than crowding the dashboard row.
           const individualHtml = renderIndividualFreeHtml(r[5], today, r[1], r[2]);
+          // Same per-student check-in breakdown the Schedule page reveals on click and the
+          // Quick Action panel shows inline — surfaced here too so the dashboard doesn't just
+          // say a class was (or wasn't) fully visited without saying which students were free.
+          const classAttendanceHtml = classes.length ? renderStudentAttendanceList(today, r[1]) : '';
           const classesLabel = classes.length ? esc(classes.join(', '))
             : (individualHtml ? '' : 'No class assigned');
           return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
             <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
             <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
-            ${individualHtml}</div>
+            ${classAttendanceHtml}${individualHtml}</div>
             ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
         }).join('');
       })()}
@@ -24151,21 +24155,28 @@ function openScheduleModal() {
   } else {
     const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===today).map(r=>r.cls));
     const sorted = [...todaysPeriods].sort((a,b)=> periodSortKey(a[1]) - periodSortKey(b[1]));
+    // Mirror the Dashboard's "Today's schedule" card: always show a row per period (not just
+    // periods that happen to have library/individual-attendance data), and show class
+    // attendance AND individual free-period attendance together rather than one hiding the
+    // other — a period can have a scheduled class visiting AND a handful of other students
+    // free at the same time.
     scheduleContent = sorted.map(r=>{
       const periodName = r[1] || '';
       const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
       const hasScheduledClass = classes.length > 0;
       const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
       const individualHtml = renderIndividualFreeHtml(r[5], today, periodName, r[2]);
-      const periodLabel = `<div style="margin-bottom:12px;padding:8px;background:var(--subtle-bg);border-radius:4px"><strong>${esc(periodName||'Period')}</strong> — ${esc(r[2]||'')}</div>`;
-      
-      // For scheduled classes (library period), show individual attendance
-      let classAttendanceHtml = '';
-      if(hasScheduledClass) {
-        classAttendanceHtml = renderStudentAttendanceList(today, periodName);
-      }
-      
-      return (individualHtml || classAttendanceHtml) ? periodLabel + (classAttendanceHtml || individualHtml) : '';
+      const classAttendanceHtml = hasScheduledClass ? renderStudentAttendanceList(today, periodName) : '';
+      const classesLabel = classes.length ? esc(classes.join(', ')) : (individualHtml ? '' : 'No class assigned');
+      const periodLabel = `<div style="margin-bottom:12px;padding:8px;background:var(--subtle-bg);border-radius:4px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div><strong>${esc(periodName||'Period')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
+          <div class="meta" style="font-size:11px;color:var(--muted-label);margin-top:2px">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}</div></div>
+          ${allVisited?'<span class="badge green">VISITED</span>':''}
+        </div>
+        ${classAttendanceHtml}${individualHtml}
+      </div>`;
+      return periodLabel;
     }).join('');
   }
   
