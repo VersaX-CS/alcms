@@ -11541,7 +11541,11 @@ function pageDashboard(){
   const issuedToday = t.filter(x=>(x.dateBorrowed||'').slice(0,10)===today).length;
   const returnedToday = t.filter(x=>(x.returnDate||'').slice(0,10)===today).length;
   const visitsToday = DB.registerLog.filter(x=> (parseAnyDate(x.date)||0) && fmtDate(x.date)===fmtDate(today)).length;
-  const recent = [...t].sort((a,b)=>(parseAnyDate(b.dateBorrowed)||0)-(parseAnyDate(a.dateBorrowed)||0)).slice(0,6);
+  // "Recent" means most recently *acted on* — whichever is later, the borrow or the return —
+  // not just most recently borrowed. Otherwise a loan returned today but borrowed weeks ago
+  // wouldn't surface here even though returning it was the most recent circulation event.
+  const lastActivityTime = x=> Math.max(parseAnyDate(x.dateBorrowed)||0, parseAnyDate(x.returnDate)||0);
+  const recent = [...t].sort((a,b)=> lastActivityTime(b) - lastActivityTime(a)).slice(0,6);
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
   return `
   <div class="panel-head panel-head-row" style="margin-bottom:14px">
@@ -11588,23 +11592,6 @@ function pageDashboard(){
       ${dueList.length>10? `<p class="field-hint" style="margin-top:6px">+ ${dueList.length-10} more — see the full list in <a href="javascript:void(0)" onclick="route='reminders';render()">Reminder Log</a>.</p>`:''}
     </div>` : '';
   })()}
-  <div class="grid two-col">
-    <div class="card panel">
-      <div class="panel-head"><h3>Recent circulation activity</h3></div>
-      ${recent.length? recent.map(r=>{
-        const st = txnStatus(r);
-        const color = st==='RETURNED'?'#2F6B44':st==='OVERDUE'?'#A8452F':st==='MISSING'?'#6b1f1f':'#B8863E';
-        return `<div class="activity-row${isMemberInactive(r.userId)?' row-muted':''}"><div class="dot" style="background:${color}"></div>
-          <div style="flex:1"><strong>${memberNameHtml(r.name, r.userId)}</strong> ${st==='RETURNED'||st==='MISSING'?'returned':'borrowed'} <em>${esc(r.title)}</em>
-          <div class="meta">${esc(r.acc)} · ${fmtDate(r.dateBorrowed)}${r.returnDate? ' → returned '+fmtDate(r.returnDate):''}</div></div>
-          <span class="badge ${st==='RETURNED'?'green':st==='OVERDUE'||st==='MISSING'?'red':'gold'}">${st}</span></div>`;
-      }).join('') : '<div class="empty">No circulation activity yet</div>'}
-    </div>
-    <div class="card panel">
-      <div class="panel-head"><h3>Members needing attention</h3><div class="hint"><a href="javascript:void(0)" onclick="route='users';render()">View all members</a></div></div>
-      ${renderMembersNeedingAttentionHtml()}
-    </div>
-  </div>
   <div class="card panel">
     <div class="panel-head"><h3>Today's class timetable — ${esc(weekday)}</h3><div class="hint">${(() => {
       const classes = sortedClasses().filter(c=>Object.keys(classTimetableFor(c)[weekday]||{}).length);
@@ -11636,6 +11623,23 @@ function pageDashboard(){
         return `<tr><td class="frozen-col">${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
       }).join('')}</tbody></table></div>`;
     })()}
+  </div>
+  <div class="grid two-col" style="margin-top:16px">
+    <div class="card panel">
+      <div class="panel-head"><h3>Recent circulation activity</h3></div>
+      ${recent.length? recent.map(r=>{
+        const st = txnStatus(r);
+        const color = st==='RETURNED'?'#2F6B44':st==='OVERDUE'?'#A8452F':st==='MISSING'?'#6b1f1f':'#B8863E';
+        return `<div class="activity-row${isMemberInactive(r.userId)?' row-muted':''}"><div class="dot" style="background:${color}"></div>
+          <div style="flex:1"><strong>${memberNameHtml(r.name, r.userId)}</strong> ${st==='RETURNED'||st==='MISSING'?'returned':'borrowed'} <em>${esc(r.title)}</em>
+          <div class="meta">${esc(r.acc)} · ${fmtDate(r.dateBorrowed)}${r.returnDate? ' → returned '+fmtDate(r.returnDate):''}</div></div>
+          <span class="badge ${st==='RETURNED'?'green':st==='OVERDUE'||st==='MISSING'?'red':'gold'}">${st}</span></div>`;
+      }).join('') : '<div class="empty">No circulation activity yet</div>'}
+    </div>
+    <div class="card panel">
+      <div class="panel-head"><h3>Members needing attention</h3><div class="hint"><a href="javascript:void(0)" onclick="route='users';render()">View all members</a></div></div>
+      ${renderMembersNeedingAttentionHtml()}
+    </div>
   </div>`;
 }
 function kpi(lbl,val,sub){
