@@ -17642,8 +17642,6 @@ function pageSchedule(){
         const actionBtns = isAdmin() ? `
           <button class="btn secondary small" onclick="openScheduleForm(${r.__i})">Edit</button>
           <button class="btn danger small" onclick="deleteScheduleEntry(${r.__i})">Delete</button>
-          ${status !== 'checked_in' ? `<button class="btn small" onclick="recordAttendanceStatusForPeriod('${esc(dateKey)}', '${esc(periodName)}', 'checked_in'); render()">✓ Mark checked in</button>` : ''}
-          ${status !== 'skipped' ? `<button class="btn small" onclick="recordAttendanceStatusForPeriod('${esc(dateKey)}', '${esc(periodName)}', 'skipped'); render()">⊘ Mark skipped</button>` : ''}
         ` : '';
         const colSpan = isAdmin() ? 7 : 6;
         return `
@@ -24152,13 +24150,22 @@ function openScheduleModal() {
     scheduleContent = '<div class="empty">No classes scheduled today</div>';
   } else {
     const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===today).map(r=>r.cls));
-    const sorted = [...todaysPeriods].sort((a,b)=>(a[1]||'').localeCompare(b[1]||''));
+    const sorted = [...todaysPeriods].sort((a,b)=> periodSortKey(a[1]) - periodSortKey(b[1]));
     scheduleContent = sorted.map(r=>{
+      const periodName = r[1] || '';
       const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+      const hasScheduledClass = classes.length > 0;
       const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
-      const individualHtml = renderIndividualFreeHtml(r[5], today, r[1], r[2]);
-      const periodLabel = `<div style="margin-bottom:12px;padding:8px;background:var(--subtle-bg);border-radius:4px"><strong>${esc(r[1]||'Period')}</strong> — ${esc(r[2]||'')}</div>`;
-      return individualHtml ? periodLabel + individualHtml : '';
+      const individualHtml = renderIndividualFreeHtml(r[5], today, periodName, r[2]);
+      const periodLabel = `<div style="margin-bottom:12px;padding:8px;background:var(--subtle-bg);border-radius:4px"><strong>${esc(periodName||'Period')}</strong> — ${esc(r[2]||'')}</div>`;
+      
+      // For scheduled classes (library period), show individual attendance
+      let classAttendanceHtml = '';
+      if(hasScheduledClass) {
+        classAttendanceHtml = renderStudentAttendanceList(today, periodName);
+      }
+      
+      return (individualHtml || classAttendanceHtml) ? periodLabel + (classAttendanceHtml || individualHtml) : '';
     }).join('');
   }
   
