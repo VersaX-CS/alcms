@@ -11456,53 +11456,78 @@ function qlink(ico,title,sub,go){
 }
 
 /* ================= PAGE: DASHBOARD ================= */
-/* Shared by the Dashboard's "Today's schedule" card and the Quick Action panel's "Today's
-   Schedule" modal, so the two are always in lock-step rather than two hand-maintained copies of
-   the same row markup that can quietly drift apart. */
-function renderTodaysScheduleHtml(dateKey, weekday){
-  const todaysPeriods = (DB.scheduleDays||[]).filter(r=>r[0]===weekday);
-  if(!todaysPeriods.length) return '<div class="empty">No classes scheduled today</div>';
-  const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===dateKey).map(r=>r.cls));
-  // Chronological by each period's configured start time, not an alphabetical sort on the
-  // period's name (which would misorder e.g. "Period 10" before "Period 2").
-  const sorted = [...todaysPeriods].sort((a,b)=> periodSortKey(a[1]) - periodSortKey(b[1]));
-  return sorted.map(r=>{
-    const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
-    // A period can be free for a handful of individual students (their own subject combination
-    // excludes whatever's running) without the whole class being free — that case has no entry
-    // in `classes` at all. Show it the same way the Schedule page does: which class, how many of
-    // its students are free, and the subject they're not offered — with the actual names tucked
-    // behind the free-period detail toggle rather than crowding this row.
-    const individualHtml = renderIndividualFreeHtml(r[5], dateKey, r[1], r[2]);
-    // Per-student check-in breakdown for the scheduled class, same as the Schedule page reveals
-    // on click — surfaced here too so a row doesn't just say a class was (or wasn't) fully
-    // visited without saying which students were checked in, excused, or unexplained.
-    const classAttendanceHtml = classes.length ? renderStudentAttendanceList(dateKey, r[1]) : '';
-    const classesLabel = classes.length ? esc(classes.join(', ')) : (individualHtml ? '' : 'No class assigned');
-    return `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
-      <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
-      <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
-      ${classAttendanceHtml}${individualHtml}</div>
-      ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
-  }).join('');
-}
 /* Today's entries from the Staff timetable (Schedule → Staff timetable) — an EVERYDAY event
    counts for every day, same rule the timed-alert popup already uses so this card and those
-   alerts never disagree about what's "today". */
-function renderTodaysStaffScheduleHtml(weekday){
-  const todays = (DB.staffTimetable||[]).filter(e=> e.active!==false && (e.day===weekday || e.day==='EVERYDAY'))
-    .sort((a,b)=> timeToMinutes(a.time)-timeToMinutes(b.time));
-  if(!todays.length) return '<div class="empty">No staff timetable events today</div>';
+   alerts never disagree about what's "today". Returns {sortKey, html} rows so callers can merge
+   this with other chronological lists (e.g. the class timetable) rather than block-appending it. */
+function todaysStaffScheduleRows(weekday){
+  const todays = (DB.staffTimetable||[]).filter(e=> e.active!==false && (e.day===weekday || e.day==='EVERYDAY'));
   const nowMin = new Date().getHours()*60 + new Date().getMinutes();
   return todays.map(e=>{
     const startMin = timeToMinutes(e.time);
     const isPast = startMin!=null && startMin < nowMin;
-    return `<div class="activity-row"><div class="dot" style="background:${isPast?'#8a8578':'#B8863E'}"></div>
+    const html = `<div class="activity-row"><div class="dot" style="background:${isPast?'#8a8578':'#B8863E'}"></div>
       <div style="flex:1"><strong>${esc(staffEventLabel(e))}</strong>
       <div class="meta">${esc(fmtTime(e.time))}${e.day==='EVERYDAY'? ' · every day':''}${e.notes? ' · '+esc(e.notes):''}</div></div>
       ${isPast?'<span class="badge grey">PASSED</span>':''}</div>`;
-  }).join('');
+    return {sortKey: startMin==null ? Infinity : startMin, html};
+  });
+}
+/* Class-timetable periods for today as {sortKey, html} rows, built so the Quick Action panel can
+   interleave them with the staff timetable chronologically instead of showing two separate
+   blocks. Chronological by each period's actual (or configured) start time, not an alphabetical
+   sort on the period's name (which would misorder e.g. "Period 10" before "Period 2"). */
+function todaysClassScheduleRows(dateKey, weekday){
+  const todaysPeriods = (DB.scheduleDays||[]).filter(r=>r[0]===weekday);
+  const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===dateKey).map(r=>r.cls));
+  return todaysPeriods.map(r=>{
+    const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
+    const individualHtml = renderIndividualFreeHtml(r[5], dateKey, r[1], r[2]);
+    const classAttendanceHtml = classes.length ? renderStudentAttendanceList(dateKey, r[1]) : '';
+    const classesLabel = classes.length ? esc(classes.join(', ')) : (individualHtml ? '' : 'No class assigned');
+    const html = `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
+      <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
+      <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
+      ${classAttendanceHtml}${individualHtml}</div>
+      ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
+    // Prefer the period's actual configured time for today over the general period-name sort
+    // key, so the merged list reflects what's really happening at what time today.
+    const timeKey = timeToMinutes((r[2]||'').slice(0,5));
+    return {sortKey: timeKey!=null ? timeKey : periodSortKey(r[1]), html};
+  });
+}
+/* Merged, chronological "Today's Schedule" — class periods and staff timetable events
+   interleaved by actual time, for the Quick Action panel. Each source keeps its own row style
+   (class rows show attendance detail; staff rows show a PASSED badge); only the ordering merges. */
+function renderTodaysScheduleMergedHtml(dateKey, weekday){
+  const rows = [...todaysClassScheduleRows(dateKey, weekday), ...todaysStaffScheduleRows(weekday)];
+  if(!rows.length) return '<div class="empty">Nothing scheduled today</div>';
+  rows.sort((a,b)=> a.sortKey - b.sortKey);
+  return rows.map(r=>r.html).join('');
+}
+/* Dashboard's "Members needing attention" card: suspended accounts, members carrying strikes,
+   and members one loan away from their borrowing limit. A member can be flagged for more than
+   one reason at once, in which case every matching badge is shown on their row. Sorted with
+   suspended first (most urgent), then by number of reasons, then by name. */
+function membersNeedingAttention(){
+  return (DB.users||[]).map(u=>{
+    const reasons = [];
+    if(u.status==='SUSPENDED') reasons.push({label:'SUSPENDED', cls:'red'});
+    if((u.strike||0) > 0) reasons.push({label:`${u.strike} STRIKE${u.strike===1?'':'S'}`, cls:'gold'});
+    if((u.maxAllowed||0) > 0 && u.borrowed === u.maxAllowed - 1) reasons.push({label:'NEAR LIMIT', cls:'blue'});
+    return {u, reasons};
+  }).filter(x=>x.reasons.length)
+    .sort((a,b)=> (b.u.status==='SUSPENDED') - (a.u.status==='SUSPENDED') || b.reasons.length - a.reasons.length || String(a.u.name).localeCompare(String(b.u.name)));
+}
+function renderMembersNeedingAttentionHtml(){
+  const flagged = membersNeedingAttention();
+  if(!flagged.length) return '<div class="empty">No members currently need attention</div>';
+  return flagged.slice(0,10).map(({u, reasons})=>`<div class="activity-row" style="cursor:pointer" onclick="openMemberProfileModal('${esc(u.id)}')"><div class="dot" style="background:${u.status==='SUSPENDED'?'#A8452F':'#B8863E'}"></div>
+    <div style="flex:1"><strong>${memberNameHtml(u.name, u.id)}</strong>
+    <div class="meta">${esc(u.id)}${u.cls? ' · '+esc(u.cls):''}</div></div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${reasons.map(r=>`<span class="badge ${r.cls}">${esc(r.label)}</span>`).join('')}</div></div>`).join('')
+    + (flagged.length>10? `<p class="field-hint" style="margin-top:6px">+ ${flagged.length-10} more — see the full list in <a href="javascript:void(0)" onclick="route='users';render()">Members</a>.</p>`:'');
 }
 function pageDashboard(){
   const c = DB.catalogue, u = DB.users, t = DB.circulation;
@@ -11576,8 +11601,8 @@ function pageDashboard(){
       }).join('') : '<div class="empty">No circulation activity yet</div>'}
     </div>
     <div class="card panel">
-      <div class="panel-head"><h3>Today's staff schedule — ${esc(weekday)}</h3><div class="hint"><a href="javascript:void(0)" onclick="route='schedule';setScheduleSubview('staff')">View full staff timetable</a></div></div>
-      ${renderTodaysStaffScheduleHtml(weekday)}
+      <div class="panel-head"><h3>Members needing attention</h3><div class="hint"><a href="javascript:void(0)" onclick="route='users';render()">View all members</a></div></div>
+      ${renderMembersNeedingAttentionHtml()}
     </div>
   </div>
   <div class="card panel">
@@ -24273,9 +24298,8 @@ function openScheduleModal() {
   const modal = document.getElementById('quickActionModals');
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
   const today = todayISO();
-  // Same helper the Dashboard's "Today's schedule" card uses, so this panel is a genuine
-  // replica rather than a second, hand-maintained copy of the same row markup.
-  const scheduleContent = renderTodaysScheduleHtml(today, weekday);
+  // Class timetable periods and staff timetable events, interleaved chronologically by time.
+  const scheduleContent = renderTodaysScheduleMergedHtml(today, weekday);
   
   modal.innerHTML = `
     <div class="quick-modal-overlay show" id="tempOverlay">
