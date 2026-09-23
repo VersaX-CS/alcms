@@ -11506,16 +11506,14 @@ function renderTodaysScheduleMergedHtml(dateKey, weekday){
   rows.sort((a,b)=> a.sortKey - b.sortKey);
   return rows.map(r=>r.html).join('');
 }
-/* Dashboard's "Members needing attention" card: suspended accounts, members carrying strikes,
-   and members one loan away from their borrowing limit. A member can be flagged for more than
-   one reason at once, in which case every matching badge is shown on their row. Sorted with
-   suspended first (most urgent), then by number of reasons, then by name. */
+/* Dashboard's "Members needing attention" card: suspended accounts and members carrying
+   strikes. A member can be flagged for both at once, in which case both badges show on their
+   row. Sorted with suspended first (most urgent), then by number of reasons, then by name. */
 function membersNeedingAttention(){
   return (DB.users||[]).map(u=>{
     const reasons = [];
     if(u.status==='SUSPENDED') reasons.push({label:'SUSPENDED', cls:'red'});
     if((u.strike||0) > 0) reasons.push({label:`${u.strike} STRIKE${u.strike===1?'':'S'}`, cls:'gold'});
-    if((u.maxAllowed||0) > 0 && u.borrowed === u.maxAllowed - 1) reasons.push({label:'NEAR LIMIT', cls:'blue'});
     return {u, reasons};
   }).filter(x=>x.reasons.length)
     .sort((a,b)=> (b.u.status==='SUSPENDED') - (a.u.status==='SUSPENDED') || b.reasons.length - a.reasons.length || String(a.u.name).localeCompare(String(b.u.name)));
