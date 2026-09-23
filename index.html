@@ -11487,6 +11487,23 @@ function renderTodaysScheduleHtml(dateKey, weekday){
       ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
   }).join('');
 }
+/* Today's entries from the Staff timetable (Schedule → Staff timetable) — an EVERYDAY event
+   counts for every day, same rule the timed-alert popup already uses so this card and those
+   alerts never disagree about what's "today". */
+function renderTodaysStaffScheduleHtml(weekday){
+  const todays = (DB.staffTimetable||[]).filter(e=> e.active!==false && (e.day===weekday || e.day==='EVERYDAY'))
+    .sort((a,b)=> timeToMinutes(a.time)-timeToMinutes(b.time));
+  if(!todays.length) return '<div class="empty">No staff timetable events today</div>';
+  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  return todays.map(e=>{
+    const startMin = timeToMinutes(e.time);
+    const isPast = startMin!=null && startMin < nowMin;
+    return `<div class="activity-row"><div class="dot" style="background:${isPast?'#8a8578':'#B8863E'}"></div>
+      <div style="flex:1"><strong>${esc(staffEventLabel(e))}</strong>
+      <div class="meta">${esc(fmtTime(e.time))}${e.day==='EVERYDAY'? ' · every day':''}${e.notes? ' · '+esc(e.notes):''}</div></div>
+      ${isPast?'<span class="badge grey">PASSED</span>':''}</div>`;
+  }).join('');
+}
 function pageDashboard(){
   const c = DB.catalogue, u = DB.users, t = DB.circulation;
   const withdrawn = c.filter(b=>b.available==='WITHDRAWN').length;
@@ -11559,8 +11576,8 @@ function pageDashboard(){
       }).join('') : '<div class="empty">No circulation activity yet</div>'}
     </div>
     <div class="card panel">
-      <div class="panel-head"><h3>Today's schedule — ${esc(weekday)}</h3></div>
-      ${renderTodaysScheduleHtml(today, weekday)}
+      <div class="panel-head"><h3>Today's staff schedule — ${esc(weekday)}</h3><div class="hint"><a href="javascript:void(0)" onclick="route='schedule';setScheduleSubview('staff')">View full staff timetable</a></div></div>
+      ${renderTodaysStaffScheduleHtml(weekday)}
     </div>
   </div>
   <div class="card panel">
