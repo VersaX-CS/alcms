@@ -17638,7 +17638,7 @@ function pageSchedule(){
           (status === 'checked_in' ? '<span class="badge green">✓ Checked in</span>' : '<span class="badge gold">⊘ Skipped</span>') 
           : '<span style="color:var(--muted);font-size:12px">—</span>';
         const classesText = r[3] || '';
-        const hasStudents = classesText.length > 0;
+        const hasScheduledClass = classesText.length > 0 && !classesText.toLowerCase().includes('free');
         const actionBtns = isAdmin() ? `
           <button class="btn secondary small" onclick="openScheduleForm(${r.__i})">Edit</button>
           <button class="btn danger small" onclick="deleteScheduleEntry(${r.__i})">Delete</button>
@@ -17647,14 +17647,14 @@ function pageSchedule(){
         ` : '';
         const colSpan = isAdmin() ? 7 : 6;
         return `
-          <tr onclick="${hasStudents ? `togglePeriodDetails('${periodKey}')` : ''}" style="${hasStudents ? 'cursor:pointer;background:rgba(0,0,0,0.02)' : ''}">
-            <td>${esc(periodName)}${hasStudents ? ` <span style="color:var(--muted);font-size:11px">${isExpanded ? '▼' : '▶'}</span>` : ''}</td>
+          <tr onclick="${hasScheduledClass ? `togglePeriodDetails('${periodKey}')` : ''}" style="${hasScheduledClass ? 'cursor:pointer;background:rgba(0,0,0,0.02)' : ''}">
+            <td>${esc(periodName)}${hasScheduledClass ? ` <span style="color:var(--muted);font-size:11px">${isExpanded ? '▼' : '▶'}</span>` : ''}</td>
             <td>${esc((r[2]||'').slice(0,5))}</td>
             <td>${esc(r[3]||'')}</td>
             <td>${statusBadge}</td>
             <td>${esc(r[4]||'')}${renderIndividualFreeHtml(r[5], dateKey, periodName, null)}</td>
             ${isAdmin()? `<td style="white-space:nowrap;font-size:12px">${actionBtns}</td>`:''}</tr>
-          ${isExpanded && hasStudents ? `<tr><td colspan="${colSpan}" style="padding:0;border:none;background:rgba(0,0,0,0.02)">${renderStudentAttendanceList(dateKey, periodName)}</td></tr>` : ''}
+          ${isExpanded && hasScheduledClass ? `<tr><td colspan="${colSpan}" style="padding:10px;border:none;background:rgba(0,0,0,0.04);border-left:3px solid var(--accent)">${renderStudentAttendanceList(dateKey, periodName)}</td></tr>` : ''}
         `;
       }).join('')}</tbody></table></div>`;
     }).join('') || '<div class="empty">No schedule data available</div>'}
