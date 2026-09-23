@@ -6951,6 +6951,10 @@ function migrateNewFeatureData(db){
   if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
   if(!db.classTimings || typeof db.classTimings!=='object' || Array.isArray(db.classTimings)) db.classTimings = {};
   if(!db.scheduleActivities || !Array.isArray(db.scheduleActivities)) db.scheduleActivities = [...DEFAULT_ACTIVITIES];
+  // Librarian-recorded excuses for students who skip a library period for a genuine, permitted
+  // reason — kept separate from the register log itself since an excuse isn't a visit, it's a
+  // note explaining the absence of one. Older saved data won't have this array yet.
+  if(!Array.isArray(db.excusedSkips)) db.excusedSkips = [];
   (function normalizeActivitiesToUpperCase(){
     const caseMap = {}; // lowercased -> canonical UPPERCASE form
     const upper = [];
@@ -7256,6 +7260,7 @@ function buildSeedDB(){
     catalogue, users, circulation, feedback, registerLog,
     scheduleDays: SEED_SCHEDULE_DAYS.map(r=>[...r]), scheduleRoster: SEED_SCHEDULE_ROSTER.map(r=>[...r]), scheduleSubjects: [...SEED_SCHEDULE_SUBJECTS],
     scheduleActivities: [...DEFAULT_ACTIVITIES],
+    excusedSkips: [],
     classTimetable: {},
     classTimings: {},
     staffTimetable: [
@@ -17545,11 +17550,15 @@ function getStudentsInClassesForPeriod(dateKey, period){
     const classStuds = DB.users.filter(u=>u.cls===cls && u.category==='STUDENT');
     classStuds.forEach(u => {
       const checkedIn = studentCheckedInForPeriod(u.id, dateKey, day, period, null);
+      const excuse = checkedIn ? null : findExcuseForStudent(u.id, dateKey, period);
       students.push({
         id: u.id,
         name: u.name,
         cls: cls,
-        checkedIn: checkedIn
+        checkedIn: checkedIn,
+        excused: !!excuse,
+        excuseReason: excuse ? excuse.reason : '',
+        excuseBy: excuse ? excuse.by : ''
       });
     });
   });
@@ -17557,25 +17566,94 @@ function getStudentsInClassesForPeriod(dateKey, period){
   return students.sort((a,b)=>a.name.localeCompare(b.name));
 }
 
+// A skip is "excused" only if a librarian recorded one for this exact student/date/period —
+// looked up fresh each render rather than cached on the student record, since the same student
+// can be excused one day and not the next.
+function findExcuseForStudent(userId, dateKey, period){
+  if(!userId || !dateKey || !period) return null;
+  return (DB.excusedSkips||[]).find(x=> x.id===userId && x.dateKey===dateKey && (x.period||'').toLowerCase()===String(period).toLowerCase()) || null;
+}
+// Records that a student's absence from a library period was permitted for a genuine reason
+// (sick bay, another teacher's errand, a prior arrangement, etc.) rather than an unexplained
+// no-show. Kept as its own log entry — separate from the register — since an excuse explains a
+// visit that didn't happen, it isn't a visit itself.
+function markStudentExcused(userId, dateKey, period, cls){
+  if(!isStaff()) return requireStaff('mark a student excused');
+  const student = DB.users.find(u=>u.id===userId);
+  promptModal(`Why was ${student? student.name : 'this student'} permitted to skip this library period?`, (reason)=>{
+    if(!Array.isArray(DB.excusedSkips)) DB.excusedSkips = [];
+    // Replace any existing excuse for the same student/date/period rather than stacking duplicates.
+    DB.excusedSkips = DB.excusedSkips.filter(x=> !(x.id===userId && x.dateKey===dateKey && (x.period||'').toLowerCase()===String(period).toLowerCase()));
+    DB.excusedSkips.unshift({id:userId, cls:cls||'', dateKey, period, reason:reason.trim(), by:(SESSION&&SESSION.fullName)||(SESSION&&SESSION.username)||'Staff', at:new Date().toISOString()});
+    saveDB(`Excused ${student? student.name : 'student'} from ${period}`);
+    render();
+    refreshOpenScheduleModal();
+    toast(`${student? student.name : 'Student'} marked excused`);
+  }, {title:'Mark excused', placeholder:'e.g. Sent to sick bay, approved by Mrs Adeyemi', confirmLabel:'Mark excused'});
+}
+function unmarkStudentExcused(userId, dateKey, period){
+  if(!isStaff()) return requireStaff('remove an excuse');
+  DB.excusedSkips = (DB.excusedSkips||[]).filter(x=> !(x.id===userId && x.dateKey===dateKey && (x.period||'').toLowerCase()===String(period).toLowerCase()));
+  saveDB('Excuse removed');
+  render();
+  refreshOpenScheduleModal();
+  toast('Excuse removed — back to unexplained');
+}
+// The Quick Action "Today's Schedule" panel builds its own detached HTML rather than going
+// through the normal route render, so marking/unmarking an excuse from inside it needs its own
+// refresh call alongside the regular render().
+function refreshOpenScheduleModal(){
+  const overlay = document.getElementById('tempOverlay');
+  const heading = overlay && overlay.querySelector('.quick-modal-header h2');
+  if(heading && /Today's Schedule/.test(heading.textContent)) openScheduleModal();
+}
 function renderStudentAttendanceList(dateKey, period){
   const students = getStudentsInClassesForPeriod(dateKey, period);
   if(!students.length) return '';
   
-  const checkedInCount = students.filter(s=>s.checkedIn).length;
+  const checkedIn = students.filter(s=>s.checkedIn);
+  const excused = students.filter(s=>!s.checkedIn && s.excused);
+  const unexplained = students.filter(s=>!s.checkedIn && !s.excused);
   const total = students.length;
-  const summaryClass = checkedInCount === total ? 'green' : (checkedInCount === 0 ? 'gold' : 'yellow');
+  const staff = isStaff();
   
+  const pill = (s)=>{
+    if(s.checkedIn){
+      return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(46,204,113,0.08);border-radius:3px;border-left:3px solid #27ae60">
+        <span style="font-size:11px;color:#27ae60;font-weight:600">✓</span>
+        <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
+      </span>`;
+    }
+    if(s.excused){
+      const title = `Excused${s.excuseBy? ' by '+s.excuseBy:''}${s.excuseReason? ' — '+s.excuseReason:''}`;
+      return `<span title="${esc(title)}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(74,144,226,0.1);border-radius:3px;border-left:3px solid #4a90e2">
+        <span style="font-size:11px;color:#4a90e2;font-weight:600">⚑</span>
+        <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
+        ${staff? `<a href="#" onclick="unmarkStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none;margin-left:2px">✕</a>`:''}
+      </span>`;
+    }
+    // Not checked in and not excused — a genuine no-show, distinct from a permitted skip.
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(243,156,18,0.08);border-radius:3px;border-left:3px solid #e67e22">
+      <span style="font-size:11px;color:#e67e22;font-weight:600">✗</span>
+      <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
+      ${staff? `<a href="#" onclick="markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px;margin-left:2px">excuse</a>`:''}
+    </span>`;
+  };
+  // Each status gets its own row so the three groups never run together visually — a librarian
+  // scanning for who still needs following up shouldn't have to pick unexplained names out of a
+  // mixed list of checked-in and excused ones.
+  const group = (label, list)=> list.length ? `
+    <div style="margin-bottom:6px">
+      <div style="font-size:10.5px;color:var(--muted-label);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${esc(label)} (${list.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${list.map(pill).join('')}</div>
+    </div>` : '';
+
   return `
     <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.05);border-radius:4px;font-size:12px">
-      <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedInCount}/${total} checked in</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        ${students.map(s=>`
-          <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:${s.checkedIn?'rgba(46,204,113,0.08)':'rgba(243,156,18,0.08)'};border-radius:3px;border-left:3px solid ${s.checkedIn?'#27ae60':'#e67e22'}">
-            <span style="font-size:11px;color:${s.checkedIn?'#27ae60':'#e67e22'};font-weight:600">${s.checkedIn?'✓':'✗'}</span>
-            <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
-          </span>
-        `).join('')}
-      </div>
+      <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedIn.length}/${total} checked in${excused.length? ` · ${excused.length} excused`:''}${unexplained.length? ` · ${unexplained.length} unexplained`:''}</div>
+      ${group('Checked in', checkedIn)}
+      ${group('Excused', excused)}
+      ${group('Unexplained', unexplained)}
     </div>
   `;
 }
@@ -21417,6 +21495,7 @@ const DATA_PORTAL_CATEGORIES = [
   {key:'scheduleActivities', label:'Schedule — activities', hint:''},
   {key:'classTimetable', label:'Schedule — class timetables', hint:''},
   {key:'classTimings', label:'Schedule — class timings', hint:''},
+  {key:'excusedSkips', label:'Schedule — excused library skips', hint:''},
   {key:'setup', label:'Setup & settings', hint:''},
 ];
 function downloadCategoryJSON(key){
