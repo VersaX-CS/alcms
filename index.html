@@ -3394,6 +3394,16 @@ tr.hoverable-row{ cursor:pointer;}
 .badge.blue{ background:#DEE9F3; color:var(--active-loan);}
 .badge.blue{ background:#DCE6EA; color:#3E6B7A;}
 
+/* Free-period breakdown (renderIndividualFreeHtml): an explicit chevron + button treatment on
+   <summary> so collapsing/expanding a class's free-period detail reads as a clickable control,
+   not just plain text with a faint, browser-default triangle. */
+.fp-details > summary{ list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:4px; background:rgba(0,0,0,0.04); font-size:12px; color:var(--muted-label); }
+.fp-details > summary::-webkit-details-marker{ display:none; }
+.fp-details > summary:hover{ background:rgba(0,0,0,0.08); }
+.fp-details > summary .fp-chevron{ display:inline-block; font-size:9px; transition:transform .15s ease; color:var(--muted-label); }
+.fp-details[open] > summary .fp-chevron{ transform:rotate(90deg); }
+
+
 .stamp{
   display:inline-flex; align-items:center; justify-content:center; border:2px solid currentColor;
   border-radius:5px; padding:2px 8px; font-family:Georgia,serif; font-weight:700; font-size:10.5px;
@@ -19327,7 +19337,7 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
     });
     const unexplainedCount = info.students.length - checkedCount - excusedCount;
     const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length}</strong> checked in${excusedCount? ` · ${excusedCount} excused`:''}${unexplainedCount? ` · ${unexplainedCount} unexplained`:''}` : '';
-    return `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--muted-label)">${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div style="font-size:12px;margin:4px 0 0 10px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></details>`;
+    return `<details class="fp-details" style="margin-top:4px"><summary><span class="fp-chevron">▶</span>${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div style="font-size:12px;margin:4px 0 0 10px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></details>`;
   }).join('');
 }
 /* Shared by autoBuildLibrarySchedule (the explicit, confirm-then-apply admin action) and
