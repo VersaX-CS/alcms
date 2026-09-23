@@ -17528,6 +17528,61 @@ function clearOldWeekAttendance(){
   });
 }
 
+function getStudentsInClassesForPeriod(dateKey, period){
+  // Find all classes expected during this period and their students, with check-in status
+  const day = weekdayForDateKey(dateKey);
+  const classesText = (DB.scheduleDays||[]).find(r=>r[0]===day && r[1]===period)?.[3] || '';
+  if(!classesText) return [];
+  
+  const classNames = classesText.split(',').map(c=>c.trim()).filter(Boolean);
+  const students = [];
+  
+  classNames.forEach(cls => {
+    const classStuds = DB.users.filter(u=>u.cls===cls && u.category==='STUDENT');
+    classStuds.forEach(u => {
+      const checkedIn = studentCheckedInForPeriod(u.id, dateKey, day, period, null);
+      students.push({
+        id: u.id,
+        name: u.name,
+        cls: cls,
+        checkedIn: checkedIn
+      });
+    });
+  });
+  
+  return students.sort((a,b)=>a.name.localeCompare(b.name));
+}
+
+function renderStudentAttendanceList(dateKey, period){
+  const students = getStudentsInClassesForPeriod(dateKey, period);
+  if(!students.length) return '';
+  
+  const checkedInCount = students.filter(s=>s.checkedIn).length;
+  const total = students.length;
+  const summaryClass = checkedInCount === total ? 'green' : (checkedInCount === 0 ? 'gold' : 'yellow');
+  
+  return `
+    <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.05);border-radius:4px;font-size:12px">
+      <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedInCount}/${total} checked in</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        ${students.map(s=>`
+          <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 6px;background:white;border-radius:3px;border-left:3px solid ${s.checkedIn?'#2ecc71':'#f39c12'}">
+            <span style="font-size:11px;color:${s.checkedIn?'#27ae60':'#e67e22'};font-weight:600">${s.checkedIn?'✓':'✗'}</span>
+            <span>${esc(s.name)}</span>
+          </span>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+let expandedPeriodKey = null;
+function togglePeriodDetails(key){
+  if(expandedPeriodKey === key) expandedPeriodKey = null;
+  else expandedPeriodKey = key;
+  render();
+}
+
 function pageSchedule(){
   clearOldWeekAttendance(); // Reset attendance at week boundary
   const tabsHtml = `
@@ -17576,18 +17631,30 @@ function pageSchedule(){
       <div class="table-wrap" style="margin-bottom:10px"><table class="datatable"><thead><tr><th>Period</th><th>Time</th><th>Expected class(es)</th><th>Status</th><th>Notes</th>${isAdmin()?'<th></th>':''}</tr></thead>
       <tbody>${sortedByDay[d].map(r=>{
         const periodName = r[1] || '';
+        const periodKey = `${d}|${dateKey}|${periodName}`;
+        const isExpanded = expandedPeriodKey === periodKey;
         const status = getAttendanceStatusForSchedulePeriod(dateKey, periodName);
         const statusBadge = status ? 
           (status === 'checked_in' ? '<span class="badge green">✓ Checked in</span>' : '<span class="badge gold">⊘ Skipped</span>') 
           : '<span style="color:var(--muted);font-size:12px">—</span>';
+        const classesText = r[3] || '';
+        const hasStudents = classesText.length > 0;
         const actionBtns = isAdmin() ? `
           <button class="btn secondary small" onclick="openScheduleForm(${r.__i})">Edit</button>
           <button class="btn danger small" onclick="deleteScheduleEntry(${r.__i})">Delete</button>
           ${status !== 'checked_in' ? `<button class="btn small" onclick="recordAttendanceStatusForPeriod('${esc(dateKey)}', '${esc(periodName)}', 'checked_in'); render()">✓ Mark checked in</button>` : ''}
           ${status !== 'skipped' ? `<button class="btn small" onclick="recordAttendanceStatusForPeriod('${esc(dateKey)}', '${esc(periodName)}', 'skipped'); render()">⊘ Mark skipped</button>` : ''}
         ` : '';
-        return `<tr><td>${esc(periodName)}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td>${statusBadge}</td><td>${esc(r[4]||'')}${renderIndividualFreeHtml(r[5], dateKey, periodName, null)}</td>
-          ${isAdmin()? `<td style="white-space:nowrap;font-size:12px">${actionBtns}</td>`:''}</tr>`;
+        return `
+          <tr onclick="${hasStudents ? `togglePeriodDetails('${periodKey}')` : ''}" style="${hasStudents ? 'cursor:pointer;background:rgba(0,0,0,0.02)' : ''}">
+            <td>${esc(periodName)}${hasStudents ? ` <span style="color:var(--muted);font-size:11px">${isExpanded ? '▼' : '▶'}</span>` : ''}</td>
+            <td>${esc((r[2]||'').slice(0,5))}</td>
+            <td>${esc(r[3]||'')}</td>
+            <td>${statusBadge}</td>
+            <td>${esc(r[4]||'')}${renderIndividualFreeHtml(r[5], dateKey, periodName, null)}</td>
+            ${isAdmin()? `<td style="white-space:nowrap;font-size:12px">${actionBtns}</td>`:''}</tr>
+          ${isExpanded && hasStudents ? `<tr><td colspan="6" style="padding:0;border:none;background:rgba(0,0,0,0.02)">${renderStudentAttendanceList(dateKey, periodName)}</td></tr>` : ''}
+        `;
       }).join('')}</tbody></table></div>`;
     }).join('') || '<div class="empty">No schedule data available</div>'}
   </div>
