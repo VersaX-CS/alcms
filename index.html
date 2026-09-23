@@ -19295,8 +19295,9 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
   // this renders exactly as before — just the names, no check-in status.
   const day = dateKey ? weekdayForDateKey(dateKey) : '';
   const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride) : !!dateKey;
+  const staff = isStaff();
   return parts.map(([cls,info])=>{
-    let checkedCount = 0;
+    let checkedCount = 0, excusedCount = 0;
     const rows = info.students.map(name=>{
       if(!dateKey) return esc(name);
       const u = classStudents(cls).find(s=>s.name===name);
@@ -19304,12 +19305,28 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
       // Nothing is shown yet for a period that hasn't started today — there's no status to report.
       const checkedIn = (u && started) ? (period ? studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride) : studentCheckedInOnDate(u.id, dateKey)) : false;
       if(checkedIn) checkedCount++;
-      const badge = (u && started)
-        ? (checkedIn ? ' <span class="badge green" style="font-size:9.5px;padding:1px 5px;margin-left:3px">✓ checked in</span>' : ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>')
-        : '';
+      // A student personally free this period can just as genuinely be excused from showing up
+      // (sent elsewhere, kept back by another teacher, etc.) as one on a scheduled class visit —
+      // same lookup, same mark/unmark action, just a leaner inline badge to fit this compact list.
+      const excuse = (u && started && !checkedIn && period) ? findExcuseForStudent(u.id, dateKey, period) : null;
+      if(excuse) excusedCount++;
+      let badge = '';
+      if(u && started){
+        if(checkedIn){
+          badge = ' <span class="badge green" style="font-size:9.5px;padding:1px 5px;margin-left:3px">✓ checked in</span>';
+        } else if(excuse){
+          const title = `Excused${excuse.by? ' by '+excuse.by:''}${excuse.reason? ' — '+excuse.reason:''}`;
+          badge = ` <span class="badge" title="${esc(title)}" style="font-size:9.5px;padding:1px 5px;margin-left:3px;background:rgba(74,144,226,0.15);color:#4a90e2">⚑ excused</span>`;
+          if(staff && period) badge += ` <a href="#" onclick="unmarkStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none;font-size:9.5px">✕</a>`;
+        } else {
+          badge = ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>';
+          if(staff && period) badge += ` <a href="#" onclick="markStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}','${esc(cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">excuse</a>`;
+        }
+      }
       return `<span style="white-space:nowrap">${esc(name)}${badge}</span>`;
     });
-    const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length}</strong> checked in` : '';
+    const unexplainedCount = info.students.length - checkedCount - excusedCount;
+    const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length}</strong> checked in${excusedCount? ` · ${excusedCount} excused`:''}${unexplainedCount? ` · ${unexplainedCount} unexplained`:''}` : '';
     return `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--muted-label)">${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div style="font-size:12px;margin:4px 0 0 10px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></details>`;
   }).join('');
 }
