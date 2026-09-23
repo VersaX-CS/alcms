@@ -17292,6 +17292,10 @@ function renderBatchStagingHtml(){
       <label>Time in</label>
       <input type="time" id="batchTimeIn" value="${new Date().toTimeString().slice(0,5)}">
     </div>
+    <div class="field">
+      <label>Period (for tracking attendance)</label>
+      <select id="batchPeriod"><option value="">— No period —</option>${timetablePeriods().map(p=>`<option>${esc(p)}</option>`).join('')}</select>
+    </div>
   </div>
   <div class="field" style="margin-bottom:12px">
     <label>Note (applies to all — optional)</label>
@@ -17339,6 +17343,7 @@ function submitBatch(){
   const purpose = document.getElementById('batchPurpose').value;
   if(!purpose){ toast('Select a purpose first'); return; }
   const timeIn = document.getElementById('batchTimeIn').value;
+  const period = (document.getElementById('batchPeriod').value || '').trim();
   const note = (document.getElementById('batchNote').value || '').trim();
   const selected = batchStaging.filter(s=>batchChecked[s.id]);
   if(!selected.length){ toast('Select at least one student to submit'); return; }
@@ -17349,13 +17354,18 @@ function submitBatch(){
     if(reason){ blockedIds.add(s.id); blockedNames.push(s.name); return false; }
     return true;
   });
+  const today = todayISO();
   eligible.forEach(s=>{
     DB.registerLog.unshift({
-      entryId: uid('REG'), source:'DESK', date:todayISO(), timeIn, timeOut:'', period:'',
+      entryId: uid('REG'), source:'DESK', date:today, timeIn, timeOut:'', period: period || '',
       id:s.id, name:s.name, category:s.category, cls:s.cls, purpose,
       conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:actorName(), note: note || 'Batch check-in',
       offense:'', offenseOther:'', consequence:'', consequenceOther:''
     });
+    // Record attendance status for this period if period is selected
+    if(period){
+      recordAttendanceStatusForPeriod(today, period, 'checked_in');
+    }
     sendScanWebhook('checkin', {memberId:s.id, memberName:s.name, purpose});
   });
   batchStaging = batchStaging.filter(s=>!batchChecked[s.id] || blockedIds.has(s.id));
@@ -17478,7 +17488,48 @@ function printWeeklySchedule(){
 }
 let scheduleSubview = 'weekly';
 function setScheduleSubview(v){ scheduleSubview = v; render(); }
+function getCurrentWeekStart(){
+  const today = new Date();
+  const day = today.getDay();
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  return new Date(today.setDate(diff));
+}
+
+function getWeekStartISO(){
+  const start = getCurrentWeekStart();
+  return start.toISOString().split('T')[0];
+}
+
+function getAttendanceStatusForSchedulePeriod(dateKey, period){
+  if(!dateKey || !period) return null;
+  const entry = (DB.weeklyAttendanceLog||[]).find(r=> r.date===dateKey && (r.period||'').toLowerCase()===period.toLowerCase());
+  return entry ? entry.status : null; // 'checked_in' or 'skipped'
+}
+
+function recordAttendanceStatusForPeriod(dateKey, period, status){
+  if(!DB.weeklyAttendanceLog) DB.weeklyAttendanceLog = [];
+  // Remove old entry for this date/period if exists
+  DB.weeklyAttendanceLog = DB.weeklyAttendanceLog.filter(r=> !(r.date===dateKey && (r.period||'').toLowerCase()===period.toLowerCase()));
+  // Add new entry
+  if(status){
+    DB.weeklyAttendanceLog.push({date: dateKey, period: period, status: status});
+  }
+  saveDB('Attendance status updated');
+}
+
+function clearOldWeekAttendance(){
+  if(!DB.weeklyAttendanceLog) return;
+  const weekStart = getWeekStartISO();
+  const weekEnd = new Date(new Date(weekStart).getTime() + 7*24*60*60*1000).toISOString().split('T')[0];
+  // Keep only records from current week
+  DB.weeklyAttendanceLog = DB.weeklyAttendanceLog.filter(r=> {
+    const d = r.date;
+    return d >= weekStart && d < weekEnd;
+  });
+}
+
 function pageSchedule(){
+  clearOldWeekAttendance(); // Reset attendance at week boundary
   const tabsHtml = `
   <div class="profile-tabs floating-tabs">
     <button class="profile-tab-btn ${scheduleSubview==='weekly'?'active':''}" onclick="setScheduleSubview('weekly')">Weekly schedule</button>
@@ -17494,6 +17545,19 @@ function pageSchedule(){
   const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
   const byDay = {};
   DB.scheduleDays.forEach((r,i)=>{ (byDay[r[0]]=byDay[r[0]]||[]).push({...r, __i:i}); });
+  
+  // Sort periods chronologically within each day
+  const sortedByDay = {};
+  Object.keys(byDay).forEach(day => {
+    sortedByDay[day] = byDay[day].sort((a, b) => {
+      const minA = periodSortKey(a[1]);
+      const minB = periodSortKey(b[1]);
+      return minA - minB;
+    });
+  });
+  
+  const weekStart = getWeekStartISO();
+  
   return tabsHtml + `
   <div class="card panel">
     <div class="panel-head">
@@ -17505,12 +17569,27 @@ function pageSchedule(){
         ${isAdmin() && DB.scheduleDays.length? `<button class="btn danger" onclick="clearAllSchedule()">⚠ Clear all schedule</button>`:''}
       </div>
     </div>
-    ${days.filter(d=>byDay[d]).map(d=>`
+    ${days.filter(d=>sortedByDay[d]).map((d, dayIndex) => {
+      const dateKey = new Date(new Date(weekStart).getTime() + dayIndex * 24*60*60*1000).toISOString().split('T')[0];
+      return `
       <h4 style="margin:14px 0 8px;font-size:13px;color:var(--muted-label);letter-spacing:.5px">${d}</h4>
-      <div class="table-wrap" style="margin-bottom:10px"><table class="datatable"><thead><tr><th>Period</th><th>Time</th><th>Expected class(es)</th><th>Notes</th>${isAdmin()?'<th></th>':''}</tr></thead>
-      <tbody>${byDay[d].map(r=>`<tr><td>${esc(r[1]||'')}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td>${esc(r[4]||'')}${renderIndividualFreeHtml(r[5])}</td>
-        ${isAdmin()? `<td><button class="btn secondary small" onclick="openScheduleForm(${r.__i})">Edit</button> <button class="btn danger small" onclick="deleteScheduleEntry(${r.__i})">Delete</button></td>`:''}</tr>`).join('')}</tbody></table></div>
-    `).join('') || '<div class="empty">No schedule data available</div>'}
+      <div class="table-wrap" style="margin-bottom:10px"><table class="datatable"><thead><tr><th>Period</th><th>Time</th><th>Expected class(es)</th><th>Status</th><th>Notes</th>${isAdmin()?'<th></th>':''}</tr></thead>
+      <tbody>${sortedByDay[d].map(r=>{
+        const periodName = r[1] || '';
+        const status = getAttendanceStatusForSchedulePeriod(dateKey, periodName);
+        const statusBadge = status ? 
+          (status === 'checked_in' ? '<span class="badge green">✓ Checked in</span>' : '<span class="badge gold">⊘ Skipped</span>') 
+          : '<span style="color:var(--muted);font-size:12px">—</span>';
+        const actionBtns = isAdmin() ? `
+          <button class="btn secondary small" onclick="openScheduleForm(${r.__i})">Edit</button>
+          <button class="btn danger small" onclick="deleteScheduleEntry(${r.__i})">Delete</button>
+          ${status !== 'checked_in' ? `<button class="btn small" onclick="recordAttendanceStatusForPeriod('${esc(dateKey)}', '${esc(periodName)}', 'checked_in'); render()">✓ Mark checked in</button>` : ''}
+          ${status !== 'skipped' ? `<button class="btn small" onclick="recordAttendanceStatusForPeriod('${esc(dateKey)}', '${esc(periodName)}', 'skipped'); render()">⊘ Mark skipped</button>` : ''}
+        ` : '';
+        return `<tr><td>${esc(periodName)}</td><td>${esc((r[2]||'').slice(0,5))}</td><td>${esc(r[3]||'')}</td><td>${statusBadge}</td><td>${esc(r[4]||'')}${renderIndividualFreeHtml(r[5], dateKey, periodName, null)}</td>
+          ${isAdmin()? `<td style="white-space:nowrap;font-size:12px">${actionBtns}</td>`:''}</tr>`;
+      }).join('')}</tbody></table></div>`;
+    }).join('') || '<div class="empty">No schedule data available</div>'}
   </div>
   <div id="mod_roster"></div>`;
 }
