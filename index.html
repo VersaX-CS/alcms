@@ -12006,10 +12006,12 @@ function pageCatalogue(){
       {key:'available', label:'Status', options:['AVAILABLE','ISSUED','MISSING','WITHDRAWN','RESERVED']},
       {key:'condition', label:'Condition', options:[...new Set(DB.catalogue.map(b=>b.condition))].filter(Boolean).sort()},
     ],
-    rowClass:r=>r.available==='WITHDRAWN'?'row-muted':'',
+    rowClass:r=>r.available==='WITHDRAWN'?'row-muted':(!r.title && !r.author ? 'row-muted':''),
     columns:[
       {key:'acc', label:'Acc. No'},
-      {key:'title', label:'Title', render:r=>`<strong>${esc(r.title)}</strong><div style="color:var(--muted);font-size:11px">${esc(r.author)}</div>`},
+      {key:'title', label:'Title', render:r=> r.title || r.author
+        ? `<strong>${esc(r.title)}</strong><div style="color:var(--muted);font-size:11px">${esc(r.author)}</div>`
+        : `<span style="color:var(--muted);font-style:italic">— empty, ready to reuse —</span>`},
       {key:'mainClass', label:'Main class', render:r=>esc((r.mainClass||'').replace(/^\d+\s*–\s*/,''))},
       {key:'shelf', label:'Shelf'},
       {key:'year', label:'Year'},
@@ -12029,6 +12031,7 @@ function pageCatalogue(){
       {key:'author-az', label:'Author (A–Z)', compare:(a,b)=>(a.author||'').localeCompare(b.author||'')},
       {key:'date-new', label:'Date added (newest first)', compare:(a,b)=>(parseAnyDate(b.dateAdded)||0)-(parseAnyDate(a.dateAdded)||0)},
       {key:'date-old', label:'Date added (oldest first)', compare:(a,b)=>(parseAnyDate(a.dateAdded)||0)-(parseAnyDate(b.dateAdded)||0)},
+      {key:'incomplete-first', label:'Missing details first', compare:(a,b)=> catalogueBlankFieldCount(b)-catalogueBlankFieldCount(a) || (a.acc||'').localeCompare(b.acc||'')},
     ],
     extraActions:[
       {label:'🪪 Catalogue cards', alwaysShow:true, onClick:()=> openAllBookCardsModal()},
@@ -12042,6 +12045,7 @@ function pageCatalogue(){
       },
       {label:'🗄 Archive selected (withdrawn)', onClick:()=> bulkArchiveCatalogue()},
       {label: ()=> `🗄 Archive (${archiveCount('catalogue')})`, alwaysShow:true, onClick:()=> openArchiveModal('catalogue')},
+      {label:'🧹 Clear details (keep Acc. No.)', onClick:()=> bulkClearCatalogueDetails(), danger:true},
       {label:'🗑 Delete selected', onClick:()=> bulkDeleteCatalogue(), danger:true},
       {label:'⚠ Clear all titles', onClick:clearAllCatalogue, danger:true},
     ],
@@ -12147,7 +12151,7 @@ function bookFields(b={}, isNew){
     {row:[{key:'category',label:'Subject / Category', default:b.category, extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="compareCategorySources()" title="Check Open Library, Google Books, Wikidata, and Crossref for this ISBN and compare their subject/category values">🔎 Compare sources</button>`, subHint:''},{key:'vol',label:'Volume', default:b.vol}]},
     {row:[
       {key:'mainClass',label:'Main class (Dewey)', type:'select', required:true, options:DB.setup.mainClasses, default:b.mainClass||'',
-        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Suggest from the title/category, using the built-in Dewey library"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`, subHint:''},
+        extra:`<button type="button" class="btn secondary small" style="flex:none" onclick="applyMainClassSuggestion(true)" title="Check Open Library, Google Books, Wikidata and Crossref for a real Dewey number for this ISBN; falls back to guessing from the title/category if none is found"><svg viewBox="0 0 20 20" width="14" height="14" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="margin-right:4px; vertical-align:middle;" aria-hidden="true"><path d="M9 3a6 6 0 1 0 3.71 10.71l3.79 3.8a1 1 0 0 0 1.42-1.42l-3.8-3.79A6 6 0 0 0 9 3Zm-4 6a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z"/></svg> Suggest</button>`, subHint:''},
       {key:'shelf',label:'Shelf location', type:'select', required:true, options:DB.setup.shelves, default:b.shelf||'', subHint:''},
     ]},
     {row:[
@@ -12160,26 +12164,50 @@ function bookFields(b={}, isNew){
 }
 /* Dewey suggestion: fires once, quietly, the first time the Main class field is still empty
    when the person moves on from Title or Subject/Category — never overwrites a value they (or
-   an ISBN lookup) already set, and the 🔎 Suggest button next to the field re-runs it on demand. */
-function applyMainClassSuggestion(force){
+   an ISBN lookup) already set unless force is passed, and the 🔎 Suggest button next to the
+   field re-runs it on demand. When force is passed and there's an ISBN in the form, this now
+   checks online sources for a real Dewey number first (via crossCheckClassification) rather than
+   only ever guessing from title/category keywords — the keyword guess is still the fallback when
+   there's no ISBN, or no source has a classification number on file. */
+async function applyMainClassSuggestion(force){
   const sel = document.getElementById('f_mainClass');
   if(!sel) return;
   const alreadySet = sel.value && sel.value!=='';
   if(alreadySet && !force) return;
-  const title = (document.getElementById('f_title')||{}).value || '';
-  const category = (document.getElementById('f_category')||{}).value || '';
-  const suggestion = suggestMainClassFromText(title+' '+category);
-  if(!suggestion){ if(force) toast("Couldn't guess a main class from that — pick one manually"); return; }
+  let suggestion = '', hintText = '';
+  if(force){
+    const isbnEl = document.getElementById('f_isbn');
+    const isbn = (isbnEl? isbnEl.value : '').replace(/[^0-9Xx]/g,'');
+    if(isbn.length===10 || isbn.length===13){
+      const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn13to10(isbn);
+      toast('Checking Open Library, Google Books, Wikidata and Crossref for a Dewey classification…');
+      const cross = await crossCheckClassification(isbn, altIsbn);
+      if(cross.dewey){
+        suggestion = deweyToMainClass(cross.dewey);
+        if(suggestion) hintText = `From Dewey ${cross.dewey} (found online): "${suggestion}" — change it if that's not right.`;
+      }
+    }
+  }
+  if(!suggestion){
+    const title = (document.getElementById('f_title')||{}).value || '';
+    const category = (document.getElementById('f_category')||{}).value || '';
+    suggestion = suggestMainClassFromText(title+' '+category);
+    if(suggestion) hintText = `Guessed from title/category: "${suggestion}" — change it if that's not right.`;
+  }
+  if(!suggestion){ if(force) toast("Couldn't find or guess a main class for that — pick one manually"); return; }
   sel.value = suggestion;
   const hint = document.getElementById('hint_mainClass');
-  if(hint) hint.textContent = `Suggested: "${suggestion}" — change it if that's not right.`;
-  autoAssignShelfForField();
+  if(hint) hint.textContent = hintText;
+  autoAssignShelfForField(true);
 }
-/* Auto-shelf-assignment: once a main class is set on a new title (suggested or manually
-   picked), fills the Shelf field with the least-full shelf mapped to that class — using
-   DB.setup.shelfMap, configured in Setup → Shelf mapping. Never overwrites a shelf the person
-   already chose themselves, unless force is passed. */
-function autoAssignShelfForField(force){
+/* Auto-shelf-assignment: whenever a main class is set (suggested, manually picked, or filled in
+   by an ISBN lookup), fills the Shelf field with the least-full shelf mapped to that class —
+   using DB.setup.shelfMap, configured in Setup → Shelf mapping. Always follows the main class
+   now, overwriting any shelf that was there before (force defaults to true below at every call
+   site), since the shelf is meant to be a direct consequence of the main class, not something to
+   preserve independently of it. Pass force:false explicitly if a caller ever needs the old
+   "only when empty" behaviour back. */
+function autoAssignShelfForField(force=true){
   const mcEl = document.getElementById('f_mainClass');
   const shelfEl = document.getElementById('f_shelf');
   if(!mcEl || !shelfEl || !mcEl.value) return;
@@ -12189,6 +12217,88 @@ function autoAssignShelfForField(force){
   shelfEl.value = suggestion;
   const hint = document.getElementById('hint_shelf');
   if(hint) hint.textContent = `Auto-assigned: "${suggestion}" (least-full shelf in this class) — change it if that's not right.`;
+}
+/* Cross-checks Open Library, Google Books, Wikidata and Crossref for this ISBN and pools whatever
+   subject/category text and real classification numbers (Dewey from Open Library or Wikidata's
+   P1036) each one has on file. Used to (a) fill Subject/Category with the richest value on offer
+   rather than just whichever source happened to answer the main lookup first, and (b) give Main
+   class a real classification number to convert, instead of falling back to a keyword guess. Each
+   source is independently time-boxed and swallows its own errors, so a slow/unreachable one here
+   never blocks the others or the rest of the form. Runs automatically as part of every ISBN
+   lookup (not only the manual "🔎 Compare sources"/"🔎 Suggest" buttons), which does mean up to
+   three extra requests per lookup — worth knowing if Google Books' shared rate limit is already
+   tight during a busy cataloguing session. */
+async function crossCheckClassification(isbn, altIsbn){
+  const categoryCandidates = [];
+  let dewey = null;
+  await Promise.all([
+    (async ()=>{
+      try{
+        const fetchOne = async (c)=>{
+          const res = await isbnFetchTimeout(`https://openlibrary.org/api/books?bibkeys=ISBN:${c}&format=json&jscmd=data`);
+          if(!res.ok) return null;
+          const data = await res.json();
+          return data['ISBN:'+c] || null;
+        };
+        let rec = await fetchOne(isbn);
+        if(!rec && altIsbn) rec = await fetchOne(altIsbn);
+        if(!rec) return;
+        const subjects = (rec.subjects||[]).map(s=>s.name).filter(Boolean);
+        if(subjects.length) categoryCandidates.push({source:'Open Library', value: subjects.slice(0,3).join(' / ')});
+        const d = rec.classifications && rec.classifications.dewey_decimal_class && rec.classifications.dewey_decimal_class[0];
+        if(d && !dewey) dewey = d;
+      }catch(e){}
+    })(),
+    (async ()=>{
+      try{
+        const keyParam = DB.setup.googleBooksApiKey ? `&key=${encodeURIComponent(DB.setup.googleBooksApiKey)}` : '';
+        const fetchOne = async (c)=>{
+          const res = await isbnFetchTimeout(`https://www.googleapis.com/books/v1/volumes?q=isbn:${c}${keyParam}`);
+          if(!res.ok) return null;
+          const data = await res.json();
+          return (data.items && data.items[0] && data.items[0].volumeInfo) || null;
+        };
+        let vol = await fetchOne(isbn);
+        if(!vol && altIsbn) vol = await fetchOne(altIsbn);
+        if(vol && (vol.categories||[]).length) categoryCandidates.push({source:'Google Books', value: vol.categories.slice(0,3).join(' / ')});
+      }catch(e){}
+    })(),
+    (async ()=>{
+      try{
+        const isbn13 = isbn.length===13 ? isbn : (altIsbn && altIsbn.length===13 ? altIsbn : null);
+        const isbn10 = isbn.length===10 ? isbn : (altIsbn && altIsbn.length===10 ? altIsbn : null);
+        const filters = [];
+        if(isbn13) filters.push(`{ ?book wdt:P212 ?i13 . FILTER(REPLACE(STR(?i13), "[^0-9Xx]", "") = "${isbn13}") }`);
+        if(isbn10) filters.push(`{ ?book wdt:P957 ?i10 . FILTER(REPLACE(STR(?i10), "[^0-9Xx]", "") = "${isbn10}") }`);
+        if(!filters.length) return;
+        // P136 = genre, P1036 = Dewey Decimal Classification — asked for together so one query
+        // can surface a real Dewey number here too, not just a genre label.
+        const query = `SELECT ?genreLabel ?dewey WHERE { { ${filters.join(' } UNION { ')} } OPTIONAL { ?book wdt:P136 ?genre. } OPTIONAL { ?book wdt:P1036 ?dewey. } SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } LIMIT 1`;
+        const res = await isbnFetchTimeout(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(query)}`);
+        if(!res.ok) return;
+        const data = await res.json();
+        const row = data.results && data.results.bindings && data.results.bindings[0];
+        if(row && row.genreLabel && row.genreLabel.value) categoryCandidates.push({source:'Wikidata', value: row.genreLabel.value});
+        if(row && row.dewey && row.dewey.value && !dewey) dewey = row.dewey.value;
+      }catch(e){}
+    })(),
+    (async ()=>{
+      try{
+        const fetchOne = async (c)=>{
+          const res = await isbnFetchTimeout(`https://api.crossref.org/works?filter=isbn:${c}&rows=5`);
+          if(!res.ok) return null;
+          const data = await res.json();
+          const items = (data.message && data.message.items) || [];
+          if(!items.length) return null;
+          return items.find(it=> ['book','monograph','edited-book','reference-book'].includes(it.type)) || items[0];
+        };
+        let whole = await fetchOne(isbn);
+        if(!whole && altIsbn) whole = await fetchOne(altIsbn);
+        if(whole && (whole.subject||[]).length) categoryCandidates.push({source:'Crossref', value: whole.subject.slice(0,3).join(' / ')});
+      }catch(e){}
+    })(),
+  ]);
+  return { dewey, categoryCandidates };
 }
 /* ISBN-10 <-> ISBN-13 conversion, so a miss on one format can still be retried as the other —
    several catalog sources index only one of the two for older titles. */
@@ -12277,27 +12387,45 @@ async function lookupBookByIsbn(){
   const altIsbn = isbn.length===10 ? isbn10to13(isbn) : isbn.length===13 ? isbn13to10(isbn) : null;
   const cached = getIsbnCacheEntry(isbn) || (altIsbn && getIsbnCacheEntry(altIsbn));
   if(cached){
-    Object.entries(cached.fields).forEach(([k,v])=>{ const el = document.getElementById('f_'+k); if(el && v && !el.value) el.value = v; });
+    Object.entries(cached.fields).forEach(([k,v])=>{ const el = document.getElementById('f_'+k); if(el && v) el.value = v; });
     if(cached.dewey){
       const bucket = deweyToMainClass(cached.dewey);
       const sel = document.getElementById('f_mainClass');
-      if(bucket && sel && !sel.value) sel.value = bucket;
+      if(bucket && sel) sel.value = bucket;
     }
     applyMainClassSuggestion();
-    const shelfEl = document.getElementById('f_shelf');
-    if(shelfEl && !shelfEl.value) shelfEl.value = 'UNASSIGNED';
+    autoAssignShelfForField(true);
     toast(`Filled in from ${cached.source} (cached from earlier this session) — check it over before saving`);
     return;
   }
 
-  const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val && !el.value) el.value = String(val).toUpperCase(); };
-  const finishCommon = (dewey)=>{
-    if(dewey){
-      const bucket = deweyToMainClass(dewey);
+  // Overwrites whatever's already in the field — including values already populated from an
+  // existing catalog entry you're editing — with the freshly looked-up value, so a lookup always
+  // supersedes what was there before rather than being silently skipped because the field was
+  // already non-empty.
+  const setIfEmpty = (key, val)=>{ const el = document.getElementById('f_'+key); if(el && val) el.value = String(val).toUpperCase(); };
+  const finishCommon = async (dewey, code, altCode)=>{
+    // Cross-check Subject/Category and the Dewey classification across all four sources — not
+    // just whichever one answered the main lookup above first — so a source that lost the race
+    // but has richer subject data, or an actual Dewey number on file, still gets used.
+    let bestDewey = dewey;
+    try{
+      const cross = await crossCheckClassification(code, altCode);
+      if(!bestDewey && cross.dewey) bestDewey = cross.dewey;
+      if(cross.categoryCandidates.length){
+        const best = cross.categoryCandidates.reduce((a,b)=> (b.value.length > a.value.length ? b : a));
+        setIfEmpty('category', best.value);
+      }
+    }catch(e){ /* cross-check is a best-effort enhancement on top of the main lookup above */ }
+    if(bestDewey){
+      const bucket = deweyToMainClass(bestDewey);
       const sel = document.getElementById('f_mainClass');
-      if(bucket && sel && !sel.value) sel.value = bucket;
+      if(bucket && sel) sel.value = bucket;
     }
-    applyMainClassSuggestion();
+    applyMainClassSuggestion(); // quiet local fallback, only if main class is still unset
+    // Shelf always follows main class now — auto-assigned from the shelf map, overwriting
+    // anything that was there before.
+    autoAssignShelfForField(true);
     const shelfEl = document.getElementById('f_shelf');
     if(shelfEl && !shelfEl.value) shelfEl.value = 'UNASSIGNED';
   };
@@ -12436,10 +12564,10 @@ async function lookupBookByIsbn(){
       if(lcc) catalogingNotes.push('LC CLASS: '+lcc);
       if(catalogingNotes.length){
         const infoEl = document.getElementById('f_info');
-        if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
+        if(infoEl) infoEl.value = catalogingNotes.join(' · ');
       }
 
-      finishCommon(dewey);
+      await finishCommon(dewey, isbn, altIsbn);
       setIsbnCacheEntry(isbn, {source:'Open Library', dewey, fields: snapshotIsbnFormFields()});
       if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Open Library', dewey, fields: snapshotIsbnFormFields()});
       toast('Filled in from Open Library — check it over before saving');
@@ -12466,10 +12594,10 @@ async function lookupBookByIsbn(){
       if(vol.language) catalogingNotes.push('LANGUAGE: '+String(vol.language).toUpperCase());
       if(catalogingNotes.length){
         const infoEl = document.getElementById('f_info');
-        if(infoEl && !infoEl.value) infoEl.value = catalogingNotes.join(' · ');
+        if(infoEl) infoEl.value = catalogingNotes.join(' · ');
       }
 
-      finishCommon(null);
+      await finishCommon(null, isbn, altIsbn);
       setIsbnCacheEntry(isbn, {source:'Google Books', dewey:null, fields: snapshotIsbnFormFields()});
       if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Google Books', dewey:null, fields: snapshotIsbnFormFields()});
       toast('Filled in from Google Books — check it over before saving');
@@ -12489,7 +12617,7 @@ async function lookupBookByIsbn(){
       setIfEmpty('year', yearMatch? yearMatch[0] : '');
       if(wd.genre) setIfEmpty('category', wd.genre);
 
-      finishCommon(null);
+      await finishCommon(null, isbn, altIsbn);
       setIsbnCacheEntry(isbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
       if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Wikidata', dewey:null, fields: snapshotIsbnFormFields()});
       toast('Filled in from Wikidata — check it over before saving');
@@ -12517,7 +12645,7 @@ async function lookupBookByIsbn(){
     setIfEmpty('year', cr.year);
     if(cr.subject) setIfEmpty('category', cr.subject);
 
-    finishCommon(null);
+    await finishCommon(null, isbn, altIsbn);
     setIsbnCacheEntry(isbn, {source:'Crossref', dewey:null, fields: snapshotIsbnFormFields()});
     if(altIsbn) setIsbnCacheEntry(altIsbn, {source:'Crossref', dewey:null, fields: snapshotIsbnFormFields()});
     toast('Filled in from Crossref — check it over before saving');
@@ -12778,6 +12906,13 @@ function openBookForm(acc){
     },
     postRender: ()=>{
       bindIsbnAutoLookup();
+      // Shelf should always follow the main class, whether it was just picked, suggested, or
+      // filled in by an ISBN lookup — so this listener is wired for both new and existing titles,
+      // ahead of the "don't second-guess an existing title" guard below (which only applies to
+      // the title/category-driven main-class suggestion, not to keeping shelf in sync once a
+      // main class is set).
+      const mainClassEl = document.getElementById('f_mainClass');
+      if(mainClassEl) mainClassEl.addEventListener('change', ()=>autoAssignShelfForField(true));
       if(existing) return; // don't second-guess an already-classified title being edited
       const titleEl = document.getElementById('f_title'), catEl = document.getElementById('f_category');
       // Freshly (re)opened "Add title" form — put the cursor straight into ISBN (the usual
@@ -12786,8 +12921,6 @@ function openBookForm(acc){
       if(isbnEl) setTimeout(()=> isbnEl.focus(), 30);
       if(titleEl) titleEl.addEventListener('blur', ()=>applyMainClassSuggestion());
       if(catEl) catEl.addEventListener('blur', ()=>applyMainClassSuggestion());
-      const mainClassEl = document.getElementById('f_mainClass');
-      if(mainClassEl) mainClassEl.addEventListener('change', ()=>autoAssignShelfForField());
       const copyEl = document.getElementById('f__copyFrom');
       if(copyEl) copyEl.addEventListener('change', ()=>{
         const acc = copyEl.value.split(' — ').pop();
@@ -12906,6 +13039,41 @@ function bulkDeleteCatalogue(){
     logActivity('catalogue', 'delete', `Deleted ${accs.length} title(s) in bulk`);
     saveDB(`${accs.length} title(s) moved to Trash`); render(); toast(`${accs.length} title(s) moved to Trash — restorable for 30 days`);
   });
+}
+/* For a dormant entry you never finished cataloguing — an accession number that's already
+   assigned to a physical copy, but whose bibliographic details you don't want to bother going
+   back and correcting. This wipes every descriptive field (title, author, ISBN, publisher, year,
+   edition, category, volume, main class, shelf, additional info) back to blank and resets
+   condition/status to the defaults a brand-new title gets, but keeps the Acc. No. and dateAdded
+   as they were — so the row stays exactly where it is in the catalogue, ready to be opened with
+   "Edit" and filled in for a different physical copy later, instead of minting a new accession
+   number for it. Unlike bulkDeleteCatalogue, nothing here goes to Trash: the row itself is never
+   removed, only blanked out. */
+function bulkClearCatalogueDetails(){
+  if(!isAdmin()) return requireAdmin('edit the catalogue');
+  const accs = [...(catalogueModuleState.selected||[])];
+  if(!accs.length){ toast('Tick one or more titles first'); return; }
+  confirmModal(`Clear all bibliographic details for ${accs.length} title(s)? Their Accession No. is kept, left blank and ready to reuse for a different physical copy — this can't be undone.`, ()=>{
+    DB.catalogue.forEach(b=>{
+      if(!accs.includes(b.acc)) return;
+      Object.assign(b, {
+        title:'', author:'', isbn:'', publisher:'', year:'', edition:'', category:'', vol:'',
+        mainClass:'', shelf:'', info:'', condition:'GOOD', available:'AVAILABLE',
+      });
+    });
+    catalogueModuleState.selected.clear();
+    logActivity('catalogue', 'edit', `Cleared bibliographic details for ${accs.length} title(s), keeping their accession numbers free for reuse`);
+    saveDB(`${accs.length} title(s) cleared — accession number(s) kept, free for reuse`); render();
+    toast(`${accs.length} title(s) cleared — sort by "Missing details first" to find them again`);
+  }, {confirmLabel:'Clear details', danger:true});
+}
+/* Used by the "Missing details first" sort below (and to decide whether to show the blank-slot
+   placeholder in the Title column) — counts how many of a title's bibliographic/classification
+   fields are still empty. An old record you never finished cataloguing and a freshly
+   bulkClearCatalogueDetails()-ed one both surface this way, without needing two separate concepts. */
+function catalogueBlankFieldCount(b){
+  return ['title','author','isbn','publisher','year','edition','category','vol','mainClass','shelf','info']
+    .filter(k=> !String(b[k]||'').trim()).length;
 }
 /* "Reserved" here means a physical copy the library is deliberately keeping back — e.g. pulled
    for a class project or a reference shelf — not the hold-for-when-it's-returned system on the
