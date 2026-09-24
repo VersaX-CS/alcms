@@ -3351,6 +3351,19 @@ table.datatable th{
 }
 table.datatable td{ padding:8px 10px; border-bottom:1px solid #efe8d4; vertical-align:top;}
 table.datatable tr:hover td{ background:#fbf8ee;}
+/* Today's timetable — one segment per bell schedule (Years 7–8 / Years 9–11) */
+.tt-segment{ margin-top:16px; }
+.tt-segment:first-child{ margin-top:0; }
+.tt-seg-head{ display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 12px; margin:0 0 6px; padding-left:8px; border-left:3px solid var(--brass); }
+.tt-seg-title{ font-weight:700; font-size:14px; color:var(--heading-text-color); }
+.tt-seg-meta{ font-size:12px; color:var(--muted); }
+table.datatable.timetable-frozen th .tt-time{ font-weight:400; font-size:11px; color:var(--muted-label); white-space:nowrap; }
+table.datatable.timetable-frozen th.tt-diff{ background-color:rgba(184,134,62,.20); }
+table.datatable.timetable-frozen th.tt-diff .tt-time{ color:var(--amber); font-weight:600; }
+table.datatable.timetable-frozen th.tt-bl, table.datatable.timetable-frozen td.tt-bl{ background-color:rgba(127,127,127,.10); }
+.tt-bl-label{ color:var(--muted-label); font-style:italic; font-size:11px; letter-spacing:.4px; }
+.tt-legend{ margin-top:8px; }
+.tt-bell-note{ margin:10px 0 0; padding:8px 10px; background:var(--parchment-dim); border-left:3px solid var(--brass); border-radius:6px; font-size:12.5px; }
 /* Frozen class column in timetables — stays visible when scrolling horizontally.
    Fully opaque (same solid colour as the frozen period header row) so timetable cells slide
    UNDER it instead of showing through. The right edge is drawn with an inset box-shadow, not
@@ -11595,32 +11608,7 @@ function pageDashboard(){
       const classes = sortedClasses().filter(c=>Object.keys(classTimetableFor(c)[weekday]||{}).length);
       return classes.length ? classes.length+' class(es) with a timetable entered for today' : 'No class timetables entered yet';
     })()}</div></div>
-    ${(() => {
-      const classes = sortedClasses();
-      const periods = timetablePeriods().filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
-      if(!classes.length || !periods.length) return `<div class="empty">No class timetable entered for today yet — add one from <a href="javascript:void(0)" onclick="route='schedule';scheduleSubview='timetable';render()">Schedule → Class timetable</a>.</div>`;
-      const cellHtml = (raw)=>{
-        const vals = ttCellValues(raw);
-        if(!vals.length) return '<span style="color:var(--muted-label)">—</span>';
-        // A period can carry several subjects at once (senior classes splitting by combination)
-        const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
-        const subjects = DB.setup.subjects || [];
-        return vals.map(val=>{
-          if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
-          // Anything that's an activity rather than a subject (BREAK, ASSEMBLY, SPORTS…)
-          // reads as an aside, not a lesson — muted italics, in caps.
-          if(activities.includes(val) && !subjects.includes(val)){
-            return `<span style="color:var(--muted-label);font-style:italic;text-transform:uppercase">${esc(val.toUpperCase())}</span>`;
-          }
-          return esc(val);
-        }).join('<span style="color:var(--muted-label)"> / </span>');
-      };
-      return `<div class="table-wrap"><table class="datatable timetable-frozen"><thead><tr><th class="frozen-col">Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
-      <tbody>${classes.map(c=>{
-        const tt = classTimetableFor(c)[weekday]||{};
-        return `<tr><td class="frozen-col">${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
-      }).join('')}</tbody></table></div>`;
-    })()}
+    ${renderTodayTimetableHtml(weekday) || `<div class="empty">No class timetable entered for today yet — add one from <a href="javascript:void(0)" onclick="route='schedule';scheduleSubview='timetable';render()">Schedule → Class timetable</a>.</div>`}
   </div>
   <div class="grid two-col" style="margin-top:16px">
     <div class="card panel">
@@ -17833,162 +17821,228 @@ function timeToMinutes(t){
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
   return m ? (+m[1])*60 + (+m[2]) : null;
 }
-// A period's sort key is the earliest start time set for it on any day — so "3RD" and "BREAK"
-// interleave correctly even though only one of them may have a time set yet on a given day.
-// Periods with no start time set anywhere fall back to Infinity, which (thanks to Array#sort
-// being stable) just leaves them at the end in their original declared order — the moment an
-// admin sets a time for a newly-added period (e.g. a later-added "ASSEMBLY"), it automatically
-// slots into its correct chronological spot everywhere the table is shown, printed, or exported.
+/* ============ BELL SCHEDULES — the school's period times, by year group ============
+   Awesome College runs TWO bell schedules side by side (Advent Term 2026/2027 timetable):
+     • Years 7–8  — 3rd/4th period at 09:45 / 10:30, short break 11:10, lunch AFTER 6th period
+     • Years 9–11 — 3rd/4th period at 09:50 / 10:40, short break 11:20, lunch AFTER 7th period
+   1st, 2nd, 8th and 9th periods run at the same times for everyone.
+
+   These two schedules are the ONLY source of period times in the app. There is deliberately no
+   screen for editing period times any more: one global time per period can't describe two year
+   groups, and per-class overrides on top of it only produced clashes. A class's times follow
+   from its year (read from the class name — "YEAR 7 DANIEL" → Years 7–8), and every screen
+   that shows a time (Today's timetable on the Dashboard and in Quick Actions, the class
+   timetable grid, the library schedule auto-build) reads it from here. If the bell ever
+   changes, edit the two lists below — nothing else needs touching.
+
+   Period labels are matched loosely, so "1ST", "1st", "1", "P1" and "Period 1" are all
+   period 1; anything containing BREAK is the short break and anything containing LUNCH is
+   lunch (so "SHORT BREAK" and "LUNCH BREAK" both work). A label that matches none of these
+   simply has no bell time — it still appears in the grid, just without a time. */
+const BELL_SCHEDULES = [
+  {key:'Y7_8', label:'Years 7–8', short:'Yr 7–8', years:[7,8], slots:[
+    {k:'1',     start:'08:00', end:'08:50'},
+    {k:'2',     start:'09:00', end:'09:40'},
+    {k:'3',     start:'09:45', end:'10:25'},
+    {k:'4',     start:'10:30', end:'11:10'},
+    {k:'BREAK', start:'11:10', end:'11:20'},
+    {k:'5',     start:'11:20', end:'12:05'},
+    {k:'6',     start:'12:15', end:'13:00'},
+    {k:'LUNCH', start:'13:00', end:'13:25'},
+    {k:'7',     start:'13:25', end:'14:05'},
+    {k:'8',     start:'14:15', end:'14:55'},
+    {k:'9',     start:'15:05', end:'15:55'},
+  ]},
+  {key:'Y9_11', label:'Years 9–11', short:'Yr 9–11', years:[9,10,11], slots:[
+    {k:'1',     start:'08:00', end:'08:50'},
+    {k:'2',     start:'09:00', end:'09:40'},
+    {k:'3',     start:'09:50', end:'10:30'},
+    {k:'4',     start:'10:40', end:'11:20'},
+    {k:'BREAK', start:'11:20', end:'11:30'},
+    {k:'5',     start:'11:30', end:'12:10'},
+    {k:'6',     start:'12:20', end:'13:00'},
+    {k:'7',     start:'13:00', end:'13:40'},
+    {k:'LUNCH', start:'13:40', end:'14:05'},
+    {k:'8',     start:'14:15', end:'14:55'},
+    {k:'9',     start:'15:05', end:'15:55'},
+  ]},
+];
+// Classes whose name carries no recognisable year (or a year outside the two groups above).
+// They still show up, in their own segment, just without bell times.
+const BELL_OTHER = {key:'OTHER', label:'Other classes', short:'Other', years:[], slots:[]};
+
+/* "1ST" / "1" / "P1" / "Period 1" / "First" → '1' … '9'; BREAK-ish → 'BREAK'; LUNCH-ish → 'LUNCH';
+   anything else → null (no bell time). */
+function bellSlotKey(period){
+  const s = String(period==null ? '' : period).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!s) return null;
+  if(s.includes('LUNCH')) return 'LUNCH';
+  if(s.includes('BREAK')) return 'BREAK';
+  const words = {FIRST:1,SECOND:2,THIRD:3,FOURTH:4,FIFTH:5,SIXTH:6,SEVENTH:7,EIGHTH:8,NINTH:9};
+  if(words[s]) return String(words[s]);
+  const m = /^(?:PERIOD|PD|P)?0*(\d{1,2})(?:ST|ND|RD|TH)?$/.exec(s);
+  if(m){ const n = +m[1]; if(n>=1 && n<=9) return String(n); }
+  return null;
+}
+// The year number in a class name ("YEAR 7 DANIEL", "Yr 9 Ezra", "Grade 10", or a leading "8 Caleb").
+function classYearNumber(cls){
+  const s = String(cls==null ? '' : cls);
+  let m = /\b(?:YEAR|YR|Y|GRADE)\s*[-_.]?\s*(\d{1,2})\b/i.exec(s);
+  if(!m) m = /^\s*(\d{1,2})\b/.exec(s);
+  return m ? +m[1] : null;
+}
+function bellGroupForClass(cls){
+  const y = classYearNumber(cls);
+  return (y!=null && BELL_SCHEDULES.find(g=> g.years.includes(y))) || BELL_OTHER;
+}
+function bellSlot(group, period){
+  const k = bellSlotKey(period);
+  return k ? (group.slots.find(s=> s.k===k) || null) : null;
+}
+function bellRange(slot){ return slot ? `${fmtTime(slot.start)}–${fmtTime(slot.end)}` : ''; }
+// Sort position of a period within ONE group's day (Infinity = no bell time → after everything timed).
+function bellSortKey(group, period){
+  const s = bellSlot(group, period);
+  const m = s ? timeToMinutes(s.start) : null;
+  return m==null ? Infinity : m;
+}
+const bellCompare = (ka, kb)=> ka===kb ? 0 : (ka<kb ? -1 : 1);
+
+// Whole-school ordering (used where there's no single class in play — the Periods list, schedule
+// dropdowns, sorting library-schedule rows): earliest start any group gives the period. Where the
+// two groups disagree (3rd–7th, break, lunch) the per-group functions below give the true order.
 function periodSortKey(period){
+  const k = bellSlotKey(period);
+  if(!k) return Infinity;
   let min = Infinity;
-  TIMETABLE_DAYS.forEach(day=>{
-    const pt = DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period];
-    const mins = pt && timeToMinutes(pt.start);
-    if(mins!=null && mins<min) min = mins;
+  BELL_SCHEDULES.forEach(g=>{
+    const s = g.slots.find(x=> x.k===k);
+    const m = s ? timeToMinutes(s.start) : null;
+    if(m!=null && m<min) min = m;
   });
-  return min;
+  return (k==='LUNCH' && min!==Infinity) ? min+0.5 : min;   // LUNCH after a 7th that starts at the same minute
 }
 function timetablePeriods(){
   const base = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS;
-  return [...base].sort((a,b)=> periodSortKey(a)-periodSortKey(b));
+  return [...base].sort((a,b)=> bellCompare(periodSortKey(a), periodSortKey(b)));
 }
-function periodTime(day, period){ return (DB.setup.periodTimes && DB.setup.periodTimes[day] && DB.setup.periodTimes[day][period]) || null; }
-function periodTimeLabel(day, period){
-  const pt = periodTime(day, period);
-  return pt && (pt.start||pt.end) ? `${fmtTime(pt.start)}–${fmtTime(pt.end)}` : '';
+// The period list in the order THIS year group actually lives it (lunch after 6th vs after 7th).
+function periodsForGroup(group){
+  if(!group.slots.length) return timetablePeriods();
+  const base = (DB.setup.periods && DB.setup.periods.length) ? DB.setup.periods : PERIOD_OPTIONS;
+  return [...base].sort((a,b)=> bellCompare(bellSortKey(group,a), bellSortKey(group,b)));
 }
-function getClassPeriodTime(cls, day, period){
-  if(DB.classTimings && DB.classTimings[cls] && DB.classTimings[cls][day] && DB.classTimings[cls][day][period]){
-    return DB.classTimings[cls][day][period];
+function timetablePeriodsFor(cls){ return periodsForGroup(bellGroupForClass(cls)); }
+
+/* Time of a period as {start,end} ('HH:MM'), or null.
+   • With a class → that class's own group time (the truth for what the class is doing).
+   • Without one (library-schedule windows, auto-build) → the span covering every group that runs
+     the period: earliest start to latest end, so a check-in during either group's slot still counts.
+   `day` is kept for the existing call sites; the bell is the same Monday to Friday. */
+function periodTime(day, period, cls){
+  if(cls){
+    const s = bellSlot(bellGroupForClass(cls), period);
+    return s ? {start:s.start, end:s.end} : null;
   }
-  return periodTime(day, period);
+  let start = null, end = null;
+  BELL_SCHEDULES.forEach(g=>{
+    const s = bellSlot(g, period);
+    if(!s) return;
+    if(start==null || s.start<start) start = s.start;
+    if(end==null || s.end>end) end = s.end;
+  });
+  return start ? {start, end} : null;
 }
-function classHasTimeOverride(cls, day, period){
-  return !!(DB.classTimings && DB.classTimings[cls] && DB.classTimings[cls][day] && DB.classTimings[cls][day][period]);
+function periodTimeLabel(day, period, cls){
+  const pt = periodTime(day, period, cls);
+  return pt ? `${fmtTime(pt.start)}–${fmtTime(pt.end)}` : '';
 }
-function getClassPeriodTimeLabel(cls, day, period){
-  const pt = getClassPeriodTime(cls, day, period);
-  return pt && (pt.start||pt.end) ? `${fmtTime(pt.start)}–${fmtTime(pt.end)}` : '';
+// One-line summary of a group's day, e.g. "08:00–15:55 · Short break 11:10–11:20 · Lunch 13:00–13:25".
+function bellGroupSummary(group){
+  if(!group.slots.length) return 'no bell times set for these classes';
+  const first = group.slots[0], last = group.slots[group.slots.length-1];
+  const br = group.slots.find(s=> s.k==='BREAK'), lu = group.slots.find(s=> s.k==='LUNCH');
+  return `${fmtTime(first.start)}–${fmtTime(last.end)}`
+    + (br ? ` · Short break ${bellRange(br)}` : '')
+    + (lu ? ` · Lunch ${bellRange(lu)}` : '');
 }
-function setClassTimeOverride(cls, day, period, start, end){
-  if(!DB.classTimings) DB.classTimings = {};
-  if(!DB.classTimings[cls]) DB.classTimings[cls] = {};
-  if(!DB.classTimings[cls][day]) DB.classTimings[cls][day] = {};
-  if(start || end){
-    DB.classTimings[cls][day][period] = {start, end};
-  } else {
-    delete DB.classTimings[cls][day][period];
-    if(!Object.keys(DB.classTimings[cls][day]).length) delete DB.classTimings[cls][day];
+
+/* One cell of a "today" grid: subjects, a LIBRARY badge, or a muted activity. An empty
+   break/lunch cell says BREAK / LUNCH rather than a dash, so the day's shape reads at a glance. */
+function todayTimetableCellHtml(raw, slotKey){
+  const vals = ttCellValues(raw);
+  if(!vals.length){
+    if(slotKey==='BREAK' || slotKey==='LUNCH') return `<span class="tt-bl-label">${slotKey==='BREAK' ? 'SHORT BREAK' : 'LUNCH'}</span>`;
+    return '<span style="color:var(--muted-label)">—</span>';
   }
+  // A period can carry several subjects at once (senior classes splitting by combination)
+  const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const subjects = DB.setup.subjects || [];
+  return vals.map(val=>{
+    if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
+    // Anything that's an activity rather than a subject (BREAK, ASSEMBLY, SPORTS…) reads as an
+    // aside, not a lesson — muted italics, in caps.
+    if(activities.includes(val) && !subjects.includes(val)){
+      return `<span style="color:var(--muted-label);font-style:italic;text-transform:uppercase">${esc(val.toUpperCase())}</span>`;
+    }
+    return esc(val);
+  }).join('<span style="color:var(--muted-label)"> / </span>');
 }
-function clearClassTimeOverride(cls, day, period){
-  if(!DB.classTimings || !DB.classTimings[cls]) return;
-  delete DB.classTimings[cls][day]?.[period];
-  if(DB.classTimings[cls][day] && !Object.keys(DB.classTimings[cls][day]).length) delete DB.classTimings[cls][day];
-}
-function periodHeaderHtml(day, period){
-  const t = periodTimeLabel(day, period);
-  return `${esc(period)}${t? `<div style="font-weight:400;font-size:11px;color:var(--muted-label)">${esc(t)}</div>`:''}`;
-}
-/* Modal-based period time editor — edit all day/period times in one grid, save all at once.
-   No re-render confusion, no cascading logic. Much simpler than the old "capture pending" approach. */
-async function editPeriodTimeModal(){
-  if(!isAdmin()) return requireAdmin('edit period times');
-  
-  const days = TIMETABLE_DAYS;
-  const periods = timetablePeriods();
-  
-  if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-  
-  // Build the form HTML for all days and periods
-  const tableHtml = periods.map(period=>{
-    const row = days.map(day=>{
-      const pt = periodTime(day, period) || {};
-      const start = pt.start || '';
-      const end = pt.end || '';
-      return `<td style="padding:6px;text-align:center">
-        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" data-type="start"
-               value="${esc(start)}" style="width:70px;margin-bottom:2px;font-size:12px">
-        <div style="font-size:10px;color:var(--muted);margin:2px 0">–</div>
-        <input type="time" data-day="${esc(day)}" data-period="${esc(period)}" data-type="end"
-               value="${esc(end)}" style="width:70px;font-size:12px">
-      </td>`;
+
+/* Today's class timetable, one SEGMENT per bell schedule (Years 7–8, Years 9–11, and any classes
+   that fit neither). Each segment is its own table with its own period order and its own times in
+   the column headers, because the two groups don't share a day-shape (lunch sits in a different
+   place). Header times that differ from the other group are tinted and carry a tooltip saying what
+   the other group has. Returns '' when no class has anything entered for `weekday`, so callers can
+   show their own empty message. Shared by the Dashboard panel and the Quick Actions modal. */
+function renderTodayTimetableHtml(weekday){
+  const classes = sortedClasses();
+  const dayOf = c=> classTimetableFor(c)[weekday] || {};
+  const segments = [...BELL_SCHEDULES, BELL_OTHER]
+    .map(g=> ({g, cls: classes.filter(c=> bellGroupForClass(c)===g)}))
+    .filter(x=> x.cls.length)
+    .map(({g, cls})=>{
+      const ordered = periodsForGroup(g);
+      const cols = ordered.filter(p=> cls.some(c=> dayOf(c)[p])).map(p=> ({label:p, key:bellSlotKey(p), real:true}));
+      if(cols.length){
+        // Break and lunch are part of the day even when nobody typed anything into them — add them
+        // (reading any real BREAK/LUNCH period's data if the school did set one up).
+        ['BREAK','LUNCH'].forEach(k=>{
+          if(g.slots.some(s=> s.k===k) && !cols.some(c=> c.key===k)){
+            cols.push({label: ordered.find(p=> bellSlotKey(p)===k) || k, key:k, real:false});
+          }
+        });
+        cols.sort((a,b)=> bellCompare(bellSortKey(g,a.label), bellSortKey(g,b.label)));
+      }
+      return {g, cls, cols};
+    });
+  if(!segments.some(s=> s.cols.length)) return '';
+
+  const timed = segments.filter(s=> s.g.slots.length);
+  let anyDiff = false;
+  const html = segments.map(seg=>{
+    const {g, cls, cols} = seg;
+    const meta = `${bellGroupSummary(g)} · ${cls.length} class${cls.length===1?'':'es'}`;
+    const head = `<div class="tt-seg-head"><span class="tt-seg-title">${esc(g.label)}</span><span class="tt-seg-meta">${esc(meta)}</span></div>`;
+    if(!cols.length) return `<div class="tt-segment">${head}<div class="empty" style="padding:10px 0">No timetable entered for ${esc(g.label)} today yet.</div></div>`;
+    const ths = cols.map(c=>{
+      const slot = g.slots.find(s=> s.k===c.key) || null;
+      const others = timed.filter(o=> o.g!==g).map(o=> ({label:o.g.label, slot:o.g.slots.find(s=> s.k===c.key)})).filter(o=> o.slot);
+      const differs = !!slot && others.some(o=> o.slot.start!==slot.start || o.slot.end!==slot.end);
+      if(differs) anyDiff = true;
+      const cl = [differs?'tt-diff':'', (c.key==='BREAK'||c.key==='LUNCH')?'tt-bl':''].filter(Boolean).join(' ');
+      const title = differs ? ` title="${esc(others.map(o=> `${o.label}: ${bellRange(o.slot)}`).join(' · '))}"` : '';
+      return `<th${cl?` class="${cl}"`:''}${title}>${esc(c.label)}${slot?`<div class="tt-time">${esc(bellRange(slot))}</div>`:''}</th>`;
     }).join('');
-    return `<tr><td style="padding:6px;font-weight:600;text-align:left">${esc(period)}</td>${row}</tr>`;
+    const rows = cls.map(cl=>{
+      const tt = dayOf(cl);
+      return `<tr><td class="frozen-col">${esc(cl)}</td>${cols.map(c=> `<td${(c.key==='BREAK'||c.key==='LUNCH')?' class="tt-bl"':''}>${todayTimetableCellHtml(tt[c.label]||'', c.key)}</td>`).join('')}</tr>`;
+    }).join('');
+    return `<div class="tt-segment">${head}<div class="table-wrap"><table class="datatable timetable-frozen"><thead><tr><th class="frozen-col">Class</th>${ths}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }).join('');
-  
-  const formHtml = `<div style="font-size:13px;max-height:60vh;overflow-y:auto">
-    <div class="table-wrap"><table style="font-size:12px;width:100%;border-collapse:collapse">
-      <thead style="background:var(--surface-1);position:sticky;top:0"><tr><th style="padding:8px;text-align:left;font-weight:600">Period</th>
-        ${days.map(d=>`<th style="padding:8px;text-align:center;font-weight:600">${esc(d.slice(0,3))}</th>`).join('')}
-      </tr></thead>
-      <tbody>${tableHtml}</tbody>
-    </table></div>
-    
-  </div>`;
-  
-  // Create modal backdrop and structure
-  const wrap = document.createElement('div');
-  wrap.className = 'modal-backdrop';
-  wrap.id = 'ptModalBackdrop';
-  wrap.innerHTML = `
-    <div class="modal" style="max-width:900px;width:90%">
-      <div class="modal-head">
-        <h3>⏰ Set period times for all days</h3>
-        <button id="ptmClose" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body">${formHtml}</div>
-      <div class="modal-foot">
-        <button class="btn secondary" id="ptmCancel">Cancel</button>
-        <button class="btn primary" id="ptmSave">Save all times</button>
-      </div>
-    </div>`;
-  
-  document.body.appendChild(wrap);
-  
-  // Set up close functionality
-  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
-  wrap.onclick = e=>{ if(e.target===wrap) close(); };
-  wrap.querySelector('#ptmClose').onclick = close;
-  wrap.querySelector('#ptmCancel').onclick = close;
-  
-  // Set up save functionality
-  wrap.querySelector('#ptmSave').onclick = async ()=>{
-    // Grab all edited times from the modal inputs
-    const timeInputs = wrap.querySelectorAll('[data-day][data-period]');
-    if(!timeInputs.length) return;
-    
-    // Collect all changes
-    const updates = {};
-    timeInputs.forEach(input=>{
-      const day = input.dataset.day;
-      const period = input.dataset.period;
-      const type = input.dataset.type; // 'start' or 'end'
-      if(!updates[day]) updates[day] = {};
-      if(!updates[day][period]) updates[day][period] = {start:'', end:''};
-      if(type==='start') updates[day][period].start = input.value;
-      else updates[day][period].end = input.value;
-    });
-    
-    // Apply to DB
-    if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-    Object.keys(updates).forEach(day=>{
-      if(!DB.setup.periodTimes[day]) DB.setup.periodTimes[day] = {};
-      Object.keys(updates[day]).forEach(period=>{
-        const {start, end} = updates[day][period];
-        if(start || end) DB.setup.periodTimes[day][period] = {start, end};
-        else delete DB.setup.periodTimes[day][period];
-      });
-    });
-    
-    await saveDB('Period times updated');
-    close();
-    render();
-    toast('Period times saved');
-  };
-  
-  // Focus the save button
-  setTimeout(()=> wrap.querySelector('#ptmSave').focus(), 30);
+  const legend = (anyDiff && timed.length>1)
+    ? `<p class="field-hint tt-legend">Tinted times are different for each year group — hover a header to see the other group's time.</p>` : '';
+  return html + legend;
 }
 /* Grabs whatever is currently selected in the class subject-timetable dropdowns (the
    "Free / LIBRARY / subject" cells) for the currently-selected class — including any edit
@@ -18018,128 +18072,6 @@ if(typeof capturePendingTimetableEdits !== 'function'){
     try{ capturePendingClassTimetable(); }catch(e){ console.warn('capturePendingTimetableEdits:', e); }
   };
 }
-/* ============ EXCEL IMPORT: Period Times ============
-   Requires Excel structure:
-   
-   Column A: Period (e.g., 1ST, 2ND, BREAK, 3RD, etc.)
-   Column B: Start time (HH:MM format, e.g., 08:00, 09:30)
-   Column C: End time (HH:MM format, e.g., 09:00, 10:00)
-   Column D-I: Day names (MONDAY, TUESDAY, WEDNESDAY, etc.) - mark "Y" if times apply, leave blank otherwise
-   
-   Example:
-   Period | Start | End   | MONDAY | TUESDAY | WEDNESDAY | THURSDAY | FRIDAY
-   1ST    | 08:00 | 09:00 | Y      | Y       | Y         | Y        | Y
-   2ND    | 09:00 | 10:00 | Y      | Y       | Y         | Y        | Y
-   BREAK  | 10:00 | 10:15 | Y      | Y       | Y         | Y        | Y
-   3RD    | 10:15 | 11:15 | Y      | Y       | Y         | Y        | Y
-*/
-async function importPeriodTimesFromExcel(){
-  if(!isAdmin()) return requireAdmin('import period times');
-  
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = '.xlsx,.xls';
-  fileInput.onchange = async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    
-    try{
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, {type:'array'});
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(worksheet, {header:1});
-      
-      if(!rows.length || rows.length < 2){
-        toast('Excel file must have at least 2 rows (header + data)');
-        return;
-      }
-      
-      const header = rows[0];
-      const periodColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('period'));
-      const startColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('start'));
-      const endColIdx = header.findIndex(h=> h && String(h).toLowerCase().includes('end'));
-      
-      if(periodColIdx===-1 || startColIdx===-1 || endColIdx===-1){
-        toast('Excel must have "Period", "Start", and "End" columns');
-        return;
-      }
-      
-      const dayColumns = {};
-      TIMETABLE_DAYS.forEach(day=>{
-        const idx = header.findIndex(h=> h && String(h).toUpperCase() === day);
-        if(idx!==-1) dayColumns[day] = idx;
-      });
-      
-      if(!Object.keys(dayColumns).length){
-        toast(`Excel must have day columns: ${TIMETABLE_DAYS.join(', ')}`);
-        return;
-      }
-      
-      // Parse and validate data
-      const periodTimes = {};
-      const errors = [];
-      
-      for(let i=1; i<rows.length; i++){
-        const row = rows[i];
-        const period = row[periodColIdx];
-        const start = row[startColIdx];
-        const end = row[endColIdx];
-        
-        if(!period) continue; // skip empty rows
-        
-        // Validate time format
-        if(!String(start).match(/^\d{1,2}:\d{2}$/)){
-          errors.push(`Row ${i+1}: Invalid start time "${start}" (use HH:MM format)`);
-          continue;
-        }
-        if(!String(end).match(/^\d{1,2}:\d{2}$/)){
-          errors.push(`Row ${i+1}: Invalid end time "${end}" (use HH:MM format)`);
-          continue;
-        }
-        
-        // Check which days this period applies to
-        Object.keys(dayColumns).forEach(day=>{
-          const dayColIdx = dayColumns[day];
-          const dayVal = row[dayColIdx];
-          if(dayVal && String(dayVal).toUpperCase().includes('Y')){
-            if(!periodTimes[day]) periodTimes[day] = {};
-            periodTimes[day][String(period).trim()] = {start: String(start).trim(), end: String(end).trim()};
-          }
-        });
-      }
-      
-      if(errors.length){
-        toast(`${errors.length} error(s) found:\n${errors.slice(0,3).join('\n')}${errors.length>3?'\n...':''}`, {duration:5000});
-        return;
-      }
-      
-      if(!Object.keys(periodTimes).length){
-        toast('No valid period times found in Excel');
-        return;
-      }
-      
-      // Show preview
-      const preview = Object.keys(periodTimes).map(day=>{
-        const periods = Object.keys(periodTimes[day]).map(p=>`${p}: ${periodTimes[day][p].start}–${periodTimes[day][p].end}`).join(', ');
-        return `${day}: ${periods}`;
-      }).join('\n');
-      
-      confirmModal(`Import ${Object.keys(periodTimes).length} day(s) with period times?\n\n${preview}`, async ()=>{
-        if(!DB.setup) DB.setup = {};
-        DB.setup.periodTimes = periodTimes;
-        await saveDB('Period times imported from Excel');
-        render();
-        toast(`✓ Imported period times for ${Object.keys(periodTimes).join(', ')}`);
-      }, {confirmLabel:'Import', danger:false});
-      
-    }catch(err){
-      console.error('Import error:', err);
-      toast('Error reading Excel file: '+err.message);
-    }
-  };
-  fileInput.click();
-}
-
 /* ============ EXCEL IMPORT: Class Timetable ============
    Requires Excel structure:
    
@@ -18279,14 +18211,12 @@ async function importClassTimetableFromExcel(){
 
    Requires:
    Column A: Period (1ST, 2ND, BREAK, etc.)
-   Column B: Start time (HH:MM) — optional
-   Column C: End time (HH:MM) — optional (Start & End must both be present to apply)
+   Columns B/C: Start / End — optional and IGNORED. Period times come from the school bell
+   schedule (Years 7–8 / Years 9–11, see BELL_SCHEDULES), so importing one class can never
+   overwrite the times another year group is using.
    Remaining columns: MONDAY..FRIDAY — subject/activity per period, "Free", or "LIBRARY".
    A period running several subjects at once (senior electives) can list them in one cell
    separated by / , ; or +, or on repeated rows for the same period — both are merged.
-
-   If Start/End are present, this also updates the shared period times (used by
-   ALL classes) in the same step, so you don't need a separate import for that.
 
    Anything in the file that isn't already in Setup is still imported rather than dropped:
    unknown periods are added to the period list so their row actually appears, and unknown
@@ -18453,10 +18383,8 @@ async function importFullTimetableFromExcel(){
       knownPeriods.forEach(p=> periodByKey[ttLooseKey(p)] = p);
 
       const timetable = {};
-      const periodTimes = {};
       const newPeriods = [];       // period labels in the file that Setup doesn't have yet
       const unknownValues = {};    // subject/activity text not in Setup -> how many cells
-      const timeWarnings = [];
       let cellCount = 0;
 
       for(let i=found.idx+1; i<rows.length; i++){
@@ -18474,17 +18402,6 @@ async function importFullTimetableFromExcel(){
           newPeriods.push(periodStr);
         }
 
-        let start = null, end = null;
-        if(hasTimes){
-          const rawStart = row[startColIdx], rawEnd = row[endColIdx];
-          const hasRawTime = (rawStart!=null && String(rawStart).trim()!=='') || (rawEnd!=null && String(rawEnd).trim()!=='');
-          if(hasRawTime){
-            const s = ttNormalizeTime(rawStart), en = ttNormalizeTime(rawEnd);
-            if(s && en){ start = s; end = en; }
-            else timeWarnings.push(`${periodStr}: couldn't read "${rawStart==null?'':rawStart} – ${rawEnd==null?'':rawEnd}" as a time`);
-          }
-        }
-
         foundDays.forEach(day=>{
           if(!timetable[day]) timetable[day] = {};
           const picked = [];
@@ -18500,10 +18417,6 @@ async function importFullTimetableFromExcel(){
             const merged = ttCellStore([...ttCellValues(timetable[day][periodStr]), ...picked]);
             if(merged){ timetable[day][periodStr] = merged; cellCount++; }
           }
-          if(start && end){
-            if(!periodTimes[day]) periodTimes[day] = {};
-            periodTimes[day][periodStr] = {start, end};
-          }
         });
       }
 
@@ -18513,15 +18426,13 @@ async function importFullTimetableFromExcel(){
       }
 
       const unknownList = Object.keys(unknownValues);
-      const hasPeriodTimes = Object.keys(periodTimes).length>0;
       const lines = [
         `Import this timetable into "${selectedClass}"? It replaces that class's current timetable.`,
         `${cellCount} period slot(s) across ${foundDays.length} day(s): ${foundDays.map(d=>d.slice(0,3)).join(', ')}.`,
       ];
       if(newPeriods.length) lines.push(`⚠ ${newPeriods.length} new period(s) will be added to the period list: ${newPeriods.join(', ')}`);
       if(unknownList.length) lines.push(`⚠ ${unknownList.length} entr(y/ies) are not in Setup: ${unknownList.slice(0,8).join(', ')}${unknownList.length>8?'…':''}. They'll be imported and flagged with ⚠ in the grid so you can add them to Setup afterwards.`);
-      if(hasPeriodTimes) lines.push('This file also sets period start/end times, which apply to ALL classes.');
-      if(timeWarnings.length) lines.push(`⚠ ${timeWarnings.length} time cell(s) were skipped: ${timeWarnings.slice(0,3).join('; ')}${timeWarnings.length>3?'…':''}. Subjects still import.`);
+      if(hasTimes) lines.push('Start/End columns in the file are ignored — period times come from the school bell schedule for the class\'s year group.');
 
       confirmModal(lines.join('\n'), async ()=>{
         if(!DB.classTimetable) DB.classTimetable = {};
@@ -18533,12 +18444,6 @@ async function importFullTimetableFromExcel(){
           newPeriods.forEach(p=>{ if(!DB.setup.periods.includes(p)) DB.setup.periods.push(p); });
         }
         DB.classTimetable[selectedClass] = timetable;
-        if(hasPeriodTimes){
-          if(!DB.setup.periodTimes) DB.setup.periodTimes = {};
-          Object.keys(periodTimes).forEach(day=>{
-            DB.setup.periodTimes[day] = Object.assign({}, DB.setup.periodTimes[day]||{}, periodTimes[day]);
-          });
-        }
         await saveDB(`Timetable imported for ${selectedClass}`);
         ttSelectedClass = selectedClass;
         render();
@@ -19093,15 +18998,6 @@ function pageClassTimetable(){
         ${isAdmin()?`<button class="btn secondary" onclick="addScheduleActivity()" style="margin-top:8px">+ Add activity</button>`:''}
       </div>
     </details>
-    ${isAdmin() ? `<details style="margin-bottom:12px" ${ttPeriodTimesOpen?'open':''} ontoggle="ttPeriodTimesOpen=this.open">
-      <summary style="cursor:pointer;font-weight:600;font-size:13px">🕐 Period times</summary>
-      <div style="margin-top:10px;padding:10px;background:var(--surface-1);border-radius:6px">
-        
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn secondary small" onclick="editPeriodTimeModal()">Edit times</button>
-        </div>
-      </div>
-    </details>` : ''}
     ${isAdmin() ? `<details style="margin-bottom:12px" ${ttPeriodsOpen?'open':''} ontoggle="ttPeriodsOpen=this.open">
       <summary style="cursor:pointer;font-weight:600;font-size:13px">📋 Periods</summary>
       <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px">
@@ -19126,27 +19022,30 @@ function pageClassTimetable(){
       </div>
     </div>
     ${isAdmin()? `<p class="field-hint" style="margin:6px 0 0">Import acts on the class selected above — switch the dropdown first to work on a different class. Cell edits below save automatically.</p>`:''}
+    <div class="tt-bell-note">🕐 <strong>${esc(bellGroupForClass(cls).label)}</strong> bell schedule — ${esc(bellGroupSummary(bellGroupForClass(cls)))}. Period times follow the year group automatically, so ${esc(cls)} always shows its own times.</div>
     <div id="ttUnknownBanner">${ttUnknownBannerHtml(cls)}</div>
     <div class="table-wrap" style="margin-top:10px"><table class="datatable">
       <thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=>`<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead>
       <tbody>
-        ${timetablePeriods().map(period=>`
-          <tr><td style="width:64px;white-space:nowrap">${esc(period)}</td>
+        ${timetablePeriodsFor(cls).map(period=>{
+          const pt = periodTime(null, period, cls);
+          return `
+          <tr><td style="width:64px;white-space:nowrap">${esc(period)}${pt? `<div style="font-weight:400;font-size:10.5px;color:var(--muted-label)">${esc(fmtTime(pt.start))}–${esc(fmtTime(pt.end))}</div>`:''}</td>
           ${TIMETABLE_DAYS.map(day=>{
             const vals = ttCellValues(tt[day] && tt[day][period]);
-            const defaultTime = periodTime(day, period) || {};
-            const overrideTime = classHasTimeOverride(cls, day, period) ? getClassPeriodTime(cls, day, period) : null;
-            const hasAnyTime = overrideTime || (defaultTime && (defaultTime.start || defaultTime.end));
-            const timeLbl = overrideTime ? `<strong style="color:var(--text-accent)">${fmtTime(overrideTime.start)}–${fmtTime(overrideTime.end)}</strong>` : periodTimeLabel(day, period);
-            const buttonLabel = overrideTime ? '✓ Edit' : (hasAnyTime ? 'Edit' : 'Set time');
             const dayAttr = esc(day), periodAttr = esc(period);
-            return `<td style="${overrideTime?'background:var(--bg-accent);border-radius:6px;':''}">${timeLbl? `<div style="font-size:10px;${overrideTime?'color:var(--text-accent)':' color:var(--muted-label)'}margin-bottom:2px">${timeLbl}</div>`:''}<input type="hidden" class="ttCell" data-day="${dayAttr}" data-period="${periodAttr}" value="${esc(vals.join('|'))}">
-            <button type="button" class="ttCellBtn btn secondary small" ${isAdmin()?`onclick="editTimetableCellModal(this.parentElement.querySelector('.ttCell').dataset.day, this.parentElement.querySelector('.ttCell').dataset.period)"`:'disabled'} style="width:100%;margin-bottom:4px;text-align:left;min-height:30px;white-space:normal;padding:4px 6px">${ttChipsHtml(vals)}</button>${isAdmin()?`<button class="btn small" onclick="editClassPeriodTime('${esc(cls).replace(/'/g,"\\'")}','${day}','${period}')" style="width:100%;font-size:11px">${buttonLabel}</button>`:''}
+            return `<td><input type="hidden" class="ttCell" data-day="${dayAttr}" data-period="${periodAttr}" value="${esc(vals.join('|'))}">
+            <button type="button" class="ttCellBtn btn secondary small" ${isAdmin()?`onclick="editTimetableCellModal(this.parentElement.querySelector('.ttCell').dataset.day, this.parentElement.querySelector('.ttCell').dataset.period)"`:'disabled'} style="width:100%;text-align:left;min-height:30px;white-space:normal;padding:4px 6px">${ttChipsHtml(vals)}</button>
             </td>`;
           }).join('')}
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
       </tbody>
     </table></div>
+    ${(()=>{
+      const noTime = timetablePeriodsFor(cls).filter(p=> bellGroupForClass(cls).slots.length && !bellSlot(bellGroupForClass(cls), p));
+      return noTime.length ? `<p class="field-hint" style="margin-top:8px">⚠ No bell time for ${noTime.map(esc).join(', ')} — name periods 1ST–9TH, BREAK or LUNCH to get times.</p>` : '';
+    })()}
     <p class="field-hint" style="margin-top:8px">Click a cell to pick what runs in that period. A period can hold more than one subject — for senior classes that split by subject combination, tick every subject running at that time, and auto-build will count a student as free only if their own combination includes none of them. Mark "📚 LIBRARY" on the period(s) a class visits the library; leave a period empty for "— Free —".</p>
     `}
   </div>`;
@@ -19164,7 +19063,7 @@ function classTimetableExportSections(){
       {label:'Period', get:p=>p},
       ...TIMETABLE_DAYS.map(day=>({label: day.slice(0,3), get:p=> cellLabel(cls, day, p)})),
     ],
-    rows: timetablePeriods(),
+    rows: timetablePeriodsFor(cls),
   }));
 }
 function printClassTimetables(){
@@ -19185,57 +19084,11 @@ function exportClassTimetables(){
 function clearAllClassTimetables(){
   if(!isAdmin()) return requireAdmin('clear the class timetable');
   const count = Object.keys(DB.classTimetable||{}).length;
-  const hasPeriodTimes = DB.setup.periodTimes && Object.keys(DB.setup.periodTimes).length;
-  const hasOverrides = DB.classTimings && Object.keys(DB.classTimings).length;
-  if(!count && !hasPeriodTimes && !hasOverrides) return toast('There is no timetable data to clear');
-  confirmModal(`This removes the saved weekly subject timetable for all ${count} class(es), along with every period's start/end times (including any per-class time overrides). Existing library schedule entries already built are left as-is. Continue?`, ()=>{
+  if(!count) return toast('There is no timetable data to clear');
+  confirmModal(`This removes the saved weekly subject timetable for all ${count} class(es). Period times are not affected — they come from the school bell schedule. Existing library schedule entries already built are left as-is. Continue?`, ()=>{
     DB.classTimetable = {};
-    DB.setup.periodTimes = {};
-    DB.classTimings = {};
-    saveDB('All class timetables and period times cleared'); render(); toast('Class timetables and times cleared');
+    saveDB('All class timetables cleared'); render(); toast('Class timetables cleared');
   }, {confirmLabel:'Clear all', danger:true});
-}
-function editClassPeriodTime(cls, day, period){
-  if(!isAdmin()) return requireAdmin('edit class period times');
-  const defaultTime = periodTime(day, period) || {};
-  const override = DB.classTimings?.[cls]?.[day]?.[period] || {};
-  const timeInVal = override.start || defaultTime.start || '';
-  const timeOutVal = override.end || defaultTime.end || '';
-  openModal({
-    title: `Time for ${cls} — ${day} ${period}`,
-    fields: [
-      {key: 'timeIn', label: 'Time in', type: 'time', default: timeInVal},
-      {key: 'timeOut', label: 'Time out', type: 'time', default: timeOutVal},
-    ],
-    values: {},
-    onSave: ()=>{}
-  });
-  const body = $('.modal-body');
-  if(body){
-    const defaultLabel = defaultTime.start && defaultTime.end ? ` (default: ${fmtTime(defaultTime.start)}–${fmtTime(defaultTime.end)})` : ' (no default set)';
-    const hasOverride = override && (override.start || override.end);
-    const infoHtml = document.createElement('p');
-    infoHtml.style.fontSize = '13px';
-    infoHtml.style.color = 'var(--text-secondary)';
-    infoHtml.style.marginBottom = '12px';
-    infoHtml.innerHTML = hasOverride ? 'Currently using custom times.' : ('No custom time set' + defaultLabel);
-    body.insertBefore(infoHtml, body.firstChild);
-  }
-  $('#mSave').textContent = 'Save time';
-  $('#mSave').onclick = ()=>{
-    const timeIn = $('#f_timeIn').value || '';
-    const timeOut = $('#f_timeOut').value || '';
-    if(!timeIn && !timeOut){
-      clearClassTimeOverride(cls, day, period);
-      toast('Time override cleared');
-    } else {
-      setClassTimeOverride(cls, day, period, timeIn, timeOut);
-      toast(`Time set for ${cls} ${period} on ${day}`);
-    }
-    saveDB(`Class time override: ${cls} ${day} ${period}`);
-    render();
-    $('#modalRoot').innerHTML = '';
-  };
 }
 function addScheduleActivity(){
   if(!isAdmin()) return requireAdmin('add activities');
@@ -19285,8 +19138,7 @@ function studentCheckedInOnDate(userId, dateKey){
 }
 
 // Windows of time (in minutes-since-midnight) a period is expected to run, for comparing against
-// the register's actual timeIn/timeOut. Prefers the day's own configured period time (Setup →
-// period times); startOverride (a schedule row's own start time, e.g. r[2]) fills in a start when
+// the register's actual timeIn/timeOut. Prefers the school bell time for the period (both year groups' slots combined); startOverride (a schedule row's own start time, e.g. r[2]) fills in a start when
 // no period time is configured. When no end time is configured anywhere either, the next
 // chronological period's start is used as an implicit end, so a register entry logged a little
 // late still overlaps correctly instead of missing the window entirely.
@@ -19440,6 +19292,14 @@ function computeLibraryScheduleProposals(){
   });
   return {classesWithTimetable, proposals, individualFree};
 }
+/* Start time for an auto-built library-schedule row. The row is keyed by day + period, so when the
+   classes sharing it sit on different bell schedules (e.g. 3RD is 09:45 for Years 7–8 but 09:50 for
+   Years 9–11) it takes the earliest start; a row whose classes are all in one group gets that group's time. */
+function proposalPeriodTime(p){
+  const times = [...p.classes].map(c=> periodTime(p.day, p.period, c)).filter(Boolean);
+  if(!times.length) return periodTime(p.day, p.period);
+  return times.reduce((a,b)=> b.start<a.start ? b : a);
+}
 function autoBuildLibrarySchedule(){
   if(!isAdmin()) return requireAdmin('auto-build the library schedule');
   const {classesWithTimetable, proposals, individualFree} = computeLibraryScheduleProposals();
@@ -19455,7 +19315,7 @@ function autoBuildLibrarySchedule(){
       const classesArr = [...p.classes];
       const note = p.reason==='library' ? 'Library period (from class timetable)' : 'Free period (from class timetable)';
       const existingIdx = DB.scheduleDays.findIndex(r=> r[0]===p.day && r[1]===p.period);
-      const pt = periodTime(p.day, p.period);
+      const pt = proposalPeriodTime(p);
       if(existingIdx>-1){
         const row = DB.scheduleDays[existingIdx];
         const existingClasses = String(row[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -22198,7 +22058,7 @@ const GUIDE_SECTIONS = [
   {h:'Circulation', ic:'swap', b:'Issue and return titles. Type a member ID or accession number — or a partial number/name — and pick from the filtered suggestions; no need to type a code exactly, and no more waiting for an exact match. Scanning with a mobile camera, a dedicated code scanner, or typing all work the same way, and a successful match shows a ✓ Verified badge with a running scan counter. Returning a title as "Missing" marks both the book and the loan as Missing, not Available or Returned. Print a report for one member, one item, a date range, or everything. "Clear all" wipes the circulation log for a fresh session (admin only).'},
   {h:'Reminder Log', ic:'bell', b:'Every loan currently overdue, with a one-click "Log reminder" and — where a phone number is on file — a WhatsApp reminder button that renders a clean designed image (or PDF) of the reminder and shares it to the borrower (staff) or the class teacher (students).'},
   {h:'Register', ic:'checklist', b:'Desk sign-ins and class period visits together. Use "Batch check-in" to stage several students (by ID or a whole class) before submitting them all at once with a shared note; "Batch check-out" lists everyone currently signed in so you can check them out together. Edit any entry to add discipline notes and consequences.'},
-  {h:'Schedule', ic:'calendar', b:'The weekly library timetable and each student\'s subject combination. Admins can add, edit or delete periods, with a period dropdown, a native time picker, and Library, Free, or Other note types. Class Timetable holds each class\'s week: Manage activities, Period times and Periods each fold away, cell edits can be applied to every other slot holding the same entry at once, and \"Auto-build library schedule\" turns the timetables into the visit schedule — counting a student as free only when none of the real subjects running in that period are in their own combination, so assembly, sport and break are never mistaken for free time.'},
+  {h:'Schedule', ic:'calendar', b:'The weekly library timetable and each student\'s subject combination. Admins can add, edit or delete periods, with a period dropdown, a native time picker, and Library, Free, or Other note types. Class Timetable holds each class\'s week: Manage activities and Periods fold away, period times follow the class\'s year group automatically (Years 7–8 and Years 9–11 have different bells, shown separately on the Dashboard and in Quick Actions → Today\'s Timetable), cell edits can be applied to every other slot holding the same entry at once, and \"Auto-build library schedule\" turns the timetables into the visit schedule — counting a student as free only when none of the real subjects running in that period are in their own combination, so assembly, sport and break are never mistaken for free time.'},
   {h:'Feedback', ic:'chat', b:'Suggestions, complaints and requests from members and staff, with a status workflow (New, In review, Resolved).'},
   {h:'Setup', ic:'gear', b:'Library configuration, with every section collapsible and reorderable (Collapse all / Expand all / Reorder sections / Reset order at the top — drag a section\'s ⠿ handle, or use its ▲▼, to put it where you want): classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list — which \"Auto-tick from timetable\" can fill in from the class timetables — fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
   {h:'Personalization', ic:'palette', b:'Everything else: theme and colour palette, clock style and date format (the analogue clock now shows the date on its face), typography, icons, lockscreen appearance and backgrounds — including separate Section and Modal background colours, and a notification bell you can show or hide on the sign-in screen.'},
@@ -24328,33 +24188,9 @@ function openTimetableModal() {
   const modal = document.getElementById('quickActionModals');
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
   
-  let timetableContent = '';
-  const classes = sortedClasses();
-  const periods = timetablePeriods().filter(period=> classes.some(c=> (classTimetableFor(c)[weekday]||{})[period]));
-  
-  if(!classes.length || !periods.length) {
-    timetableContent = `<div class="empty">No class timetable entered for today yet</div>`;
-  } else {
-    const cellHtml = (raw)=>{
-      const vals = ttCellValues(raw);
-      if(!vals.length) return '<span style="color:var(--muted-label)">—</span>';
-      const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
-      const subjects = DB.setup.subjects || [];
-      return vals.map(val=>{
-        if(val==='LIBRARY') return '<span class="badge green">📚 LIBRARY</span>';
-        if(activities.includes(val) && !subjects.includes(val)){
-          return `<span style="color:var(--muted-label);font-style:italic;text-transform:uppercase">${esc(val.toUpperCase())}</span>`;
-        }
-        return esc(val);
-      }).join('<span style="color:var(--muted-label)"> / </span>');
-    };
-    timetableContent = `<div class="table-wrap" style="max-height: 400px; overflow: auto;"><table class="datatable timetable-frozen"><thead><tr><th class="frozen-col">Class</th>${periods.map(p=>`<th>${periodHeaderHtml(weekday, p)}</th>`).join('')}</tr></thead>
-    <tbody>${classes.map(c=>{
-      const tt = classTimetableFor(c)[weekday]||{};
-      return `<tr><td class="frozen-col">${esc(c)}</td>${periods.map(p=>`<td>${cellHtml(tt[p]||'')}</td>`).join('')}</tr>`;
-    }).join('')}</tbody></table></div>`;
-  }
-  
+  const segmentsHtml = renderTodayTimetableHtml(weekday);
+  const timetableContent = segmentsHtml || `<div class="empty">No class timetable entered for today yet</div>`;
+
   modal.innerHTML = `
     <div class="quick-modal-overlay show" id="tempOverlay">
       <div class="quick-modal show" style="max-width: 800px;">
