@@ -5321,7 +5321,7 @@ function previewTypography(){
   if(isCustom('setMutedColor')) document.documentElement.style.setProperty('--muted', g('setMutedColor'));
   else document.documentElement.style.removeProperty('--muted');
 }
-function saveTypographyForm(silent){
+async function saveTypographyForm(silent){
   PREFS.appFont = document.getElementById('setAppFont')?.value || 'default';
   PREFS.headingFont = document.getElementById('setHeadingFont')?.value || 'default';
   PREFS.bodyScale = (+document.getElementById('setBodyScale')?.value || 100)/100;
@@ -5336,7 +5336,7 @@ function saveTypographyForm(silent){
   PREFS.headingColor = savedColor('setHeadingColor');
   PREFS.bodyColor = savedColor('setBodyColor');
   PREFS.mutedColor = savedColor('setMutedColor');
-  applyTypography(); savePrefs(); appearancePreviewDirty = false;
+  applyTypography(); await savePrefs(); appearancePreviewDirty = false;
   if(!silent) toast('Typography updated');
 }
 async function loadPrefs(){
@@ -5407,11 +5407,11 @@ function previewQuickActionIcon(id){
     el.classList.toggle('selected', el.dataset.qaIconId === id);
   });
 }
-function saveQuickActionIconPrefs(silent){
+async function saveQuickActionIconPrefs(silent){
   PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
   pendingQuickActionIcon = null;
   applyQuickActionIcon();
-  savePrefs();
+  await savePrefs();
   if(!silent) toast('Quick actions icon updated');
 }
 /* ---- Notification sound picker (Personalization → Notifications) ----
@@ -5448,10 +5448,10 @@ function previewNotificationSound(id){
     el.classList.toggle('selected', el.dataset.soundId === id);
   });
 }
-function saveNotificationSoundPrefs(silent){
+async function saveNotificationSoundPrefs(silent){
   PREFS.notificationSound = pendingNotificationSound || PREFS.notificationSound || 'crystalBell';
   pendingNotificationSound = null;
-  savePrefs();
+  await savePrefs();
   if(!silent) toast('Notification sound updated');
 }
 /* Universal "back to default" button in Personalization. Resets every appearance/typography/
@@ -5488,16 +5488,16 @@ function resetPersonalization(){
    (no per-section toast, no in-between re-render — several of them re-render the whole page
    themselves, which would wipe out any not-yet-read fields from the *other* sections if we let
    that happen mid-way through), then re-renders once and shows a single confirmation toast. */
-function saveAllPersonalization(){
-  saveTypographyForm(true);
-  saveClockPrefs(true);
+async function saveAllPersonalization(){
+  await saveTypographyForm(true);
+  await saveClockPrefs(true);
   saveAppBackground(true);
-  saveSectionStyle(true);
-  savePersonalizationExtras(true);
-  saveLockscreenAppearance(true);
-  saveWeatherAmbiencePrefs(true);
-  saveNotificationSoundPrefs(true);
-  saveQuickActionIconPrefs(true);
+  await saveSectionStyle(true);
+  await savePersonalizationExtras(true);
+  await saveLockscreenAppearance(true);
+  await saveWeatherAmbiencePrefs(true);
+  await saveNotificationSoundPrefs(true);
+  await saveQuickActionIconPrefs(true);
   render();
   toast('Personalization saved');
 }
@@ -8345,7 +8345,7 @@ function toggleLockscreenElement(key){
   if(ribbon) ribbon.innerHTML = renderLockscreenRibbon();
 }
 function previewLockscreenDecorStyle(style){ applyLockscreenDecorStyle(style); }
-function saveLockscreenAppearance(silent){
+async function saveLockscreenAppearance(silent){
   // One save button for the whole lockscreen row: background image + its opacity + login box opacity + elements shown + decoration style.
   PREFS.authBoxOpacity = +document.getElementById('setAuthBoxOpacity')?.value || 90;
   document.documentElement.style.setProperty('--auth-box-opacity', PREFS.authBoxOpacity/100);
@@ -8353,7 +8353,7 @@ function saveLockscreenAppearance(silent){
   applyLockscreenElements(PREFS.lockscreenElements);
   PREFS.lockscreenDecorStyle = document.getElementById('setLockscreenDecorStyle')?.value || PREFS.lockscreenDecorStyle || 'circle';
   applyLockscreenDecorStyle(PREFS.lockscreenDecorStyle);
-  savePrefs();
+  await savePrefs();
   saveAuthBackground(silent);
 }
 function clearAuthBackground(){
@@ -8457,7 +8457,7 @@ function previewAuthBoxColor(){
   const rgb = hexToRgbStr(document.getElementById('setAuthBoxColor')?.value);
   if(rgb){ document.documentElement.style.setProperty('--auth-box-bg-rgb', rgb); document.documentElement.style.setProperty('--auth-box-bg-rgb-dark', rgb); }
 }
-function saveSectionStyle(silent){
+async function saveSectionStyle(silent){
   PREFS.sectionStyle = document.getElementById('setSectionStyle')?.value || 'solid';
   PREFS.sectionOpacity = +document.getElementById('setSectionOpacity')?.value || 70;
   PREFS.topbarStyle = document.getElementById('setTopbarStyle')?.value || 'solid';
@@ -8478,7 +8478,7 @@ function saveSectionStyle(silent){
   PREFS.authBoxColor = document.getElementById('setAuthBoxColor')?.value || '';
   const authBoxRgb = hexToRgbStr(PREFS.authBoxColor);
   if(authBoxRgb){ document.documentElement.style.setProperty('--auth-box-bg-rgb', authBoxRgb); document.documentElement.style.setProperty('--auth-box-bg-rgb-dark', authBoxRgb); }
-  savePrefs(); if(!silent) toast('Background style saved');
+  await savePrefs(); if(!silent) toast('Background style saved');
 }
 function previewPersonalizationExtras(){
   // Live preview only — applies the icon pack and modal transition visually without persisting.
@@ -8491,11 +8491,11 @@ function previewPersonalizationExtras(){
   renderNav(); // sidebar icons switch immediately as the pack is chosen, not just after Save
   PREFS.iconPack = prevIconPack; // …then restore, since this hasn't been saved yet.
 }
-function savePersonalizationExtras(silent){
+async function savePersonalizationExtras(silent){
   PREFS.iconPack = document.getElementById('setIconPack')?.value || 'minimal';
   PREFS.transitionStyle = document.getElementById('setTransitionStyle')?.value || 'scale';
   document.body.setAttribute('data-transition', PREFS.transitionStyle);
-  savePrefs(); applyIconPack();
+  await savePrefs(); applyIconPack();
   if(!silent){ render(); toast('Preferences saved'); }
 }
 // Live preview for Clock format / Date format / Sign-in clock style. These three are read by
@@ -23186,7 +23186,7 @@ function saveClassSubjects(){
   DB.setup.classSubjects = Object.assign(DB.setup.classSubjects, map);
   syncLibrarySchedulePersonalFree(); saveDB('Class subject distribution updated'); render(); toast('Class subject distribution saved');
 }
-function saveClockPrefs(silent){
+async function saveClockPrefs(silent){
   if($('#setClockFormat')) DB.setup.clockFormat = $('#setClockFormat').value;
   if($('#setDateFormat')) DB.setup.dateFormat = $('#setDateFormat').value;
   PREFS.clockFormat = DB.setup.clockFormat; PREFS.dateFormat = DB.setup.dateFormat;
@@ -23200,7 +23200,7 @@ function saveClockPrefs(silent){
   document.documentElement.style.setProperty('--date-font', (DATE_FONTS[PREFS.dateFont]||DATE_FONTS.default).stack);
   appearancePreviewDirty = false;
   clockPrefsPreviewOriginal = null;
-  savePrefs(); saveDB('Appearance preferences updated');
+  await savePrefs(); saveDB('Appearance preferences updated');
   if(!silent){ render(); toast('Preferences saved'); }
 }
 function saveInstitution(){
@@ -23879,13 +23879,13 @@ function previewTermScheme(){
   const currentIdx = sel.value;
   sel.innerHTML = TERM_LABEL_SCHEMES[scheme].terms.map((t,i)=>`<option value="${i}" ${String(i)===currentIdx?'selected':''}>${esc(t)}</option>`).join('');
 }
-function saveWeatherAmbiencePrefs(silent){
+async function saveWeatherAmbiencePrefs(silent){
   if($('#setWeatherAmbience')) PREFS.weatherAmbience = $('#setWeatherAmbience').checked;
   if($('#setWeatherActivities')) PREFS.weatherActivities = $('#setWeatherActivities').checked;
   if($('#setWeatherStyle')) PREFS.weatherAmbienceStyle = $('#setWeatherStyle').value;
   if($('#setWeatherSet')) PREFS.weatherAmbienceSet = $('#setWeatherSet').value;
   weatherPrefsPreviewOriginal = null;
-  savePrefs();
+  await savePrefs();
   if(!silent){ render(); toast('Preferences saved'); }
 }
 function toggleWhatsAppReceipts(on){
