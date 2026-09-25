@@ -5340,7 +5340,16 @@ async function saveTypographyForm(silent){
   if(!silent) toast('Typography updated');
 }
 async function loadPrefs(){
-  try{ const v = await storeGet(PREFS_KEY); if(v) PREFS = Object.assign(PREFS, JSON.parse(v)); }catch(e){}
+  try{ 
+    const v = await storeGet(PREFS_KEY); 
+    if(v) {
+      const loaded = JSON.parse(v);
+      console.log('DEBUG: loadPrefs loaded quickActionIcon =', loaded.quickActionIcon);
+      PREFS = Object.assign(PREFS, loaded); 
+    }
+  }catch(e){
+    console.error('DEBUG: loadPrefs error:', e);
+  }
   applyTheme(); applyPalette(PREFS.palette); applyTypography();
   applyIconPack(); // so icon-pack-driven elements on the login screen (e.g. Install) are already correct pre-login, not just after enterApp()
   document.body.setAttribute('data-transition', PREFS.transitionStyle||'scale');
@@ -5410,8 +5419,10 @@ function previewQuickActionIcon(id){
 async function saveQuickActionIconPrefs(silent){
   PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
   pendingQuickActionIcon = null;
+  console.log('DEBUG: Saving quickActionIcon =', PREFS.quickActionIcon);
   applyQuickActionIcon();
   await savePrefs();
+  console.log('DEBUG: savePrefs completed');
   if(!silent) toast('Quick actions icon updated');
 }
 /* ---- Notification sound picker (Personalization → Notifications) ----
@@ -5491,7 +5502,7 @@ function resetPersonalization(){
 async function saveAllPersonalization(){
   await saveTypographyForm(true);
   await saveClockPrefs(true);
-  saveAppBackground(true);
+  await saveAppBackground(true);
   await saveSectionStyle(true);
   await savePersonalizationExtras(true);
   await saveLockscreenAppearance(true);
@@ -8220,18 +8231,31 @@ function removeCustomQuote(i){
   DB.setup.customQuotes.splice(i,1);
   saveDB('Quote removed'); render(); toast('Quote removed');
 }
-function saveAppBackground(silent){
+async function saveAppBackground(silent){
   if(!isAdmin()) return requireAdmin('change the app background');
   const opacity = +document.getElementById('appBgOpacity').value || 0;
   DB.setup.appBackgroundOpacity = opacity;
   const file = document.getElementById('appBgInput').files[0];
   if(file){
     if(file.size > 1.5*1024*1024){ toast('Please choose an image under 1.5MB'); return; }
-    const reader = new FileReader();
-    reader.onload = ()=>{ DB.setup.appBackgroundImage = reader.result; appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB('App background updated'); applyAppBackground(); if(!silent){ render(); toast('Background saved'); } };
-    reader.readAsDataURL(file);
+    return new Promise((resolve)=>{
+      const reader = new FileReader();
+      reader.onload = async ()=>{ 
+        DB.setup.appBackgroundImage = reader.result; 
+        appBackgroundDraftImage=null; 
+        appBackgroundPreviewDirty=false; 
+        await saveDB('App background updated'); 
+        applyAppBackground(); 
+        if(!silent){ render(); toast('Background saved'); } 
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
   } else {
-    appBackgroundDraftImage=null; appBackgroundPreviewDirty=false; saveDB('App background cleared'); applyAppBackground();
+    appBackgroundDraftImage=null; 
+    appBackgroundPreviewDirty=false; 
+    await saveDB('App background cleared'); 
+    applyAppBackground();
     if(!silent) toast('Background saved');
   }
 }
