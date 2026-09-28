@@ -7884,8 +7884,6 @@ const NAV = [
     {id:'reminders', label:'Reminder Log', ico:'✉'},
     {id:'register', label:'Register', ico:'✎'},
     {id:'schedule', label:'Schedule', ico:'▦'},
-    {id:'skipped', label:'Skipped Students', ico:'🚫', action:'openSkippedStudentsModal'},
-    {id:'absent', label:'Absent Students', ico:'🙋', action:'openAbsentStudentsModal'},
     {id:'feedback', label:'Feedback', ico:'💬'},
   ]},
   {group:'Admin', items:[
@@ -11726,8 +11724,6 @@ function pageDashboard(){
     <div class="panel-head-actions">
       <button class="btn secondary small" onclick="generateSummaryReport()">🧾 Generate summary report</button>
       <button class="btn secondary small" onclick="openReportModal()">📋 Generate comprehensive report</button>
-      <button class="btn secondary small" onclick="openSkippedStudentsModal()">🚫 Skipped library schedule</button>
-      <button class="btn secondary small" onclick="openAbsentStudentsModal()">🙋 Absent students</button>
     </div>
   </div>
   <div class="grid kpis">
@@ -11774,6 +11770,7 @@ function pageDashboard(){
     })()}</div></div>
     ${renderTodayTimetableHtml(weekday) || `<div class="empty">No class timetable entered for today yet — add one from <a href="javascript:void(0)" onclick="route='schedule';scheduleSubview='timetable';render()">Schedule → Class timetable</a>.</div>`}
   </div>
+  <div style="margin-top:16px">${analyticsSkipPanelHtml()}</div>
   <div class="grid two-col" style="margin-top:16px">
     <div class="card panel">
       <div class="panel-head"><h3>Recent circulation activity</h3></div>
@@ -11845,7 +11842,6 @@ function pageAnalytics(){
       <tbody>${topT.map((e,i)=>`<tr class="hoverable-row" onmouseenter="showTitleHoverTip(event,${i})" onmousemove="moveAnalyticsHoverTip(event)" onmouseleave="hideAnalyticsHoverTip()" ondblclick="openTitleLoansModal(${i})"><td>${i+1}</td><td>${esc(e[0])}</td><td>${e[1]}</td></tr>`).join('')||'<tr><td colspan=3><div class="empty">No loans yet</div></td></tr>'}</tbody></table></div>
     </div>
   </div>
-  ${analyticsSkipPanelHtml()}
   <div class="grid charts-row">
     <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
     <div class="card chart-box"><h4>Class reach — members who have borrowed vs never</h4><div class="chart-canvas-wrap"><canvas id="chClassReach"></canvas></div></div>
@@ -17549,8 +17545,6 @@ function pageRegister(){
     extraActions:[
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
       {label:'✎ Batch edit selected', onClick:()=>bulkEditRegister()},
-      {label:'🚫 Skipped students', onClick:()=>openSkippedStudentsModal(), alwaysShow:true},
-      {label:'🙋 Absent students', onClick:()=>openAbsentStudentsModal(), alwaysShow:true},
       {label:'🗑 Clear selected', onClick:()=>bulkClearRegister(), danger:true},
       {label:'⚠ Clear all', onClick:clearAllRegister, danger:true},
     ],
@@ -25528,8 +25522,6 @@ function openScheduleModal() {
         </div>
         <div class="quick-modal-footer">
           <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
-          <button class="btn btn-secondary" onclick="closeQuickActionModal(); openAbsentStudentsModal()">🙋 Absent students</button>
-          <button class="btn btn-secondary" onclick="closeQuickActionModal(); openSkippedStudentsModal()">🚫 Skipped students</button>
           <button class="btn btn-primary" onclick="closeQuickActionModal(); route='schedule'; render()">View Full Schedule</button>
         </div>
       </div>
