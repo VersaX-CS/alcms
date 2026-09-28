@@ -18775,7 +18775,7 @@ function pageSchedule(){
         ` : '';
         const colSpan = isAdmin() ? 7 : 6;
         return `
-          <tr onclick="${hasScheduledClass ? `togglePeriodDetails('${periodKey}')` : ''}" style="${hasScheduledClass ? 'cursor:pointer;background:rgba(0,0,0,0.02)' : ''}">
+          <tr onclick="${hasScheduledClass ? `if(event.target.closest('.fp-details,a,button,input,select'))return;togglePeriodDetails('${periodKey}')` : ''}" style="${hasScheduledClass ? 'cursor:pointer;background:rgba(0,0,0,0.02)' : ''}">
             <td>${esc(periodName)}${hasScheduledClass ? ` <span style="color:var(--muted);font-size:11px">${isExpanded ? '▼' : '▶'}</span>` : ''}</td>
             <td>${esc((r[2]||'').slice(0,5))}</td>
             <td>${esc(r[3]||'')}</td>
