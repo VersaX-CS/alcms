@@ -6999,11 +6999,12 @@ function migrateNewFeatureData(db){
   if(db.setup.scanWebhookUrl===undefined) db.setup.scanWebhookUrl = '';
   if(db.setup.stationId===undefined) db.setup.stationId = '';
   if(!db.setup.notifTypes) db.setup.notifTypes = {};
-  ['schedule','overdue','dueSoon','feedback','summary','reservation','staffSchedule'].forEach(k=>{
+  ['schedule','overdue','dueSoon','feedback','summary','reservation','staffSchedule','checkout'].forEach(k=>{
     if(db.setup.notifTypes[k]===undefined) db.setup.notifTypes[k] = true;
   });
   if(!Array.isArray(db.setup.staffEventCategories) || !db.setup.staffEventCategories.length) db.setup.staffEventCategories = DEFAULT_STAFF_CATEGORIES.slice();
   if(db.setup.staffScheduleLeadMinutes===undefined) db.setup.staffScheduleLeadMinutes = 10;
+  if(db.setup.checkoutReminderLeadMinutes===undefined) db.setup.checkoutReminderLeadMinutes = 2;
   if(!Array.isArray(db.staffTimetable)) db.staffTimetable = [];
   db.staffTimetable.forEach(e=>{
     if(e.leadMinutes===undefined) e.leadMinutes = db.setup.staffScheduleLeadMinutes;
@@ -7317,11 +7318,12 @@ function buildSeedDB(){
   if(!Array.isArray(setup.equipmentCategories) || !setup.equipmentCategories.length) setup.equipmentCategories = DEFAULT_EQUIPMENT_CATEGORIES.slice();
   if(!setup.aiDescription) setup.aiDescription = {enabled:false, endpoint:'https://api.openai.com/v1/chat/completions', model:'gpt-4o-mini', apiKey:''};
   if(!setup.notifTypes) setup.notifTypes = {};
-  ['schedule','overdue','dueSoon','feedback','summary','reservation','staffSchedule'].forEach(k=>{
+  ['schedule','overdue','dueSoon','feedback','summary','reservation','staffSchedule','checkout'].forEach(k=>{
     if(setup.notifTypes[k]===undefined) setup.notifTypes[k] = true;
   });
   if(!Array.isArray(setup.staffEventCategories) || !setup.staffEventCategories.length) setup.staffEventCategories = DEFAULT_STAFF_CATEGORIES.slice();
   if(setup.staffScheduleLeadMinutes===undefined) setup.staffScheduleLeadMinutes = 10;
+  if(setup.checkoutReminderLeadMinutes===undefined) setup.checkoutReminderLeadMinutes = 2;
   if(!setup.shelfMap || typeof setup.shelfMap!=='object') setup.shelfMap = {};
   if(!setup.periodTimes || typeof setup.periodTimes!=='object') setup.periodTimes = {};
   if(!Array.isArray(setup.bellSchedules)) setup.bellSchedules = defaultBellSchedules();
@@ -7857,6 +7859,95 @@ function checkOutstandingSummaryAlert(){
     actions,
   });
 }
+/* ---- End-of-period check-out reminder ----
+   A few minutes before a scheduled library period ends (default 2, changeable in Personalization →
+   Notifications & alerts), pops up everyone still signed in at the desk so they can be ticked and
+   checked out in one go. The end time comes from the period's bell schedule, so it follows whatever
+   period times are set. Fires once per period end per day; skipped if nobody is in the library. */
+let checkoutRemDayKey = null, checkoutRemFired = new Set();
+function checkCheckoutReminderAlerts(){
+  if(!SESSION || !DB || !Array.isArray(DB.scheduleDays) || $('#timedAlertBackdrop') || $('#checkoutRemBackdrop')) return;
+  if(!DB.setup.notifTypes || !DB.setup.notifTypes.checkout || !isStaff()) return;
+  const now = new Date();
+  const dayKey = now.toDateString();
+  if(checkoutRemDayKey !== dayKey){ checkoutRemDayKey = dayKey; checkoutRemFired = new Set(); }
+  const weekday = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][now.getDay()];
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const lead = Math.max(0, +(DB.setup.checkoutReminderLeadMinutes ?? 2));
+  // Group today's library periods by their end time.
+  const byEnd = {};
+  DB.scheduleDays.filter(r=> r[0]===weekday && r[1]).forEach(r=>{
+    const pt = periodTime(weekday, r[1]);
+    const endMin = pt && pt.end ? timeToMinutes(pt.end) : null;
+    if(endMin==null) return;
+    (byEnd[pt.end] = byEnd[pt.end] || []).push(r[1]);
+  });
+  const dueEnd = Object.keys(byEnd).find(end=>{
+    const endMin = timeToMinutes(end);
+    return !checkoutRemFired.has(end) && nowMin >= endMin - lead && nowMin < endMin;
+  });
+  if(!dueEnd) return;
+  if(!currentlyInLibrary().length) return;      // nobody to check out — try again at the next period end
+  checkoutRemFired.add(dueEnd);
+  openCheckoutReminder(byEnd[dueEnd], dueEnd);
+}
+function openCheckoutReminder(periods, endTime){
+  if($('#checkoutRemBackdrop')) return;
+  const inLib = currentlyInLibrary();
+  if(!inLib.length) return;
+  const sel = {}; inLib.forEach(r=> sel[r.entryId] = true);
+  const label = [...new Set(periods||[])].join(' / ');
+  pushNotification({type:'checkout', title:'Check out library users', body:`${inLib.length} still in the library — ${label||'period'} ends at ${fmtTime(endTime)}`, route:'register'});
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.id = 'checkoutRemBackdrop';
+  const bodyHtml = ()=>{
+    const list = currentlyInLibrary();
+    if(!list.length) return `<div class="stage-empty">Everyone has been checked out. ✅</div>`;
+    return `<p style="margin:0 0 10px">${esc(label||'The library period')} ends at <strong>${esc(fmtTime(endTime))}</strong>. Untick anyone who is staying on.</p>
+      <table class="stage-table"><thead><tr>
+        <th><input type="checkbox" id="coRemAll" ${list.every(r=>sel[r.entryId])?'checked':''} aria-label="Select all"></th>
+        <th>Name</th><th>Class</th><th>Time in</th></tr></thead>
+      <tbody>${list.map(r=>`<tr><td><input type="checkbox" class="coRemRow" data-id="${esc(r.entryId)}" ${sel[r.entryId]?'checked':''}></td>
+        <td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls)}</td><td>${esc(fmtTime(r.timeIn))}</td></tr>`).join('')}</tbody></table>`;
+  };
+  const paint = ()=>{
+    const list = currentlyInLibrary();
+    wrap.querySelector('.modal-body').innerHTML = bodyHtml();
+    const n = list.filter(r=>sel[r.entryId]).length;
+    const btn = wrap.querySelector('#coRemGo');
+    btn.textContent = `Check out selected (${n})`;
+    btn.style.display = list.length ? '' : 'none';
+    const all = wrap.querySelector('#coRemAll');
+    if(all) all.onchange = e=>{ list.forEach(r=> sel[r.entryId] = e.target.checked); paint(); };
+    wrap.querySelectorAll('.coRemRow').forEach(cb=> cb.onchange = e=>{ sel[e.target.dataset.id] = e.target.checked; paint(); });
+  };
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>🔔 Time to check out library users</h3></div>
+      <div class="modal-body"></div>
+      <div class="modal-foot">
+        <button class="btn" id="coRemGo">Check out selected</button>
+        <button class="btn secondary" id="coRemClose">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  playAlertBeep();
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.querySelector('#coRemClose').onclick = close;
+  wrap.querySelector('#coRemGo').onclick = ()=>{
+    if(!isStaff()) return requireStaff('check students out');
+    const chosen = currentlyInLibrary().filter(r=> sel[r.entryId]);
+    if(!chosen.length){ toast('Select at least one person to check out'); return; }
+    const t = new Date().toTimeString().slice(0,5);
+    chosen.forEach(r=>{ r.timeOut = t; });
+    saveDB(`${chosen.length} people checked out (end of period)`); render();
+    toast(`${chosen.length} checked out`);
+    if(currentlyInLibrary().length) paint(); else close();
+  };
+  paint();
+}
+
 let outstandingSummaryTimer = null;
 function restartOutstandingSummaryTimer(){
   clearInterval(outstandingSummaryTimer);
@@ -7864,7 +7955,7 @@ function restartOutstandingSummaryTimer(){
   outstandingSummaryTimer = setInterval(checkOutstandingSummaryAlert, ms);
 }
 restartOutstandingSummaryTimer();
-setInterval(()=>{ checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
+setInterval(()=>{ checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); checkCheckoutReminderAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
 
 /* ================= navigation ================= */
 const NAV = [
@@ -21937,6 +22028,8 @@ function pageSetup(){
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifFeedback" ${DB.setup.notifTypes.feedback?'checked':''} onchange="saveNotifTypeSetting('feedback', this.checked)"> Unresolved feedback</label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifSchedule" ${DB.setup.notifTypes.schedule?'checked':''} onchange="saveNotifTypeSetting('schedule', this.checked)"> Class period starting</label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifStaffSchedule" ${DB.setup.notifTypes.staffSchedule?'checked':''} onchange="saveNotifTypeSetting('staffSchedule', this.checked)"> Staff timetable (fellowship, assembly, meetings, lunch, sport, etc.)</label>
+      <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifCheckout" ${DB.setup.notifTypes.checkout?'checked':''} onchange="saveNotifTypeSetting('checkout', this.checked)"> Check-out reminder before a library period ends
+        <select id="setCheckoutLead" onchange="saveCheckoutLeadSetting(this.value)" style="margin-left:6px">${[1,2,3,5,10].map(m=>`<option value="${m}" ${(DB.setup.checkoutReminderLeadMinutes??2)===m?'selected':''}>${m} min before</option>`).join('')}</select></label>
       <label style="display:block;font-weight:400"><input type="checkbox" id="setNotifSummary" ${DB.setup.notifTypes.summary?'checked':''} onchange="saveNotifTypeSetting('summary', this.checked)"> Periodic "Needs your attention" summary</label>
     </div>
     <p class="field-hint">Turning one off stops that pop-up/bell alert from firing again — it doesn't affect the underlying record (an overdue loan is still overdue, a reservation is still marked ready) or the WhatsApp receipt below.</p>
@@ -24498,6 +24591,11 @@ function saveNotifTypeSetting(key, on){
   if(!isAdmin()) return requireAdmin('change notification settings');
   if(!DB.setup.notifTypes) DB.setup.notifTypes = {};
   DB.setup.notifTypes[key] = on; saveDB(`Notification type "${key}" ${on?'enabled':'disabled'}`);
+}
+function saveCheckoutLeadSetting(v){
+  if(!isAdmin()) return requireAdmin('change notification settings');
+  DB.setup.checkoutReminderLeadMinutes = Math.max(0, +v||2);
+  saveDB('Check-out reminder lead time set to '+DB.setup.checkoutReminderLeadMinutes+' min'); toast('Check-out reminder set to '+DB.setup.checkoutReminderLeadMinutes+' min before period end');
 }
 function saveStaffScheduleSettings(){
   if(!isAdmin()) return requireAdmin('change staff timetable settings');
