@@ -7024,6 +7024,7 @@ function migrateNewFeatureData(db){
   // Frozen day-by-day record of skipped library periods (see SKIPPED LIBRARY SCHEDULE) and the date tracking began.
   if(!db.skipLedger || typeof db.skipLedger!=='object' || Array.isArray(db.skipLedger)) db.skipLedger = {};
   if(typeof db.skipTrackingStart!=='string') db.skipTrackingStart = '';
+  if(!Array.isArray(db.schoolAbsences)) db.schoolAbsences = [];   // students absent from school on a given day (exempt from library obligations)
   (function normalizeActivitiesToUpperCase(){
     const caseMap = {}; // lowercased -> canonical UPPERCASE form
     const upper = [];
@@ -7333,6 +7334,7 @@ function buildSeedDB(){
     excusedSkips: [],
     skipLedger: {},
     skipTrackingStart: '',
+    schoolAbsences: [],
     classTimetable: {},
     classTimings: {},
     staffTimetable: [
@@ -7882,6 +7884,8 @@ const NAV = [
     {id:'reminders', label:'Reminder Log', ico:'✉'},
     {id:'register', label:'Register', ico:'✎'},
     {id:'schedule', label:'Schedule', ico:'▦'},
+    {id:'skipped', label:'Skipped Students', ico:'🚫', action:'openSkippedStudentsModal'},
+    {id:'absent', label:'Absent Students', ico:'🙋', action:'openAbsentStudentsModal'},
     {id:'feedback', label:'Feedback', ico:'💬'},
   ]},
   {group:'Admin', items:[
@@ -10516,6 +10520,7 @@ function generateReport(periodLabel, from, to){
   const skipFrom = from ? dateToKey(from) : '', skipTo = to ? dateToKey(to) : '';
   const skipRecs = getSkipRecords({from: skipFrom||undefined, to: skipTo||undefined});
   const skipUnexplained = skipRecs.filter(r=>r.status==='UNEXPLAINED').length;
+  const absencesInRange = (DB.schoolAbsences||[]).filter(a=> inRange(a.dateKey, from, to));
 
   printMultiSection('Comprehensive Library Report', periodLabel, [
     { heading:'Overview', kpis:[
@@ -10528,6 +10533,7 @@ function generateReport(periodLabel, from, to){
       {label:'Reminders sent', value: reminders.length},
       {label:'Library skips (unexplained)', value: skipUnexplained},
       {label:'Library skips (excused)', value: skipRecs.length - skipUnexplained},
+      {label:'Student absence days', value: absencesInRange.length},
       {label:'Feedback received', value: feedbackInRange.length},
     ]},
     { heading:'Library visits', columns:[
@@ -10547,6 +10553,7 @@ function generateReport(periodLabel, from, to){
       {label:'Offense', get:r=>r.offense==='OTHER'?r.offenseOther:r.offense}, {label:'Consequence', get:r=>r.consequence==='OTHER'?r.consequenceOther:r.consequence},
     ], rows: discipline },
     ...skipReportSections(skipRecs, {note: skipTrackingNote(skipFrom) || undefined}),
+    absenceReportSection(absencesInRange, true),
     { heading:'Overdue right now', columns:[
       {label:'Member', get:r=>r.name}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title}, {label:'Due', get:r=>fmtDate(r.dueDate)},
     ], rows: overdueNow.slice(0,300) },
@@ -11720,6 +11727,7 @@ function pageDashboard(){
       <button class="btn secondary small" onclick="generateSummaryReport()">🧾 Generate summary report</button>
       <button class="btn secondary small" onclick="openReportModal()">📋 Generate comprehensive report</button>
       <button class="btn secondary small" onclick="openSkippedStudentsModal()">🚫 Skipped library schedule</button>
+      <button class="btn secondary small" onclick="openAbsentStudentsModal()">🙋 Absent students</button>
     </div>
   </div>
   <div class="grid kpis">
@@ -14103,6 +14111,7 @@ function memberProfileBodyHtml(u){
       <tr><td style="font-weight:600">Strikes</td><td>${u.strike||0}</td></tr>
       <tr><td style="font-weight:600">Discipline</td><td>${esc(u.discipline||'—')}</td></tr>
       ${isStudent? `<tr><td style="font-weight:600">Skipped library periods</td><td><a href="#" onclick="setMemberProfileTab('skips');return false;" style="color:${skipUnexplained?'var(--terracotta)':'inherit'};font-weight:${skipUnexplained?'700':'400'}">${skipUnexplained} unexplained</a>${skipRecs.length-skipUnexplained? ` · ${skipRecs.length-skipUnexplained} excused`:''}</td></tr>`:''}
+      ${isStudent? memberAbsenceRowHtml(u):''}
       <tr><td style="font-weight:600">Eligibility</td><td>${esc(u.eligibility||'—')}</td></tr>
       <tr><td style="font-weight:600">Status</td><td>${esc(u.status||'—')}</td></tr>
       <tr><td style="font-weight:600">Status last updated</td><td>${u.statusUpdated? esc(fmtDate(u.statusUpdated)) : '—'}</td></tr>
@@ -16739,6 +16748,8 @@ function printMemberFullProfile(id){
   }
   if(u.category==='STUDENT'){
     const sk = getSkipRecords({userId:u.id});
+    sections.push({ heading:'Days absent from school', columns:[{label:'Date',get:r=>fmtDate(r.dateKey)},{label:'Reason',get:r=>r.reason||''},{label:'Recorded by',get:r=>r.by||''}],
+      rows:(DB.schoolAbsences||[]).filter(a=>a.id===u.id).sort((a,b)=>b.dateKey.localeCompare(a.dateKey)) });
     sections.push({ heading:'Skipped library schedule', columns:[
       {label:'Date',get:r=>fmtDate(r.dateKey)},{label:'Period',get:r=>r.period},{label:'Type',get:r=>SKIP_TYPE_LABEL[r.type]},
       {label:'Status',get:r=>r.status==='EXCUSED'?'Excused':'Unexplained'},{label:'Reason',get:r=>r.status==='EXCUSED'?(r.reason||''):''},
@@ -17538,6 +17549,8 @@ function pageRegister(){
     extraActions:[
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
       {label:'✎ Batch edit selected', onClick:()=>bulkEditRegister()},
+      {label:'🚫 Skipped students', onClick:()=>openSkippedStudentsModal(), alwaysShow:true},
+      {label:'🙋 Absent students', onClick:()=>openAbsentStudentsModal(), alwaysShow:true},
       {label:'🗑 Clear selected', onClick:()=>bulkClearRegister(), danger:true},
       {label:'⚠ Clear all', onClick:clearAllRegister, danger:true},
     ],
@@ -17753,13 +17766,14 @@ function addClassToBatch(clsOverride){
   // yet checked out) must not be pulled into a second check-in batch; they stay off-limits here
   // until their existing register entry gets a timeOut.
   const inLibraryIds = new Set(currentlyInLibrary().map(r=>r.id));
-  let added = 0, skipped = 0;
+  let added = 0, skipped = 0, absentSkipped = 0;
   members.forEach(u=>{
+    if(isAbsentFromSchool(u.id, todayISO())){ absentSkipped++; return; } // absent from school today — exempt
     if(inLibraryIds.has(u.id)){ skipped++; return; }
     if(!batchStaging.some(s=>s.id===u.id)){ batchStaging.push({id:u.id,name:u.name,cls:u.cls,category:u.category}); batchChecked[u.id]=true; added++; }
   });
   mountBatchStaging();
-  toast(`Added ${added} student(s) from ${cls}${skipped? ` — ${skipped} already checked in, skipped`:''}`);
+  toast(`Added ${added} student(s) from ${cls}${skipped? ` — ${skipped} already checked in, skipped`:''}${absentSkipped? ` — ${absentSkipped} absent from school, exempt`:''}`);
 }
 function removeFromBatch(id){ batchStaging = batchStaging.filter(s=>s.id!==id); delete batchChecked[id]; mountBatchStaging(); }
 function clearBatch(){ batchStaging=[]; batchChecked={}; mountBatchStaging(); }
@@ -17775,7 +17789,7 @@ function submitBatch(){
   const blockedIds = new Set(), blockedNames = [];
   const eligible = selected.filter(s=>{
     const u = DB.users.find(x=>x.id===s.id);
-    const reason = memberCheckinBlockReason(u);
+    const reason = memberCheckinBlockReason(u) || (isAbsentFromSchool(s.id, todayISO()) ? 'absent' : null);
     if(reason){ blockedIds.add(s.id); blockedNames.push(s.name); return false; }
     return true;
   });
@@ -17802,7 +17816,7 @@ function submitBatch(){
     mountCheckoutStaging();
     updateLibraryBannerInModal();
   }, 0);
-  if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive): ${blockedNames.join(', ')}. ${eligible.length} checked in.`);
+  if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive or absent from school): ${blockedNames.join(', ')}. ${eligible.length} checked in.`);
   else toast(`${eligible.length} student(s) checked in`);
 }
 
@@ -17987,6 +18001,7 @@ function getSkipRecords(opts){
       if(opts.userId && rec.id!==opts.userId) return;
       const u = DB.users.find(x=>x.id===rec.id);
       if(!u) return; // member has since been removed/archived
+      if(isAbsentFromSchool(rec.id, k)){ if(opts.absentOut) opts.absentOut.push({...rec, dateKey:k}); return; } // absent from school — exempt
       const ex = findExcuseForStudent(rec.id, k, rec.period);
       const full = {...rec, name:u.name, dateKey:k, day:weekdayForDateKey(k), status: ex?'EXCUSED':'UNEXPLAINED', reason: ex?ex.reason:'', by: ex?ex.by:''};
       if(opts.cls && full.cls!==opts.cls) return;
@@ -18090,6 +18105,7 @@ function openSkippedStudentsModal(prefill){
         <div id="skBody"></div>
       </div>
       <div class="modal-foot">
+        <button class="btn secondary" onclick="closeSkippedStudentsModal(true);openAbsentStudentsModal()">🙋 Absent students</button>
         <button class="btn secondary" onclick="printSkippedStudents()">🖨 Print report</button>
         <button class="btn secondary" onclick="exportSkippedStudents()">⭳ Export</button>
         ${isAdmin()? `<button class="btn secondary" onclick="recomputeSkipLedger()" title="Re-check the selected dates against the register and current schedule">↻ Recheck period</button>`:''}
@@ -18115,9 +18131,9 @@ function skipSet(key, val){
   if(key==='view') document.querySelectorAll('#skipModal [data-skview]').forEach(b=> b.classList.toggle('active', b.dataset.skview===val));
   refreshSkipModalBody();
 }
-function currentSkipFilterRecords(ignoreStatus){
+function currentSkipFilterRecords(ignoreStatus, absentOut){
   const b = skipRangeBounds(skipState.range, skipState.cf, skipState.ct);
-  const recs = getSkipRecords({from:b.from, to:b.to, cls:skipState.cls, type:skipState.type, q:skipState.q, status: ignoreStatus?'':skipState.status});
+  const recs = getSkipRecords({from:b.from, to:b.to, cls:skipState.cls, type:skipState.type, q:skipState.q, status: ignoreStatus?'':skipState.status, absentOut});
   return {recs, bounds:b};
 }
 function skipTypeBadge(t){
@@ -18130,7 +18146,7 @@ function skipStatusCell(r){
     const t = `Excused${r.by?' by '+r.by:''}${r.reason?' — '+r.reason:''}`;
     return `<span class="badge" title="${esc(t)}" style="background:rgba(74,144,226,.15);color:#4a90e2">⚑ Excused</span>${r.reason?` <span style="font-size:11px;color:var(--muted)">${esc(r.reason)}</span>`:''}${staff?` <a href="#" onclick="unmarkStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none">✕</a>`:''}`;
   }
-  return `<span class="badge gold">Skipped</span>${staff?` <a href="#" onclick="markStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}','${esc(r.cls)}');return false;" style="color:var(--muted-label);text-decoration:underline;font-size:11px">excuse</a>`:''}`;
+  return `<span class="badge gold">Skipped</span>${staff?` <a href="#" onclick="markStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}','${esc(r.cls)}');return false;" style="color:var(--muted-label);text-decoration:underline;font-size:11px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(r.id)}','${esc(r.dateKey)}');return false;" title="Absent from school that day — exempts them from every period" style="color:var(--muted-label);text-decoration:underline;font-size:11px">absent</a>`:''}`;
 }
 function skipRecordsTableHtml(recs, withStudent){
   return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Date</th><th>Period</th>${withStudent?'<th>Student</th><th>Class</th>':''}<th>Type</th><th>Status</th></tr></thead><tbody>
@@ -18144,7 +18160,8 @@ function refreshSkipModalBody(){
   const host = document.getElementById('skBody');
   if(!host) return;
   const {recs, bounds} = currentSkipFilterRecords(false);
-  const all = currentSkipFilterRecords(true).recs;
+  const absentOut = [];
+  const all = currentSkipFilterRecords(true, absentOut).recs;
   const students = groupSkipsByStudent(recs);
   const un = all.filter(r=>r.status==='UNEXPLAINED'), ex = all.filter(r=>r.status==='EXCUSED');
   const chip = (v,l,c)=> `<div style="flex:1;min-width:120px;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,.05);border-left:3px solid ${c}"><div style="font-size:20px;font-weight:700">${v}</div><div style="font-size:11px;color:var(--muted)">${l}</div></div>`;
@@ -18179,7 +18196,7 @@ function refreshSkipModalBody(){
   host.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
       ${chip(new Set(un.map(r=>r.id)).size,'Students who skipped','#e67e22')}${chip(un.length,'Unexplained skips','#e74c3c')}${chip(ex.length,'Excused','#4a90e2')}
-      ${chip(all.filter(r=>r.type==='CLASS').length,'Class-period','#27ae60')}${chip(all.filter(r=>r.type==='INDIVIDUAL').length,'Individual free','#9b59b6')}
+      ${chip(all.filter(r=>r.type==='CLASS').length,'Class-period','#27ae60')}${chip(all.filter(r=>r.type==='INDIVIDUAL').length,'Individual free','#9b59b6')}${chip(absentOut.length,'Periods exempt (absent)','#7f8c8d')}
     </div>${note?`<p class="field-hint" style="margin:-4px 0 10px">Records for this range only go back to ${esc(fmtDate(skipTrackingStart()))}, when skip tracking began.</p>`:''}${body}`;
 }
 function printSkippedStudents(){
@@ -18231,12 +18248,180 @@ function memberSkipsTabHtml(u){
       <span class="badge grey">${recs.filter(r=>r.type==='CLASS').length} class period</span><span class="badge grey">${recs.filter(r=>r.type==='INDIVIDUAL').length} individual free</span>
     </div>
     <div class="field-hint" style="margin-bottom:8px">Scheduled library periods missed since ${esc(fmtDate(skipTrackingStart()))}.</div>
-    ${recs.length? skipRecordsTableHtml(recs,false) : `<div class="empty" style="padding:16px"><div class="big">✅</div>No skipped library periods on record</div>`}`;
+    ${recs.length? skipRecordsTableHtml(recs,false) : `<div class="empty" style="padding:16px"><div class="big">✅</div>No skipped library periods on record</div>`}
+    ${memberAbsencesListHtml(u)}`;
 }
 
 function analyticsSkipSections(){
   const b = skipRangeBounds('ALL');
   return skipReportSections(getSkipRecords({from:b.from, to:b.to}), {withKpis:true, note:'tracked from '+fmtDate(b.from)});
+}
+
+/* ================= ABSENT FROM SCHOOL =================
+   A student marked absent for a date is exempt from that day's library obligations: they never
+   appear as a skipped period, they are not counted against class attendance totals, and they are
+   left out of batch check-ins. Stored one row per student per school day (weekends are skipped when
+   a multi-day absence is entered) in DB.schoolAbsences: {id, dateKey, reason, by, at}. Looked up
+   fresh everywhere, like excuses, so adding or removing an absence corrects past reports too. */
+function findSchoolAbsence(userId, dateKey){
+  if(!userId || !dateKey) return null;
+  return (DB.schoolAbsences||[]).find(a=> a.id===userId && a.dateKey===dateKey) || null;
+}
+function isAbsentFromSchool(userId, dateKey){ return !!findSchoolAbsence(userId, dateKey); }
+function schoolDayKeys(fromKey, toKey){
+  const out = []; let k = fromKey, g = 0;
+  if(!fromKey) return out;
+  if(!toKey || toKey < fromKey) toKey = fromKey;
+  while(k <= toKey && g++ < 60){
+    const dow = new Date(k+'T00:00:00Z').getUTCDay();
+    if(dow!==0 && dow!==6) out.push(k);
+    k = isoAddDays(k,1);
+  }
+  // A single date picked on a weekend is still honoured (e.g. Saturday classes).
+  return out.length ? out : [fromKey];
+}
+function actorLabel(){ return (SESSION&&SESSION.fullName)||(SESSION&&SESSION.username)||'Staff'; }
+function addSchoolAbsences(ids, fromKey, toKey, reason){
+  if(!Array.isArray(DB.schoolAbsences)) DB.schoolAbsences = [];
+  const days = schoolDayKeys(fromKey, toKey);
+  let n = 0;
+  ids.forEach(id=> days.forEach(k=>{
+    DB.schoolAbsences = DB.schoolAbsences.filter(a=> !(a.id===id && a.dateKey===k));
+    DB.schoolAbsences.unshift({id, dateKey:k, reason:(reason||'').trim(), by:actorLabel(), at:new Date().toISOString()});
+    n++;
+  }));
+  return n;
+}
+function afterAbsenceChange(msg){
+  saveDB(msg); render();
+  refreshOpenScheduleModal();
+  if(document.getElementById('absModal')) refreshAbsModal();
+}
+function markAbsentQuick(userId, dateKey){
+  if(!isStaff()) return requireStaff('mark a student absent');
+  const u = DB.users.find(x=>x.id===userId);
+  promptModal(`Reason ${u? u.name+' was' : 'the student was'} absent from school on ${fmtDate(dateKey)}? They will be exempt from library obligations that day.`, (reason)=>{
+    addSchoolAbsences([userId], dateKey, dateKey, reason);
+    afterAbsenceChange(`Marked ${u? u.name : 'student'} absent`);
+    toast(`${u? u.name : 'Student'} marked absent — exempt for ${fmtDate(dateKey)}`);
+  }, {title:'Mark absent from school', placeholder:'e.g. Sick at home, family event', confirmLabel:'Mark absent'});
+}
+function unmarkAbsent(userId, dateKey){
+  if(!isStaff()) return requireStaff('remove an absence');
+  DB.schoolAbsences = (DB.schoolAbsences||[]).filter(a=> !(a.id===userId && a.dateKey===dateKey));
+  afterAbsenceChange('Absence removed');
+  toast('Absence removed');
+}
+
+let absState = {date:'', to:'', cls:'', q:'', checked:{}};
+function openAbsentStudentsModal(){
+  if(!isStaff()) return promptAccess('STAFF','record school absences', openAbsentStudentsModal);
+  closeAbsentStudentsModal(true);
+  if(!absState.date) absState.date = todayISO();
+  absState.checked = {};
+  const classes = [...new Set(DB.users.filter(u=>u.category==='STUDENT').map(u=>u.cls).filter(Boolean))];
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'absModal';
+  wrap.innerHTML = `
+    <div class="modal wide" style="max-width:900px;width:100%">
+      <div class="modal-head"><h3>🙋 Students absent from school</h3><button id="abClose" aria-label="Close">✕</button></div>
+      <div class="modal-body" style="max-height:72vh;overflow:auto">
+        <p class="field-hint" style="margin-top:0">Students marked absent are exempt from that day's library schedule, never appear as skipped, and are left out of batch check-ins.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px">
+          <div class="field" style="margin:0"><label>Absent from</label><input type="date" value="${esc(absState.date)}" onchange="absSet('date',this.value)"></div>
+          <div class="field" style="margin:0"><label>To (optional, multi-day)</label><input type="date" value="${esc(absState.to)}" onchange="absSet('to',this.value)"></div>
+          <div class="field" style="margin:0"><label>Class</label><select onchange="absSet('cls',this.value)"><option value="">All classes</option>${classes.map(c=>`<option ${c===absState.cls?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+          <div class="field" style="margin:0;flex:1;min-width:150px"><label>Search</label><input type="text" placeholder="Name or ID" value="${esc(absState.q)}" oninput="absSet('q',this.value)"></div>
+        </div>
+        <div class="field"><label>Reason (optional)</label><input type="text" id="abReason" placeholder="e.g. Sick at home, family event"></div>
+        <div id="abList"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" onclick="printAbsentStudents()">🖨 Print absentees</button>
+        <button class="btn secondary" onclick="closeAbsentStudentsModal(true);openSkippedStudentsModal()">🚫 Skipped students</button>
+        <button class="btn" onclick="absMarkSelected()">Mark selected absent (<span id="abCount">0</span>)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.onclick = e=>{ if(e.target===wrap) closeAbsentStudentsModal(); };
+  wrap.querySelector('#abClose').onclick = ()=> closeAbsentStudentsModal();
+  const m = wrap.querySelector('.modal');
+  try{ setFocusToModal(m); m.addEventListener('keydown', e=> trapFocusInModal(e, m)); }catch(e){}
+  refreshAbsModal();
+}
+function closeAbsentStudentsModal(instant){
+  const w = document.getElementById('absModal'); if(!w) return;
+  if(instant) w.remove(); else animatedCloseModal(w, ()=> w.remove());
+}
+function absSet(k,v){ absState[k]=v; refreshAbsModal(); }
+function absToggle(id, on){ if(on) absState.checked[id]=true; else delete absState.checked[id]; const c=document.getElementById('abCount'); if(c) c.textContent = Object.keys(absState.checked).length; }
+function absToggleAll(on){
+  absVisibleStudents().forEach(u=>{ if(!findSchoolAbsence(u.id, absState.date)){ if(on) absState.checked[u.id]=true; else delete absState.checked[u.id]; } });
+  refreshAbsModal();
+}
+function absVisibleStudents(){
+  const q = (absState.q||'').trim().toLowerCase();
+  return DB.users.filter(u=> u.category==='STUDENT' && u.status!=='INACTIVE' && (!absState.cls || u.cls===absState.cls)
+      && (!q || u.name.toLowerCase().includes(q) || String(u.id).toLowerCase().includes(q)))
+    .sort((a,b)=> (a.cls||'').localeCompare(b.cls||'') || a.name.localeCompare(b.name));
+}
+function absMarkSelected(){
+  const ids = Object.keys(absState.checked);
+  if(!ids.length){ toast('Tick at least one student first'); return; }
+  const reason = (document.getElementById('abReason')||{}).value || '';
+  const n = addSchoolAbsences(ids, absState.date, absState.to, reason);
+  absState.checked = {};
+  afterAbsenceChange(`${ids.length} student(s) marked absent`);
+  toast(`${ids.length} student(s) marked absent (${n} day record${n===1?'':'s'})`);
+}
+function refreshAbsModal(){
+  const host = document.getElementById('abList'); if(!host) return;
+  const list = absVisibleStudents();
+  const absentToday = (DB.schoolAbsences||[]).filter(a=> a.dateKey===absState.date && DB.users.some(u=>u.id===a.id));
+  const cnt = document.getElementById('abCount'); if(cnt) cnt.textContent = Object.keys(absState.checked).length;
+  host.innerHTML = `
+    <h4 style="margin:6px 0">Absent on ${esc(fmtDate(absState.date))} (${absentToday.length})</h4>
+    ${absentToday.length? `<div class="table-wrap"><table class="datatable"><thead><tr><th>Student</th><th>Class</th><th>Reason</th><th>Recorded by</th><th></th></tr></thead><tbody>
+      ${absentToday.map(a=>{ const u = DB.users.find(x=>x.id===a.id); return `<tr><td>${esc(u.name)}</td><td>${esc(u.cls||'')}</td><td>${esc(a.reason||'—')}</td><td>${esc(a.by||'')}</td>
+        <td><button class="btn secondary small" onclick="unmarkAbsent('${esc(a.id)}','${esc(a.dateKey)}')">Remove</button></td></tr>`; }).join('')}</tbody></table></div>`
+      : `<div class="field-hint">Nobody marked absent for this date yet.</div>`}
+    <h4 style="margin:16px 0 6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">Select students to mark absent
+      <span><button class="btn secondary small" onclick="absToggleAll(true)">Tick all shown</button> <button class="btn secondary small" onclick="absToggleAll(false)">Clear</button></span></h4>
+    <div class="table-wrap" style="max-height:300px;overflow:auto"><table class="datatable"><thead><tr><th style="width:36px"></th><th>Student</th><th>ID</th><th>Class</th></tr></thead><tbody>
+      ${list.length? list.map(u=>{ const already = !!findSchoolAbsence(u.id, absState.date);
+        return `<tr${already?' class="row-muted"':''}><td><input type="checkbox" ${already?'disabled':''} ${absState.checked[u.id]?'checked':''} onchange="absToggle('${esc(u.id)}',this.checked)"></td>
+        <td>${esc(u.name)}${already?' <span class="badge grey" style="font-size:10px">absent</span>':''}</td><td>${esc(u.id)}</td><td>${esc(u.cls||'')}</td></tr>`; }).join('')
+        : '<tr><td colspan="4"><div class="empty" style="padding:10px">No students match</div></td></tr>'}
+    </tbody></table></div>`;
+}
+function printAbsentStudents(){
+  const rows = (DB.schoolAbsences||[]).filter(a=> a.dateKey===absState.date).map(a=>({a, u:DB.users.find(x=>x.id===a.id)})).filter(r=>r.u)
+    .sort((x,y)=> (x.u.cls||'').localeCompare(y.u.cls||'') || x.u.name.localeCompare(y.u.name));
+  printReport('Students Absent From School', fmtDate(absState.date), [
+    {label:'#', get:r=>r._n}, {label:'Student', get:r=>r.u.name}, {label:'ID', get:r=>r.u.id}, {label:'Class', get:r=>r.u.cls||''},
+    {label:'Reason', get:r=>r.a.reason||''}, {label:'Recorded by', get:r=>r.a.by||''},
+  ], rows.map((r,i)=>({...r,_n:i+1})));
+}
+// Shared by the comprehensive report and the student's printed profile.
+function absenceReportSection(absences, withStudent){
+  const rows = absences.map(a=>({a, u:DB.users.find(x=>x.id===a.id)})).filter(r=>r.u)
+    .sort((x,y)=> y.a.dateKey.localeCompare(x.a.dateKey) || (x.u.cls||'').localeCompare(y.u.cls||'') || x.u.name.localeCompare(y.u.name));
+  const cols = [{label:'Date', get:r=>fmtDate(r.a.dateKey)}];
+  if(withStudent) cols.push({label:'Student', get:r=>r.u.name}, {label:'Class', get:r=>r.u.cls||''});
+  cols.push({label:'Reason', get:r=>r.a.reason||''}, {label:'Recorded by', get:r=>r.a.by||''});
+  return {heading: withStudent?'Students absent from school':'Absent from school', columns:cols, rows};
+}
+function memberAbsenceRowHtml(u){
+  const today = todayISO(), ab = findSchoolAbsence(u.id, today), staff = isStaff();
+  return `<tr><td style="font-weight:600">School attendance today</td><td>${ab
+    ? `<span class="badge grey">Absent — exempt from library obligations</span>${ab.reason?` <span style="font-size:12px;color:var(--muted)">${esc(ab.reason)}</span>`:''}${staff?` <button class="btn secondary small" onclick="unmarkAbsent('${esc(u.id)}','${today}')">Remove absence</button>`:''}`
+    : `Not marked absent${staff?` <button class="btn secondary small" onclick="markAbsentQuick('${esc(u.id)}','${today}')">Mark absent today</button>`:''}`}</td></tr>`;
+}
+function memberAbsencesListHtml(u){
+  const list = (DB.schoolAbsences||[]).filter(a=>a.id===u.id).sort((a,b)=>b.dateKey.localeCompare(a.dateKey));
+  return `<h4 style="margin:18px 0 6px">Days absent from school (${list.length})</h4>` + (list.length
+    ? `<div class="table-wrap" style="max-height:220px;overflow:auto"><table class="datatable"><thead><tr><th>Date</th><th>Reason</th><th>Recorded by</th></tr></thead><tbody>${list.map(a=>`<tr><td>${esc(fmtDate(a.dateKey))}</td><td>${esc(a.reason||'—')}</td><td>${esc(a.by||'')}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="field-hint">No absences recorded.</div>');
 }
 
 /* ================= PAGE: SCHEDULE ================= */
@@ -18313,8 +18498,9 @@ function getStudentsInClassesForPeriod(dateKey, period){
   classNames.forEach(cls => {
     const classStuds = DB.users.filter(u=>u.cls===cls && u.category==='STUDENT');
     classStuds.forEach(u => {
-      const checkedIn = studentCheckedInForPeriod(u.id, dateKey, day, period, null);
-      const excuse = checkedIn ? null : findExcuseForStudent(u.id, dateKey, period);
+      const absence = findSchoolAbsence(u.id, dateKey);
+      const checkedIn = absence ? false : studentCheckedInForPeriod(u.id, dateKey, day, period, null);
+      const excuse = (checkedIn || absence) ? null : findExcuseForStudent(u.id, dateKey, period);
       students.push({
         id: u.id,
         name: u.name,
@@ -18322,7 +18508,9 @@ function getStudentsInClassesForPeriod(dateKey, period){
         checkedIn: checkedIn,
         excused: !!excuse,
         excuseReason: excuse ? excuse.reason : '',
-        excuseBy: excuse ? excuse.by : ''
+        excuseBy: excuse ? excuse.by : '',
+        absent: !!absence,
+        absenceReason: absence ? absence.reason : ''
       });
     });
   });
@@ -18375,13 +18563,21 @@ function renderStudentAttendanceList(dateKey, period){
   const students = getStudentsInClassesForPeriod(dateKey, period);
   if(!students.length) return '';
   
+  const absent = students.filter(s=>s.absent);
   const checkedIn = students.filter(s=>s.checkedIn);
-  const excused = students.filter(s=>!s.checkedIn && s.excused);
-  const unexplained = students.filter(s=>!s.checkedIn && !s.excused);
-  const total = students.length;
+  const excused = students.filter(s=>!s.absent && !s.checkedIn && s.excused);
+  const unexplained = students.filter(s=>!s.absent && !s.checkedIn && !s.excused);
+  const total = students.length - absent.length;
   const staff = isStaff();
   
   const pill = (s)=>{
+    if(s.absent){
+      return `<span title="Absent from school${s.absenceReason? ' — '+esc(s.absenceReason):''}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(127,140,141,0.12);border-radius:3px;border-left:3px solid #7f8c8d">
+        <span style="font-size:11px;color:#7f8c8d;font-weight:600">⌂</span>
+        <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
+        ${staff? `<a href="#" onclick="unmarkAbsent('${esc(s.id)}','${esc(dateKey)}');return false;" title="Remove absence" style="color:#7f8c8d;text-decoration:none;margin-left:2px">✕</a>`:''}
+      </span>`;
+    }
     if(s.checkedIn){
       return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(46,204,113,0.08);border-radius:3px;border-left:3px solid #27ae60">
         <span style="font-size:11px;color:#27ae60;font-weight:600">✓</span>
@@ -18400,7 +18596,7 @@ function renderStudentAttendanceList(dateKey, period){
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(243,156,18,0.08);border-radius:3px;border-left:3px solid #e67e22">
       <span style="font-size:11px;color:#e67e22;font-weight:600">✗</span>
       <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
-      ${staff? `<a href="#" onclick="markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px;margin-left:2px">excuse</a>`:''}
+      ${staff? `<a href="#" onclick="markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px;margin-left:2px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(s.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px">absent</a>`:''}
     </span>`;
   };
   // Each status gets its own row so the three groups never run together visually — a librarian
@@ -18414,10 +18610,11 @@ function renderStudentAttendanceList(dateKey, period){
 
   return `
     <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.05);border-radius:4px;font-size:12px">
-      <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedIn.length}/${total} checked in${excused.length? ` · ${excused.length} excused`:''}${unexplained.length? ` · ${unexplained.length} unexplained`:''}</div>
+      <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedIn.length}/${total} checked in${excused.length? ` · ${excused.length} excused`:''}${unexplained.length? ` · ${unexplained.length} unexplained`:''}${absent.length? ` · ${absent.length} absent (exempt)`:''}</div>
       ${group('Checked in', checkedIn)}
       ${group('Excused', excused)}
       ${group('Unexplained', unexplained)}
+      ${group('Absent from school — exempt', absent)}
     </div>
   `;
 }
@@ -18466,6 +18663,7 @@ function pageSchedule(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary" onclick="printWeeklySchedule()">🖶 Print</button>
         <button class="btn secondary" onclick="openSkippedStudentsModal()">🚫 Skipped students</button>
+        <button class="btn secondary" onclick="openAbsentStudentsModal()">🙋 Absent students</button>
         ${isAdmin()? `<button class="btn" onclick="openScheduleForm()">+ Add period</button>`:''}
         ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
         ${isAdmin() && DB.scheduleDays.length? `<button class="btn danger" onclick="clearAllSchedule()">⚠ Clear all schedule</button>`:''}
@@ -20331,21 +20529,26 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
   const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride) : !!dateKey;
   const staff = isStaff();
   return parts.map(([cls,info])=>{
-    let checkedCount = 0, excusedCount = 0;
+    let checkedCount = 0, excusedCount = 0, absentCount = 0;
     const rows = info.students.map(name=>{
       if(!dateKey) return esc(name);
       const u = classStudents(cls).find(s=>s.name===name);
       // Use period-specific check if period is provided, otherwise check any check-in on that date.
       // Nothing is shown yet for a period that hasn't started today — there's no status to report.
-      const checkedIn = (u && started) ? (period ? studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride) : studentCheckedInOnDate(u.id, dateKey)) : false;
+      const absent = !!(u && findSchoolAbsence(u.id, dateKey));
+      if(absent) absentCount++;
+      const checkedIn = (u && started && !absent) ? (period ? studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride) : studentCheckedInOnDate(u.id, dateKey)) : false;
       if(checkedIn) checkedCount++;
       // A student personally free this period can just as genuinely be excused from showing up
       // (sent elsewhere, kept back by another teacher, etc.) as one on a scheduled class visit —
       // same lookup, same mark/unmark action, just a leaner inline badge to fit this compact list.
-      const excuse = (u && started && !checkedIn && period) ? findExcuseForStudent(u.id, dateKey, period) : null;
+      const excuse = (u && started && !absent && !checkedIn && period) ? findExcuseForStudent(u.id, dateKey, period) : null;
       if(excuse) excusedCount++;
       let badge = '';
-      if(u && started){
+      if(absent){
+        badge = ' <span class="badge grey" title="Absent from school — exempt" style="font-size:9.5px;padding:1px 5px;margin-left:3px">absent</span>';
+        if(staff) badge += ` <a href="#" onclick="unmarkAbsent('${esc(u.id)}','${esc(dateKey)}');return false;" title="Remove absence" style="color:#7f8c8d;text-decoration:none;font-size:9.5px">✕</a>`;
+      } else if(u && started){
         if(checkedIn){
           badge = ' <span class="badge green" style="font-size:9.5px;padding:1px 5px;margin-left:3px">✓ checked in</span>';
         } else if(excuse){
@@ -20354,13 +20557,13 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
           if(staff && period) badge += ` <a href="#" onclick="unmarkStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none;font-size:9.5px">✕</a>`;
         } else {
           badge = ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>';
-          if(staff && period) badge += ` <a href="#" onclick="markStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}','${esc(cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">excuse</a>`;
+          if(staff && period) badge += ` <a href="#" onclick="markStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}','${esc(cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(u.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">absent</a>`;
         }
       }
       return `<span style="white-space:nowrap">${esc(name)}${badge}</span>`;
     });
-    const unexplainedCount = info.students.length - checkedCount - excusedCount;
-    const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length}</strong> checked in${excusedCount? ` · ${excusedCount} excused`:''}${unexplainedCount? ` · ${unexplainedCount} unexplained`:''}` : '';
+    const unexplainedCount = info.students.length - checkedCount - excusedCount - absentCount;
+    const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length-absentCount}</strong> checked in${excusedCount? ` · ${excusedCount} excused`:''}${unexplainedCount? ` · ${unexplainedCount} unexplained`:''}${absentCount? ` · ${absentCount} absent (exempt)`:''}` : '';
     return `<details class="fp-details" style="margin-top:4px"><summary><span class="fp-chevron">▶</span>${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div style="font-size:12px;margin:4px 0 0 10px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></details>`;
   }).join('');
 }
@@ -22556,6 +22759,7 @@ const DATA_PORTAL_CATEGORIES = [
   {key:'classTimings', label:'Schedule — class timings', hint:''},
   {key:'excusedSkips', label:'Schedule — excused library skips', hint:''},
   {key:'skipLedger', label:'Schedule — skipped library periods (history)', hint:''},
+  {key:'schoolAbsences', label:'Students absent from school', hint:''},
   {key:'setup', label:'Setup & settings', hint:''},
 ];
 function downloadCategoryJSON(key){
@@ -24840,6 +25044,7 @@ function render(){
   restoreScrollPositions(el, __scrollSnapshot);
   if(memberProfileModalId) refreshMemberProfileModal();
   if(document.getElementById('skipModal')) refreshSkipModalBody();
+  if(document.getElementById('absModal')) refreshAbsModal();
   focusKeyOperationalBox();
 }
 
@@ -25149,6 +25354,9 @@ function openQuickAction(actionType) {
     case 'timetable':
       openTimetableModal();
       break;
+    case 'absent':
+      openAbsentStudentsModal();
+      break;
     case 'skipped':
       openSkippedStudentsModal();
       break;
@@ -25320,6 +25528,8 @@ function openScheduleModal() {
         </div>
         <div class="quick-modal-footer">
           <button class="btn btn-secondary" onclick="closeQuickActionModal()">Close</button>
+          <button class="btn btn-secondary" onclick="closeQuickActionModal(); openAbsentStudentsModal()">🙋 Absent students</button>
+          <button class="btn btn-secondary" onclick="closeQuickActionModal(); openSkippedStudentsModal()">🚫 Skipped students</button>
           <button class="btn btn-primary" onclick="closeQuickActionModal(); route='schedule'; render()">View Full Schedule</button>
         </div>
       </div>
@@ -25629,6 +25839,10 @@ window.addEventListener('quickActionSubmit', function(e) {
     <button class="quick-action-item" onclick="openQuickAction('timetable')">
       <span class="quick-action-icon">⏰</span>
       <span>Today's Timetable</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('absent')">
+      <span class="quick-action-icon">🙋</span>
+      <span>Absent Students</span>
     </button>
     <button class="quick-action-item" onclick="openQuickAction('skipped')">
       <span class="quick-action-icon">🚫</span>
