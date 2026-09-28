@@ -7021,6 +7021,9 @@ function migrateNewFeatureData(db){
   // reason — kept separate from the register log itself since an excuse isn't a visit, it's a
   // note explaining the absence of one. Older saved data won't have this array yet.
   if(!Array.isArray(db.excusedSkips)) db.excusedSkips = [];
+  // Frozen day-by-day record of skipped library periods (see SKIPPED LIBRARY SCHEDULE) and the date tracking began.
+  if(!db.skipLedger || typeof db.skipLedger!=='object' || Array.isArray(db.skipLedger)) db.skipLedger = {};
+  if(typeof db.skipTrackingStart!=='string') db.skipTrackingStart = '';
   (function normalizeActivitiesToUpperCase(){
     const caseMap = {}; // lowercased -> canonical UPPERCASE form
     const upper = [];
@@ -7328,6 +7331,8 @@ function buildSeedDB(){
     scheduleDays: SEED_SCHEDULE_DAYS.map(r=>[...r]), scheduleRoster: SEED_SCHEDULE_ROSTER.map(r=>[...r]), scheduleSubjects: [...SEED_SCHEDULE_SUBJECTS],
     scheduleActivities: [...DEFAULT_ACTIVITIES],
     excusedSkips: [],
+    skipLedger: {},
+    skipTrackingStart: '',
     classTimetable: {},
     classTimings: {},
     staffTimetable: [
@@ -10508,6 +10513,9 @@ function generateReport(periodLabel, from, to){
   const discipline = DB.registerLog.filter(r=> r.offense && inRange(r.date, from, to));
   const reminders = DB.reminders.filter(r=> inRange(r.dateSent, from, to));
   const feedbackInRange = DB.feedback.filter(f=> inRange(f.date, from, to));
+  const skipFrom = from ? dateToKey(from) : '', skipTo = to ? dateToKey(to) : '';
+  const skipRecs = getSkipRecords({from: skipFrom||undefined, to: skipTo||undefined});
+  const skipUnexplained = skipRecs.filter(r=>r.status==='UNEXPLAINED').length;
 
   printMultiSection('Comprehensive Library Report', periodLabel, [
     { heading:'Overview', kpis:[
@@ -10518,6 +10526,8 @@ function generateReport(periodLabel, from, to){
       {label:'Currently overdue', value: overdueNow.length},
       {label:'Discipline entries', value: discipline.length},
       {label:'Reminders sent', value: reminders.length},
+      {label:'Library skips (unexplained)', value: skipUnexplained},
+      {label:'Library skips (excused)', value: skipRecs.length - skipUnexplained},
       {label:'Feedback received', value: feedbackInRange.length},
     ]},
     { heading:'Library visits', columns:[
@@ -10536,6 +10546,7 @@ function generateReport(periodLabel, from, to){
       {label:'Date', get:r=>fmtDate(r.date)}, {label:'Name', get:r=>r.name}, {label:'Class', get:r=>r.cls},
       {label:'Offense', get:r=>r.offense==='OTHER'?r.offenseOther:r.offense}, {label:'Consequence', get:r=>r.consequence==='OTHER'?r.consequenceOther:r.consequence},
     ], rows: discipline },
+    ...skipReportSections(skipRecs, {note: skipTrackingNote(skipFrom) || undefined}),
     { heading:'Overdue right now', columns:[
       {label:'Member', get:r=>r.name}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title}, {label:'Due', get:r=>fmtDate(r.dueDate)},
     ], rows: overdueNow.slice(0,300) },
@@ -11708,6 +11719,7 @@ function pageDashboard(){
     <div class="panel-head-actions">
       <button class="btn secondary small" onclick="generateSummaryReport()">🧾 Generate summary report</button>
       <button class="btn secondary small" onclick="openReportModal()">📋 Generate comprehensive report</button>
+      <button class="btn secondary small" onclick="openSkippedStudentsModal()">🚫 Skipped library schedule</button>
     </div>
   </div>
   <div class="grid kpis">
@@ -11825,6 +11837,7 @@ function pageAnalytics(){
       <tbody>${topT.map((e,i)=>`<tr class="hoverable-row" onmouseenter="showTitleHoverTip(event,${i})" onmousemove="moveAnalyticsHoverTip(event)" onmouseleave="hideAnalyticsHoverTip()" ondblclick="openTitleLoansModal(${i})"><td>${i+1}</td><td>${esc(e[0])}</td><td>${e[1]}</td></tr>`).join('')||'<tr><td colspan=3><div class="empty">No loans yet</div></td></tr>'}</tbody></table></div>
     </div>
   </div>
+  ${analyticsSkipPanelHtml()}
   <div class="grid charts-row">
     <div class="card chart-box"><h4>Collection by main class</h4><div class="chart-canvas-wrap"><canvas id="chMainClass"></canvas></div></div>
     <div class="card chart-box"><h4>Class reach — members who have borrowed vs never</h4><div class="chart-canvas-wrap"><canvas id="chClassReach"></canvas></div></div>
@@ -12002,6 +12015,7 @@ function printAnalyticsReport(){
       {label:'Title', get:r=>r[0]}, {label:'Times borrowed', get:r=>r[1]},
     ], rows: topT },
     ...analyticsChartSections(),
+    ...analyticsSkipSections(),
     { heading:'Overdue detail', columns:[
       {label:'Member', get:r=>r.name}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title},
       {label:'Due date', get:r=>fmtDate(r.dueDate)}, {label:'Days overdue', get:r=>r.daysOverdue},
@@ -12068,6 +12082,7 @@ function exportAnalyticsAll(){
       {label:'Title', get:r=>r[0]}, {label:'Times borrowed', get:r=>r[1]},
     ], rows: topT },
     ...chartData,
+    ...analyticsSkipSections(),
     { heading:'Overdue detail', columns:[
       {label:'Member', get:r=>r.name}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title},
       {label:'Due date', get:r=>fmtDate(r.dueDate)}, {label:'Days overdue', get:r=>r.daysOverdue},
@@ -14003,12 +14018,16 @@ function memberProfileBodyHtml(u){
   const visits = DB.registerLog.filter(r=>r.id===u.id).sort((a,b)=>(parseAnyDate(b.date)||0)-(parseAnyDate(a.date)||0)).slice(0,15);
   const holds = DB.reservations.filter(r=>r.userId===u.id);
   const documents = u.documents || [];
+  const isStudent = u.category==='STUDENT';
+  const skipRecs = isStudent ? getSkipRecords({userId:u.id}) : [];
+  const skipUnexplained = skipRecs.filter(r=>r.status==='UNEXPLAINED').length;
 
   const tabs = [
     {key:'loans', label:`Loans (${active.length})`},
   ];
   if(u.category!=='STAFF') tabs.push({key:'subjects', label:`Subjects (${studentSubjects(u).length})`});
   tabs.push({key:'visits', label:`Visits (${visits.length})`});
+  if(isStudent) tabs.push({key:'skips', label:`Skipped (${skipUnexplained})`});
   if(DB.setup.fineEnabled && fines.length) tabs.push({key:'fines', label:`Fines (${fines.length})`});
   if(holds.length) tabs.push({key:'reservations', label:`Reservations (${holds.length})`});
   if(isAdmin()) tabs.push({key:'documents', label:`Documents (${documents.length})`});
@@ -14058,6 +14077,8 @@ function memberProfileBodyHtml(u){
     tabBody = `<table class="datatable cards-on-mobile"><thead><tr><th>Title</th><th>Requested</th><th>Status</th></tr></thead><tbody>
       ${holds.map(r=>`<tr><td data-label="Title">${esc(r.title)}</td><td data-label="Requested">${fmtDate(r.dateRequested)}</td><td data-label="Status"><span class="badge ${r.status==='READY'?'green':r.status==='FULFILLED'?'grey':'gold'}">${esc(r.status)}</span></td></tr>`).join('')}
     </tbody></table>`;
+  } else if(activeTab==='skips'){
+    tabBody = memberSkipsTabHtml(u);
   } else if(activeTab==='documents'){
     tabBody = renderMemberDocumentsTab(u.id, documents);
   }
@@ -14081,6 +14102,7 @@ function memberProfileBodyHtml(u){
       <tr><td style="font-weight:600">Total borrowed (all time)</td><td>${u.totalBorrowed||0}</td></tr>
       <tr><td style="font-weight:600">Strikes</td><td>${u.strike||0}</td></tr>
       <tr><td style="font-weight:600">Discipline</td><td>${esc(u.discipline||'—')}</td></tr>
+      ${isStudent? `<tr><td style="font-weight:600">Skipped library periods</td><td><a href="#" onclick="setMemberProfileTab('skips');return false;" style="color:${skipUnexplained?'var(--terracotta)':'inherit'};font-weight:${skipUnexplained?'700':'400'}">${skipUnexplained} unexplained</a>${skipRecs.length-skipUnexplained? ` · ${skipRecs.length-skipUnexplained} excused`:''}</td></tr>`:''}
       <tr><td style="font-weight:600">Eligibility</td><td>${esc(u.eligibility||'—')}</td></tr>
       <tr><td style="font-weight:600">Status</td><td>${esc(u.status||'—')}</td></tr>
       <tr><td style="font-weight:600">Status last updated</td><td>${u.statusUpdated? esc(fmtDate(u.statusUpdated)) : '—'}</td></tr>
@@ -16715,6 +16737,13 @@ function printMemberFullProfile(id){
     const subjRows = studentSubjects(u).map((s,i)=>({n:i+1, subject:s}));
     sections.push({ heading:'Subjects offered', columns:[{label:'#',get:r=>r.n},{label:'Subject',get:r=>r.subject}], rows: subjRows });
   }
+  if(u.category==='STUDENT'){
+    const sk = getSkipRecords({userId:u.id});
+    sections.push({ heading:'Skipped library schedule', columns:[
+      {label:'Date',get:r=>fmtDate(r.dateKey)},{label:'Period',get:r=>r.period},{label:'Type',get:r=>SKIP_TYPE_LABEL[r.type]},
+      {label:'Status',get:r=>r.status==='EXCUSED'?'Excused':'Unexplained'},{label:'Reason',get:r=>r.status==='EXCUSED'?(r.reason||''):''},
+    ], rows: sk });
+  }
   sections.push({ heading:'Register visit history', columns:[{label:'Date',get:r=>fmtDate(r.date)},{label:'Purpose',get:r=>r.purpose||'—'}], rows: visits });
   if(DB.setup.fineEnabled && fines.length){
     sections.push({ heading:'Fines', columns:[
@@ -17862,6 +17891,354 @@ function bindBatchStagingEvents(){
   });
 }
 
+/* ================= SKIPPED LIBRARY SCHEDULE =================
+   A "skip" = a student who was expected at the library for a scheduled period (either their whole
+   class was timetabled to visit, or they were personally free that period) and has no matching
+   register entry and no librarian-recorded excuse.
+
+   The weekly schedule is a template, so a skip can only be worked out against the schedule as it
+   stood on the day. Each finished day is therefore frozen into DB.skipLedger the first time it is
+   looked at, so later timetable edits never rewrite history. Excuses are NOT stored in the ledger:
+   they are looked up fresh (findExcuseForStudent), so excusing a past skip updates everywhere.
+   Today is always computed live and only for periods that have already started. */
+const SKIP_TYPE_LABEL = {CLASS:'Class period', INDIVIDUAL:'Individual free period'};
+function isoAddDays(key, n){ return new Date(Date.parse(key+'T00:00:00Z') + n*86400000).toISOString().slice(0,10); }
+function dateToKey(d){
+  if(!d) return '';
+  const x = new Date(d);
+  return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+}
+function ensureSkipStore(){
+  if(!DB.skipLedger || typeof DB.skipLedger!=='object' || Array.isArray(DB.skipLedger)) DB.skipLedger = {};
+  if(typeof DB.skipTrackingStart!=='string') DB.skipTrackingStart = '';
+}
+function skipTrackingStart(){ ensureSkipStore(); return DB.skipTrackingStart||''; }
+function computeRawSkipsForDate(dateKey, onlyId){
+  const day = weekdayForDateKey(dateKey);
+  const rows = (DB.scheduleDays||[]).filter(r=> r[0]===day && r[1]);
+  if(!rows.length) return [];
+  // Only students with at least one register entry that day can possibly have attended, so the
+  // (comparatively expensive) per-period overlap check runs for them alone.
+  const visitedIds = new Set((DB.registerLog||[]).filter(x=>(x.date||'').slice(0,10)===dateKey).map(x=>x.id));
+  const out = [], seen = new Set();
+  rows.forEach(r=>{
+    const period = r[1], startOverride = r[2];
+    if(!periodHasStarted(dateKey, day, period, startOverride)) return;
+    const time = String(startOverride||'').slice(0,5);
+    const attended = u=>{
+      if(!visitedIds.has(u.id)) return false;
+      const {start} = periodWindowMinutes(day, period, startOverride);
+      if(start==null) return true; // no period time configured anywhere — any visit that day counts
+      return studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride);
+    };
+    const add = (u, cls, type, detail)=>{
+      if(!u || u.category!=='STUDENT' || u.status==='INACTIVE') return;
+      if(onlyId && u.id!==onlyId) return;
+      const k = u.id+'|'+period;
+      if(seen.has(k) || attended(u)) return;
+      seen.add(k);
+      out.push({id:u.id, name:u.name, cls:cls||u.cls||'', period, time, type, detail:detail||''});
+    };
+    const classesText = r[3]||'';
+    if(classesText && !classesText.toLowerCase().includes('free')){
+      classesText.split(',').map(c=>c.trim()).filter(Boolean).forEach(cls=>{
+        DB.users.filter(u=>u.cls===cls && u.category==='STUDENT').forEach(u=> add(u, cls, 'CLASS', 'Class scheduled for library'));
+      });
+    }
+    if(r[5] && typeof r[5]==='object'){
+      Object.entries(r[5]).forEach(([cls,info])=>{
+        if(!info || !Array.isArray(info.students)) return;
+        const pool = classStudents(cls);
+        info.students.forEach(name=> add(pool.find(s=>s.name===name), cls, 'INDIVIDUAL', 'Free — not offering '+(info.subject||'the timetabled subject')));
+      });
+    }
+  });
+  return out;
+}
+// Freezes every finished day since tracking began. Saved quietly (no undo entry) — it's
+// bookkeeping, not something the person did.
+function syncSkipLedger(){
+  ensureSkipStore();
+  let changed = false;
+  if(!DB.skipTrackingStart){ DB.skipTrackingStart = getWeekStartISO(); changed = true; }
+  const today = todayISO();
+  let k = DB.skipTrackingStart, guard = 0;
+  while(k < today && guard++ < 800){
+    if(!DB.skipLedger[k]){ DB.skipLedger[k] = computeRawSkipsForDate(k); changed = true; }
+    k = isoAddDays(k, 1);
+  }
+  if(changed){ try{ Promise.resolve(storeSet(STORAGE_KEY, JSON.stringify(DB))).catch(()=>{}); }catch(e){} }
+}
+/* opts: {from,to ('YYYY-MM-DD'), cls, type ('CLASS'|'INDIVIDUAL'), status ('UNEXPLAINED'|'EXCUSED'), q, userId}
+   Returns newest-first records: {id,name,cls,dateKey,day,period,time,type,detail,status,reason,by}. */
+function getSkipRecords(opts){
+  opts = opts||{};
+  syncSkipLedger();
+  const today = todayISO();
+  const start = DB.skipTrackingStart;
+  let from = opts.from && opts.from > start ? opts.from : start;
+  let to = opts.to && opts.to < today ? opts.to : today;
+  const q = (opts.q||'').trim().toLowerCase();
+  const out = [];
+  let guard = 0;
+  for(let k=from; k<=to && guard++<800; k=isoAddDays(k,1)){
+    const raw = k===today ? computeRawSkipsForDate(k, opts.userId) : (DB.skipLedger[k]||[]);
+    raw.forEach(rec=>{
+      if(opts.userId && rec.id!==opts.userId) return;
+      const u = DB.users.find(x=>x.id===rec.id);
+      if(!u) return; // member has since been removed/archived
+      const ex = findExcuseForStudent(rec.id, k, rec.period);
+      const full = {...rec, name:u.name, dateKey:k, day:weekdayForDateKey(k), status: ex?'EXCUSED':'UNEXPLAINED', reason: ex?ex.reason:'', by: ex?ex.by:''};
+      if(opts.cls && full.cls!==opts.cls) return;
+      if(opts.type && full.type!==opts.type) return;
+      if(opts.status && full.status!==opts.status) return;
+      if(q && !(full.name.toLowerCase().includes(q) || String(full.id).toLowerCase().includes(q))) return;
+      out.push(full);
+    });
+  }
+  return out.sort((a,b)=> b.dateKey.localeCompare(a.dateKey) || periodSortKey(a.period)-periodSortKey(b.period) || a.name.localeCompare(b.name));
+}
+function groupSkipsByStudent(recs){
+  const m = new Map();
+  recs.forEach(r=>{
+    let s = m.get(r.id);
+    if(!s){ s = {id:r.id, name:r.name, cls:r.cls, unexplained:0, excused:0, classCount:0, indivCount:0, last:'', records:[]}; m.set(r.id, s); }
+    if(r.status==='EXCUSED') s.excused++; else s.unexplained++;
+    if(r.type==='CLASS') s.classCount++; else s.indivCount++;
+    if(r.dateKey > s.last) s.last = r.dateKey;
+    s.records.push(r);
+  });
+  return [...m.values()].sort((a,b)=> b.unexplained-a.unexplained || b.excused-a.excused || a.name.localeCompare(b.name));
+}
+function skipRangeBounds(range, cf, ct){
+  const t = todayISO(), start = skipTrackingStart() || t;
+  if(range==='TODAY') return {from:t, to:t, label:'Today'};
+  if(range==='LAST7') return {from:isoAddDays(t,-6), to:t, label:'Last 7 days'};
+  if(range==='WEEK'){ const dow = (new Date(t+'T00:00:00Z').getUTCDay()+6)%7; const f = isoAddDays(t,-dow); return {from:f, to:isoAddDays(f,6), label:'This week'}; }
+  if(range==='MONTH') return {from:t.slice(0,8)+'01', to:t, label:'This month'};
+  if(range==='TERM' && DB.setup.currentTermStart){ return {from:DB.setup.currentTermStart, to:DB.setup.currentTermEnd||t, label:'Current term'}; }
+  if(range==='CUSTOM') return {from:cf||start, to:ct||t, label:`${cf?fmtDate(cf):'start'} to ${ct?fmtDate(ct):'today'}`};
+  return {from:start, to:t, label:'All tracked days'};
+}
+// Shared by the modal's Print/Export, the comprehensive report and the Analytics report, so all
+// of them show exactly the same names and figures.
+function skipReportSections(recs, opts){
+  opts = opts||{};
+  const students = groupSkipsByStudent(recs);
+  const un = recs.filter(r=>r.status==='UNEXPLAINED').length, ex = recs.length-un;
+  const sections = [];
+  if(opts.withKpis) sections.push({heading:'Library schedule skips — overview', kpis:[
+    {label:'Students with skips', value:students.filter(s=>s.unexplained).length},
+    {label:'Unexplained skips', value:un},
+    {label:'Excused', value:ex},
+    {label:'Class-period skips', value:recs.filter(r=>r.type==='CLASS').length},
+    {label:'Individual free-period skips', value:recs.filter(r=>r.type==='INDIVIDUAL').length},
+  ]});
+  const note = opts.note ? ` (${opts.note})` : '';
+  sections.push({heading:'Students who skipped library schedule — by student'+note, columns:[
+    {label:'#', get:r=>r._n}, {label:'Student', get:r=>r.name}, {label:'ID', get:r=>r.id}, {label:'Class', get:r=>r.cls},
+    {label:'Unexplained', get:r=>r.unexplained}, {label:'Excused', get:r=>r.excused},
+    {label:'Class periods', get:r=>r.classCount}, {label:'Individual free', get:r=>r.indivCount},
+    {label:'Last skipped', get:r=>r.last?fmtDate(r.last):'—'},
+  ], rows: students.map((s,i)=>({...s, _n:i+1}))});
+  sections.push({heading:'Library schedule skip log — every skipped period'+note, columns:[
+    {label:'Date', get:r=>fmtDate(r.dateKey)}, {label:'Day', get:r=>r.day.charAt(0)+r.day.slice(1).toLowerCase()},
+    {label:'Period', get:r=>r.period}, {label:'Time', get:r=>r.time||'—'}, {label:'Student', get:r=>r.name},
+    {label:'Class', get:r=>r.cls}, {label:'Type', get:r=>SKIP_TYPE_LABEL[r.type]},
+    {label:'Status', get:r=>r.status==='EXCUSED'?'Excused':'Unexplained'},
+    {label:'Reason / excused by', get:r=>r.status==='EXCUSED'?`${r.reason||''}${r.by?' — '+r.by:''}`:''},
+  ], rows: recs});
+  return sections;
+}
+function skipTrackingNote(from){
+  const s = skipTrackingStart();
+  return (s && from && from < s) ? `tracked from ${fmtDate(s)}` : '';
+}
+
+/* ---- the modal ---- */
+let skipState = {range:'WEEK', cf:'', ct:'', cls:'', type:'', status:'UNEXPLAINED', q:'', view:'student'};
+function openSkippedStudentsModal(prefill){
+  if(prefill) skipState = {...skipState, ...prefill};
+  syncSkipLedger();
+  closeSkippedStudentsModal(true);
+  const classes = [...new Set(DB.users.filter(u=>u.category==='STUDENT').map(u=>u.cls).filter(Boolean))];
+  const sel = (v,cur)=> v===cur ? 'selected' : '';
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'skipModal';
+  wrap.innerHTML = `
+    <div class="modal wide" style="max-width:980px;width:100%">
+      <div class="modal-head"><h3>🚫 Students who skipped their library schedule</h3><button id="skClose" aria-label="Close">✕</button></div>
+      <div class="modal-body" style="max-height:72vh;overflow:auto">
+        <p class="field-hint" style="margin-top:0">A skip is a scheduled library period — a whole-class visit or an individual free period — with no matching register entry and no recorded excuse.${skipTrackingStart()? ' Tracked from <strong>'+esc(fmtDate(skipTrackingStart()))+'</strong>.':''}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px">
+          <div class="field" style="margin:0"><label>Period</label><select onchange="skipSet('range',this.value)">
+            ${[['TODAY','Today'],['WEEK','This week'],['LAST7','Last 7 days'],['MONTH','This month'],['TERM','Current term'],['ALL','All tracked days'],['CUSTOM','Custom range']].map(([v,l])=>`<option value="${v}" ${sel(v,skipState.range)}>${l}</option>`).join('')}</select></div>
+          <div class="field" id="skCustom" style="margin:0;display:${skipState.range==='CUSTOM'?'flex':'none'};gap:8px;align-items:flex-end">
+            <div><label>From</label><input type="date" value="${esc(skipState.cf)}" onchange="skipSet('cf',this.value)"></div>
+            <div><label>To</label><input type="date" value="${esc(skipState.ct)}" onchange="skipSet('ct',this.value)"></div></div>
+          <div class="field" style="margin:0"><label>Class</label><select onchange="skipSet('cls',this.value)"><option value="">All classes</option>${classes.map(c=>`<option ${sel(c,skipState.cls)}>${esc(c)}</option>`).join('')}</select></div>
+          <div class="field" style="margin:0"><label>Type</label><select onchange="skipSet('type',this.value)">
+            <option value="" ${sel('',skipState.type)}>Class &amp; individual</option><option value="CLASS" ${sel('CLASS',skipState.type)}>Class periods only</option><option value="INDIVIDUAL" ${sel('INDIVIDUAL',skipState.type)}>Individual free only</option></select></div>
+          <div class="field" style="margin:0"><label>Status</label><select onchange="skipSet('status',this.value)">
+            <option value="UNEXPLAINED" ${sel('UNEXPLAINED',skipState.status)}>Unexplained skips</option><option value="EXCUSED" ${sel('EXCUSED',skipState.status)}>Excused</option><option value="" ${sel('',skipState.status)}>All</option></select></div>
+          <div class="field" style="margin:0;flex:1;min-width:160px"><label>Search</label><input type="text" placeholder="Name or ID" value="${esc(skipState.q)}" oninput="skipSet('q',this.value)"></div>
+        </div>
+        <div class="profile-tabs" style="margin-bottom:10px">
+          <button class="profile-tab-btn ${skipState.view==='student'?'active':''}" data-skview="student" onclick="skipSet('view','student')">By student</button>
+          <button class="profile-tab-btn ${skipState.view==='date'?'active':''}" data-skview="date" onclick="skipSet('view','date')">By date &amp; period</button>
+        </div>
+        <div id="skBody"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" onclick="printSkippedStudents()">🖨 Print report</button>
+        <button class="btn secondary" onclick="exportSkippedStudents()">⭳ Export</button>
+        ${isAdmin()? `<button class="btn secondary" onclick="recomputeSkipLedger()" title="Re-check the selected dates against the register and current schedule">↻ Recheck period</button>`:''}
+        <button class="btn" id="skDone">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.onclick = e=>{ if(e.target===wrap) closeSkippedStudentsModal(); };
+  wrap.querySelector('#skClose').onclick = ()=> closeSkippedStudentsModal();
+  wrap.querySelector('#skDone').onclick = ()=> closeSkippedStudentsModal();
+  const m = wrap.querySelector('.modal');
+  try{ setFocusToModal(m); m.addEventListener('keydown', e=> trapFocusInModal(e, m)); }catch(e){}
+  refreshSkipModalBody();
+}
+function closeSkippedStudentsModal(instant){
+  const w = document.getElementById('skipModal');
+  if(!w) return;
+  if(instant) w.remove(); else animatedCloseModal(w, ()=> w.remove());
+}
+function skipSet(key, val){
+  skipState[key] = val;
+  if(key==='range'){ const c = document.getElementById('skCustom'); if(c) c.style.display = val==='CUSTOM'?'flex':'none'; }
+  if(key==='view') document.querySelectorAll('#skipModal [data-skview]').forEach(b=> b.classList.toggle('active', b.dataset.skview===val));
+  refreshSkipModalBody();
+}
+function currentSkipFilterRecords(ignoreStatus){
+  const b = skipRangeBounds(skipState.range, skipState.cf, skipState.ct);
+  const recs = getSkipRecords({from:b.from, to:b.to, cls:skipState.cls, type:skipState.type, q:skipState.q, status: ignoreStatus?'':skipState.status});
+  return {recs, bounds:b};
+}
+function skipTypeBadge(t){
+  return t==='CLASS' ? '<span class="badge" style="font-size:10.5px;background:rgba(74,144,226,.13);color:#4a90e2">Class period</span>'
+                     : '<span class="badge" style="font-size:10.5px;background:rgba(155,89,182,.14);color:#9b59b6">Individual free</span>';
+}
+function skipStatusCell(r){
+  const staff = isStaff();
+  if(r.status==='EXCUSED'){
+    const t = `Excused${r.by?' by '+r.by:''}${r.reason?' — '+r.reason:''}`;
+    return `<span class="badge" title="${esc(t)}" style="background:rgba(74,144,226,.15);color:#4a90e2">⚑ Excused</span>${r.reason?` <span style="font-size:11px;color:var(--muted)">${esc(r.reason)}</span>`:''}${staff?` <a href="#" onclick="unmarkStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none">✕</a>`:''}`;
+  }
+  return `<span class="badge gold">Skipped</span>${staff?` <a href="#" onclick="markStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}','${esc(r.cls)}');return false;" style="color:var(--muted-label);text-decoration:underline;font-size:11px">excuse</a>`:''}`;
+}
+function skipRecordsTableHtml(recs, withStudent){
+  return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Date</th><th>Period</th>${withStudent?'<th>Student</th><th>Class</th>':''}<th>Type</th><th>Status</th></tr></thead><tbody>
+    ${recs.map(r=>`<tr><td>${esc(fmtDate(r.dateKey))} <span style="color:var(--muted);font-size:11px">${esc(r.day.slice(0,3))}</span></td>
+      <td>${esc(r.period)}${r.time?` <span style="color:var(--muted);font-size:11px">${esc(r.time)}</span>`:''}</td>
+      ${withStudent?`<td>${esc(r.name)}</td><td>${esc(r.cls)}</td>`:''}
+      <td>${skipTypeBadge(r.type)}<div style="font-size:11px;color:var(--muted)">${esc(r.detail)}</div></td><td>${skipStatusCell(r)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function refreshSkipModalBody(){
+  const host = document.getElementById('skBody');
+  if(!host) return;
+  const {recs, bounds} = currentSkipFilterRecords(false);
+  const all = currentSkipFilterRecords(true).recs;
+  const students = groupSkipsByStudent(recs);
+  const un = all.filter(r=>r.status==='UNEXPLAINED'), ex = all.filter(r=>r.status==='EXCUSED');
+  const chip = (v,l,c)=> `<div style="flex:1;min-width:120px;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,.05);border-left:3px solid ${c}"><div style="font-size:20px;font-weight:700">${v}</div><div style="font-size:11px;color:var(--muted)">${l}</div></div>`;
+  const note = skipTrackingNote(bounds.from);
+  let body = '';
+  if(!recs.length){
+    body = `<div class="empty" style="padding:22px"><div class="big">✅</div>No ${skipState.status==='EXCUSED'?'excused':skipState.status==='UNEXPLAINED'?'unexplained':''} skips found for ${esc(bounds.label)}${skipState.cls?' in '+esc(skipState.cls):''}.</div>`;
+  } else if(skipState.view==='student'){
+    body = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">${students.length} student${students.length===1?'':'s'} — click a name to see the exact periods missed</div>` +
+      students.map((s,i)=>`
+      <details class="fp-details" style="margin-bottom:6px;border:1px solid rgba(128,128,128,.25);border-radius:8px;padding:6px 10px">
+        <summary style="cursor:pointer;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center">
+          <span style="color:var(--muted);width:26px">${i+1}.</span>
+          <strong style="flex:1;min-width:150px">${esc(s.name)}</strong>
+          <span style="color:var(--muted);font-size:12px">${esc(s.cls)} · ${esc(s.id)}</span>
+          ${s.unexplained?`<span class="badge gold">${s.unexplained} skipped</span>`:''}${s.excused?`<span class="badge" style="background:rgba(74,144,226,.15);color:#4a90e2">${s.excused} excused</span>`:''}
+          <span style="font-size:11px;color:var(--muted)">${s.classCount} class · ${s.indivCount} individual · last ${esc(fmtDate(s.last))}</span>
+        </summary>
+        <div style="margin-top:8px">${skipRecordsTableHtml(s.records,false)}
+          <div style="margin-top:6px"><button class="btn secondary small" onclick="closeSkippedStudentsModal(true);openMemberProfile('${esc(s.id)}');memberProfileTab='skips';render();">Open profile</button></div></div>
+      </details>`).join('');
+  } else {
+    const byDate = {};
+    recs.forEach(r=>{ ((byDate[r.dateKey]=byDate[r.dateKey]||{})[r.period]=byDate[r.dateKey][r.period]||[]).push(r); });
+    body = Object.keys(byDate).sort().reverse().map(d=>`
+      <h4 style="margin:12px 0 6px;font-size:13px">${esc(fmtDate(d))} <span style="color:var(--muted);font-weight:400">${esc(weekdayForDateKey(d).charAt(0)+weekdayForDateKey(d).slice(1).toLowerCase())}</span></h4>
+      <div class="table-wrap"><table class="datatable"><thead><tr><th style="width:130px">Period</th><th>Students who skipped</th></tr></thead><tbody>
+      ${Object.keys(byDate[d]).sort((a,b)=>periodSortKey(a)-periodSortKey(b)).map(p=>`<tr><td>${esc(p)} <span style="color:var(--muted);font-size:11px">${esc(byDate[d][p][0].time||'')}</span></td>
+        <td style="display:flex;flex-wrap:wrap;gap:4px 12px">${byDate[d][p].map(r=>`<span style="white-space:nowrap">${esc(r.name)} <span style="color:var(--muted);font-size:11px">${esc(r.cls)}</span> ${skipTypeBadge(r.type)} ${skipStatusCell(r)}</span>`).join('')}</td></tr>`).join('')}
+      </tbody></table></div>`).join('');
+  }
+  host.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+      ${chip(new Set(un.map(r=>r.id)).size,'Students who skipped','#e67e22')}${chip(un.length,'Unexplained skips','#e74c3c')}${chip(ex.length,'Excused','#4a90e2')}
+      ${chip(all.filter(r=>r.type==='CLASS').length,'Class-period','#27ae60')}${chip(all.filter(r=>r.type==='INDIVIDUAL').length,'Individual free','#9b59b6')}
+    </div>${note?`<p class="field-hint" style="margin:-4px 0 10px">Records for this range only go back to ${esc(fmtDate(skipTrackingStart()))}, when skip tracking began.</p>`:''}${body}`;
+}
+function printSkippedStudents(){
+  const {recs, bounds} = currentSkipFilterRecords(false);
+  const all = currentSkipFilterRecords(true).recs;
+  const secs = skipReportSections(recs, {withKpis:false});
+  secs.unshift(...skipReportSections(all, {withKpis:true}).slice(0,1));
+  printMultiSection('Skipped Library Schedule', `${bounds.label} · ${skipState.status==='UNEXPLAINED'?'unexplained skips':skipState.status==='EXCUSED'?'excused':'all skips'}${skipState.cls?' · '+skipState.cls:''}`, secs);
+}
+function exportSkippedStudents(){
+  const {recs} = currentSkipFilterRecords(false);
+  openMultiSectionExportModal('Skipped Library Schedule', 'skipped_library_schedule', skipReportSections(recs, {withKpis:false}));
+}
+function recomputeSkipLedger(){
+  if(!isAdmin()) return requireAdmin('recheck skipped periods');
+  const b = skipRangeBounds(skipState.range, skipState.cf, skipState.ct);
+  confirmModal(`Recheck every finished day from ${fmtDate(b.from)} to ${fmtDate(b.to)} against the register and the schedule as it is now? Use this after late register entries or a schedule correction. Excuses are kept.`, ()=>{
+    ensureSkipStore();
+    const today = todayISO();
+    for(let k=b.from, g=0; k<=b.to && g++<800; k=isoAddDays(k,1)) if(k<today) delete DB.skipLedger[k];
+    syncSkipLedger();
+    saveDB('Skipped library periods rechecked');
+    refreshSkipModalBody();
+    toast('Skipped periods rechecked');
+  });
+}
+
+/* ---- Analytics page panel ---- */
+function analyticsSkipPanelHtml(){
+  const b = skipRangeBounds('ALL');
+  const students = groupSkipsByStudent(getSkipRecords({from:b.from, to:b.to, status:'UNEXPLAINED'})).slice(0,5);
+  return `
+  <div class="card panel" style="margin-bottom:16px">
+    <div class="panel-head"><h3>Students skipping library schedule</h3>
+      <div class="panel-head-actions"><button class="btn secondary small" onclick="openSkippedStudentsModal({range:'ALL',status:'UNEXPLAINED',cls:'',type:'',q:''})">View all skipped students</button></div></div>
+    <div class="table-wrap"><table class="datatable"><thead><tr><th>#</th><th>Student</th><th>Class</th><th>Unexplained skips</th><th>Class · Individual</th></tr></thead><tbody>
+      ${students.length? students.map((s,i)=>`<tr><td>${i+1}</td><td>${esc(s.name)}</td><td>${esc(s.cls)}</td><td>${s.unexplained}</td><td>${s.classCount} · ${s.indivCount}</td></tr>`).join('') : '<tr><td colspan="5"><div class="empty" style="padding:10px">No unexplained skips recorded since '+esc(fmtDate(skipTrackingStart()))+'</div></td></tr>'}
+    </tbody></table></div></div>`;
+}
+
+/* ---- Student profile tab ---- */
+function memberSkipsTabHtml(u){
+  const b = skipRangeBounds('ALL');
+  const recs = getSkipRecords({from:b.from, to:b.to, userId:u.id});
+  const un = recs.filter(r=>r.status==='UNEXPLAINED').length, ex = recs.length-un;
+  return `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <span class="badge ${un?'gold':'green'}">${un} unexplained</span><span class="badge" style="background:rgba(74,144,226,.15);color:#4a90e2">${ex} excused</span>
+      <span class="badge grey">${recs.filter(r=>r.type==='CLASS').length} class period</span><span class="badge grey">${recs.filter(r=>r.type==='INDIVIDUAL').length} individual free</span>
+    </div>
+    <div class="field-hint" style="margin-bottom:8px">Scheduled library periods missed since ${esc(fmtDate(skipTrackingStart()))}.</div>
+    ${recs.length? skipRecordsTableHtml(recs,false) : `<div class="empty" style="padding:16px"><div class="big">✅</div>No skipped library periods on record</div>`}`;
+}
+
+function analyticsSkipSections(){
+  const b = skipRangeBounds('ALL');
+  return skipReportSections(getSkipRecords({from:b.from, to:b.to}), {withKpis:true, note:'tracked from '+fmtDate(b.from)});
+}
+
 /* ================= PAGE: SCHEDULE ================= */
 function printWeeklySchedule(){
   const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
@@ -18088,6 +18465,7 @@ function pageSchedule(){
       <div><h3>Weekly library schedule</h3></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary" onclick="printWeeklySchedule()">🖶 Print</button>
+        <button class="btn secondary" onclick="openSkippedStudentsModal()">🚫 Skipped students</button>
         ${isAdmin()? `<button class="btn" onclick="openScheduleForm()">+ Add period</button>`:''}
         ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
         ${isAdmin() && DB.scheduleDays.length? `<button class="btn danger" onclick="clearAllSchedule()">⚠ Clear all schedule</button>`:''}
@@ -22177,6 +22555,7 @@ const DATA_PORTAL_CATEGORIES = [
   {key:'classTimetable', label:'Schedule — class timetables', hint:''},
   {key:'classTimings', label:'Schedule — class timings', hint:''},
   {key:'excusedSkips', label:'Schedule — excused library skips', hint:''},
+  {key:'skipLedger', label:'Schedule — skipped library periods (history)', hint:''},
   {key:'setup', label:'Setup & settings', hint:''},
 ];
 function downloadCategoryJSON(key){
@@ -24460,6 +24839,7 @@ function render(){
   try{ enhanceCollapsibleSections(); }catch(e){ console.error('Collapsible/reorderable sections failed to attach:', e); }
   restoreScrollPositions(el, __scrollSnapshot);
   if(memberProfileModalId) refreshMemberProfileModal();
+  if(document.getElementById('skipModal')) refreshSkipModalBody();
   focusKeyOperationalBox();
 }
 
@@ -24768,6 +25148,9 @@ function openQuickAction(actionType) {
       break;
     case 'timetable':
       openTimetableModal();
+      break;
+    case 'skipped':
+      openSkippedStudentsModal();
       break;
     case 'calendar':
       openCalendarModal();
@@ -25246,6 +25629,10 @@ window.addEventListener('quickActionSubmit', function(e) {
     <button class="quick-action-item" onclick="openQuickAction('timetable')">
       <span class="quick-action-icon">⏰</span>
       <span>Today's Timetable</span>
+    </button>
+    <button class="quick-action-item" onclick="openQuickAction('skipped')">
+      <span class="quick-action-icon">🚫</span>
+      <span>Skipped Students</span>
     </button>
     <button class="quick-action-item" onclick="openQuickAction('calendar')">
       <span class="quick-action-icon">🗓️</span>
