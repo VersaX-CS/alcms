@@ -7749,19 +7749,25 @@ function checkScheduleAlerts(){
   const hm = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   const slotKey = weekday+'|'+hm;
   if(scheduleAlertedSlots.has(slotKey)) return;
-  const due = DB.scheduleDays.filter(r=> r[0]===weekday && (r[2]||'').slice(0,5)===hm);
+  // One period can start at different times for different levels, so alert on each class group's
+  // own start time (a row's stored time is only the earliest one).
+  const due = [];
+  DB.scheduleDays.filter(r=> r[0]===weekday).forEach(r=>{
+    scheduleRowTimeGroups(weekday, r).forEach(g=>{ if(g.start===hm) due.push({r, g}); });
+  });
   if(!due.length) return;
   scheduleAlertedSlots.add(slotKey);
   // Whole-class periods still show the plain class list; a period that's only free for some
   // individual students (nothing in `classes`) shows just their breakdown — not both, which used
   // to duplicate the same info as a plain line above the interactive one.
-  const bodyHtml = due.map(r=>{
-    const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const individualHtml = renderIndividualFreeHtml(r[5], todayISO(), r[1], r[2]);
+  const bodyHtml = due.map(({r,g})=>{
+    const classes = g.classes;
+    const breakdown = (r[5] && typeof r[5]==='object') ? Object.fromEntries(Object.entries(r[5]).filter(([c])=>g.individual.includes(c) || g.classes.includes(c))) : null;
+    const individualHtml = renderIndividualFreeHtml(breakdown, todayISO(), r[1], r[2]);
     const classesSummary = classes.length ? `<p style="margin:4px 0"><strong>${esc(r[1])}</strong> — ${classes.map(c=>esc(c)).join(', ')}</p>` : '';
     return classesSummary + individualHtml;
   }).join('');
-  pushNotification({type:'schedule', title:'Class period starting now', body:due.map(r=>r[1]+' — '+scheduleRowClassSummary(r)).join(', '), route:'schedule'});
+  pushNotification({type:'schedule', title:'Class period starting now', body:due.map(({r,g})=>r[1]+' — '+(g.classes.length? g.classes.join(', ') : scheduleRowClassSummary(r))).join(', '), route:'schedule'});
   openTimedAlert({title:'Class period starting now', bodyHtml, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; render(); }}]});
 }
 let reminderAlertedIds = new Set();
@@ -7876,11 +7882,15 @@ function checkCheckoutReminderAlerts(){
   const lead = Math.max(0, +(DB.setup.checkoutReminderLeadMinutes ?? 2));
   // Group today's library periods by their end time.
   const byEnd = {};
+  // Each level's period ends at its own time (bell schedules differ), so group by every class
+  // group's own end rather than the single latest end across the whole school.
   DB.scheduleDays.filter(r=> r[0]===weekday && r[1]).forEach(r=>{
-    const pt = periodTime(weekday, r[1]);
-    const endMin = pt && pt.end ? timeToMinutes(pt.end) : null;
-    if(endMin==null) return;
-    (byEnd[pt.end] = byEnd[pt.end] || []).push(r[1]);
+    scheduleRowTimeGroups(weekday, r).forEach(g=>{
+      const endMin = g.end ? timeToMinutes(g.end) : null;
+      if(endMin==null) return;
+      const list = (byEnd[g.end] = byEnd[g.end] || []);
+      if(!list.includes(r[1])) list.push(r[1]);
+    });
   });
   const dueEnd = Object.keys(byEnd).find(end=>{
     const endMin = timeToMinutes(end);
@@ -11741,24 +11751,93 @@ function todaysStaffScheduleRows(weekday){
    interleave them with the staff timetable chronologically instead of showing two separate
    blocks. Chronological by each period's actual (or configured) start time, not an alphabetical
    sort on the period's name (which would misorder e.g. "Period 10" before "Period 2"). */
+/* Splits one schedule row (day + period) into groups of classes that actually run that period at
+   the same time. The row itself stores a single start time (the earliest), but classes on different
+   bell schedules — e.g. Years 7–8 vs Years 9–11 — have their own times for the same period, so each
+   distinct time becomes its own group: {start, end, classes, individual, names}. `individual` holds
+   classes that only appear via the "individually free students" breakdown. Classes with no time of
+   their own fall back to the row's time. Sorted earliest first. */
+function scheduleRowTimeGroups(day, r){
+  const period = r[1];
+  const classes = String(r[3]||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const indiv = (r[5] && typeof r[5]==='object') ? Object.keys(r[5]) : [];
+  const groups = new Map();
+  const put = (cls, isIndividual)=>{
+    const t = periodTime(day, period, cls);
+    const start = t && t.start ? String(t.start).slice(0,5) : null;
+    const end = t && t.end ? String(t.end).slice(0,5) : null;
+    const key = start ? start+'|'+(end||'') : 'none';
+    if(!groups.has(key)) groups.set(key, {start, end, classes:[], individual:[], names:[]});
+    const g = groups.get(key);
+    (isIndividual ? g.individual : g.classes).push(cls);
+    const custom = classTimeOverride(cls, day, period);
+    const nm = custom ? 'custom time' : ((bellScheduleFor(cls, day)||{}).name || '');
+    if(nm && !g.names.includes(nm)) g.names.push(nm);
+  };
+  classes.forEach(c=>put(c,false));
+  indiv.filter(c=>!classes.includes(c)).forEach(c=>put(c,true));
+  const rowStart = (r[2]||'').slice(0,5) || null;
+  if(!groups.size){
+    const t = periodTime(day, period);
+    groups.set('none', {start: rowStart || (t&&t.start) || null, end: (t&&t.end)||null, classes:[], individual:[], names:[]});
+  }
+  const none = groups.get('none');
+  if(none && groups.size>0 && !none.start){
+    const t = periodTime(day, period);
+    none.start = rowStart || (t&&t.start) || null; none.end = (t&&t.end) || null;
+  }
+  return [...groups.values()].sort((a,b)=>{
+    const ma = timeToMinutes(a.start), mb = timeToMinutes(b.start);
+    return (ma==null?Infinity:ma) - (mb==null?Infinity:mb);
+  });
+}
 function todaysClassScheduleRows(dateKey, weekday){
   const todaysPeriods = (DB.scheduleDays||[]).filter(r=>r[0]===weekday);
   const visitedClasses = new Set(DB.registerLog.filter(r=>r.source==='CLASS' && (r.date||'').slice(0,10)===dateKey).map(r=>r.cls));
+  const isToday = dateKey===todayISO();
+  const nowD = new Date(); const nowMin = nowD.getHours()*60 + nowD.getMinutes();
   return todaysPeriods.map(r=>{
-    const classes = String(r[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
-    const allVisited = classes.length && classes.every(c=>visitedClasses.has(c));
-    const individualHtml = renderIndividualFreeHtml(r[5], dateKey, r[1], r[2]);
-    const classAttendanceHtml = classes.length ? renderStudentAttendanceList(dateKey, r[1]) : '';
-    const classesLabel = classes.length ? esc(classes.join(', ')) : (individualHtml ? '' : 'No class assigned');
-    const html = `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
+    const groups = scheduleRowTimeGroups(weekday, r);
+    const multi = groups.length>1;
+    const allClasses = groups.flatMap(g=>g.classes);
+    const allVisited = allClasses.length && allClasses.every(c=>visitedClasses.has(c));
+    const parts = groups.map(g=>{
+      const startMin = timeToMinutes(g.start), endMin = timeToMinutes(g.end);
+      // Status is judged on THIS group's own time — one level's period never marks another's.
+      const isPast = isToday && endMin!=null && endMin<=nowMin;
+      const isNow = isToday && startMin!=null && endMin!=null && startMin<=nowMin && nowMin<endMin;
+      const soon = isToday && startMin!=null && startMin>nowMin && startMin-nowMin<=30 ? startMin-nowMin : null;
+      const status = isNow ? '<span class="badge green">NOW</span>' : isPast ? '<span class="badge grey">PASSED</span>' : soon!=null ? `<span class="badge gold">IN ${soon} MIN</span>` : '';
+      const gVisited = g.classes.length && g.classes.every(c=>visitedClasses.has(c));
+      const indivBreak = (r[5] && typeof r[5]==='object') ? Object.fromEntries(Object.entries(r[5]).filter(([c])=>g.individual.includes(c) || g.classes.includes(c))) : null;
+      const individualHtml = renderIndividualFreeHtml(indivBreak, dateKey, r[1], r[2]);
+      const attendance = g.classes.length ? renderStudentAttendanceList(dateKey, r[1], g.classes) : '';
+      const label = g.classes.length ? esc(g.classes.join(', ')) : '';
+      const timeTxt = g.start ? (g.end ? fmtTime(g.start)+'–'+fmtTime(g.end) : fmtTime(g.start)) : '';
+      return {g, status, gVisited, individualHtml, attendance, label, timeTxt, isNow, isPast, startMin};
+    });
+    let html;
+    if(!multi){
+      const x = parts[0];
+      const classesLabel = x.label ? x.label : (x.individualHtml ? '' : 'No class assigned');
+      html = `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
       <div style="flex:1"><strong>${esc(r[1]||'')}</strong>${classesLabel? ` — <em>${classesLabel}</em>`:''}
-      <div class="meta">${r[2]?fmtTime((r[2]||'').slice(0,5)):''}${r[4]?' · '+esc(r[4]):''}</div>
-      ${classAttendanceHtml}${individualHtml}</div>
-      ${allVisited?'<span class="badge green">VISITED</span>':''}</div>`;
-    // Prefer the period's actual configured time for today over the general period-name sort
-    // key, so the merged list reflects what's really happening at what time today.
-    const timeKey = timeToMinutes((r[2]||'').slice(0,5));
-    return {sortKey: timeKey!=null ? timeKey : periodSortKey(r[1]), html};
+      <div class="meta">${x.timeTxt}${x.g.names.length? ' · '+esc(x.g.names.join(', ')):''}${r[4]?' · '+esc(r[4]):''}</div>
+      ${x.attendance}${x.individualHtml}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${x.status}${allVisited?'<span class="badge green">VISITED</span>':''}</div></div>`;
+    } else {
+      html = `<div class="activity-row"><div class="dot" style="background:${allVisited?'#2F6B44':'#B8863E'}"></div>
+      <div style="flex:1"><strong>${esc(r[1]||'')}</strong> <span class="badge grey" style="margin-left:4px">DIFFERENT TIMES BY LEVEL</span>
+      ${r[4]?`<div class="meta">${esc(r[4])}</div>`:''}
+      ${parts.map(x=>`<div style="margin-top:8px;padding:6px 0 6px 10px;border-left:3px solid ${x.isNow?'#2F6B44':x.isPast?'#8a8578':'#B8863E'};${x.isNow?'background:rgba(47,107,68,.08);border-radius:0 8px 8px 0':''}">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><strong>${x.timeTxt||'Time not set'}</strong>${x.label?` — <em>${x.label}</em>`:''}<span style="flex:1"></span>${x.status}${x.gVisited?'<span class="badge green">VISITED</span>':''}</div>
+        ${x.g.names.length?`<div class="meta">${esc(x.g.names.join(', '))}</div>`:''}
+        ${x.attendance}${x.individualHtml}</div>`).join('')}
+      </div></div>`;
+    }
+    // Sort by the earliest time any class runs this period today, falling back to the period name.
+    const starts = parts.map(x=>x.startMin).filter(m=>m!=null);
+    return {sortKey: starts.length ? Math.min(...starts) : periodSortKey(r[1]), html};
   });
 }
 /* Breaks, lunch and whole-school fixed activities (Assembly, Fellowship…) for today, taken from the
@@ -18062,21 +18141,25 @@ function computeRawSkipsForDate(dateKey, onlyId){
   const out = [], seen = new Set();
   rows.forEach(r=>{
     const period = r[1], startOverride = r[2];
-    if(!periodHasStarted(dateKey, day, period, startOverride)) return;
-    const time = String(startOverride||'').slice(0,5);
-    const attended = u=>{
+    const attended = (u, c)=>{
       if(!visitedIds.has(u.id)) return false;
-      const {start} = periodWindowMinutes(day, period, startOverride);
+      const {start} = periodWindowMinutes(day, period, startOverride, c);
       if(start==null) return true; // no period time configured anywhere — any visit that day counts
-      return studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride);
+      return studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride, c);
     };
     const add = (u, cls, type, detail)=>{
       if(!u || u.category!=='STUDENT' || u.status==='INACTIVE') return;
       if(onlyId && u.id!==onlyId) return;
+      const c = cls||u.cls||'';
+      // A class only counts as having skipped once ITS period has started and it wasn't attended —
+      // judged on that class's own bell-schedule time, never another level's.
+      if(!periodHasStarted(dateKey, day, period, startOverride, c)) return;
       const k = u.id+'|'+period;
-      if(seen.has(k) || attended(u)) return;
+      if(seen.has(k) || attended(u, c)) return;
       seen.add(k);
-      out.push({id:u.id, name:u.name, cls:cls||u.cls||'', period, time, type, detail:detail||''});
+      const ct = periodTime(day, period, c);
+      const time = (ct && ct.start) ? ct.start : String(startOverride||'').slice(0,5);
+      out.push({id:u.id, name:u.name, cls:c, period, time, type, detail:detail||''});
     };
     const classesText = r[3]||'';
     if(classesText && !classesText.toLowerCase().includes('free')){
@@ -18611,20 +18694,20 @@ function clearOldWeekAttendance(){
   });
 }
 
-function getStudentsInClassesForPeriod(dateKey, period){
+function getStudentsInClassesForPeriod(dateKey, period, onlyClasses){
   // Find all classes expected during this period and their students, with check-in status
   const day = weekdayForDateKey(dateKey);
   const classesText = (DB.scheduleDays||[]).find(r=>r[0]===day && r[1]===period)?.[3] || '';
   if(!classesText) return [];
   
-  const classNames = classesText.split(',').map(c=>c.trim()).filter(Boolean);
+  const classNames = classesText.split(',').map(c=>c.trim()).filter(Boolean).filter(c=> !onlyClasses || onlyClasses.includes(c));
   const students = [];
   
   classNames.forEach(cls => {
     const classStuds = DB.users.filter(u=>u.cls===cls && u.category==='STUDENT');
     classStuds.forEach(u => {
       const absence = findSchoolAbsence(u.id, dateKey);
-      const checkedIn = absence ? false : studentCheckedInForPeriod(u.id, dateKey, day, period, null);
+      const checkedIn = absence ? false : studentCheckedInForPeriod(u.id, dateKey, day, period, null, cls);
       const excuse = (checkedIn || absence) ? null : findExcuseForStudent(u.id, dateKey, period);
       students.push({
         id: u.id,
@@ -18684,8 +18767,8 @@ function refreshOpenScheduleModal(){
   const heading = overlay && overlay.querySelector('.quick-modal-header h2');
   if(heading && /Today's Schedule/.test(heading.textContent)) openScheduleModal();
 }
-function renderStudentAttendanceList(dateKey, period){
-  const students = getStudentsInClassesForPeriod(dateKey, period);
+function renderStudentAttendanceList(dateKey, period, onlyClasses){
+  const students = getStudentsInClassesForPeriod(dateKey, period, onlyClasses);
   if(!students.length) return '';
   
   const absent = students.filter(s=>s.absent);
@@ -20590,15 +20673,19 @@ function studentCheckedInOnDate(userId, dateKey){
 // no period time is configured. When no end time is configured anywhere either, the next
 // chronological period's start is used as an implicit end, so a register entry logged a little
 // late still overlaps correctly instead of missing the window entirely.
-function periodWindowMinutes(day, period, startOverride){
-  const pt = periodTime(day, period);
+/* `cls` (optional) makes the window that CLASS's own time for the period — classes on different
+   bell schedules (e.g. Years 7–8 vs 9–11) run the same period at different times, so judging one
+   class against another's window is wrong. Without `cls` it's the whole-school union window
+   (earliest start → latest end), used only when no single class is in play. */
+function periodWindowMinutes(day, period, startOverride, cls){
+  const pt = (cls && periodTime(day, period, cls)) || periodTime(day, period);
   const start = timeToMinutes(pt && pt.start) ?? timeToMinutes(startOverride);
   let end = timeToMinutes(pt && pt.end);
   if(end==null && start!=null){
     const periods = timetablePeriods();
     const idx = periods.indexOf(period);
     for(let i=idx+1;i<periods.length;i++){
-      const nStart = timeToMinutes((periodTime(day, periods[i])||{}).start);
+      const nStart = timeToMinutes((((cls && periodTime(day, periods[i], cls)) || periodTime(day, periods[i])) || {}).start);
       if(nStart!=null){ end = nStart; break; }
     }
   }
@@ -20614,9 +20701,9 @@ function weekdayForDateKey(dateKey){
 // which has already fully played out) — used to hold back the checked-in/skipped badge for
 // periods that haven't happened yet. Falls back to true (always show) when no start time is
 // configured anywhere, since there's then nothing to compare against.
-function periodHasStarted(dateKey, day, period, startOverride){
+function periodHasStarted(dateKey, day, period, startOverride, cls){
   if(!dateKey || dateKey !== todayISO()) return true;
-  const {start} = periodWindowMinutes(day, period, startOverride);
+  const {start} = periodWindowMinutes(day, period, startOverride, cls);
   if(start==null) return true;
   const now = new Date();
   return (now.getHours()*60 + now.getMinutes()) >= start;
@@ -20628,12 +20715,12 @@ function periodHasStarted(dateKey, day, period, startOverride){
 // who came in early, stayed on through later periods, or was signed in across several periods at
 // once. An entry with no timeOut yet (still checked in) counts as covering everything from timeIn
 // onward.
-function studentCheckedInForPeriod(userId, dateKey, day, period, startOverride){
+function studentCheckedInForPeriod(userId, dateKey, day, period, startOverride, cls){
   if(!userId || !dateKey || !period) return false;
   const entries = (DB.registerLog||[]).filter(r=> r.id===userId && (r.date||'').slice(0,10)===dateKey);
   if(!entries.length) return false;
   if(entries.some(r=> (r.period||'').toLowerCase() === period.toLowerCase())) return true;
-  const {start, end} = periodWindowMinutes(day, period, startOverride);
+  const {start, end} = periodWindowMinutes(day, period, startOverride, cls);
   if(start==null) return false;
   const periodEnd = end!=null ? end : Infinity;
   return entries.some(r=>{
@@ -20654,6 +20741,8 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
   const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride) : !!dateKey;
   const staff = isStaff();
   return parts.map(([cls,info])=>{
+    // Each class is judged against its OWN period time, not the whole-school earliest start.
+    const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride, cls) : !!dateKey;
     let checkedCount = 0, excusedCount = 0, absentCount = 0;
     const rows = info.students.map(name=>{
       if(!dateKey) return esc(name);
@@ -20662,7 +20751,7 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
       // Nothing is shown yet for a period that hasn't started today — there's no status to report.
       const absent = !!(u && findSchoolAbsence(u.id, dateKey));
       if(absent) absentCount++;
-      const checkedIn = (u && started && !absent) ? (period ? studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride) : studentCheckedInOnDate(u.id, dateKey)) : false;
+      const checkedIn = (u && started && !absent) ? (period ? studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride, cls) : studentCheckedInOnDate(u.id, dateKey)) : false;
       if(checkedIn) checkedCount++;
       // A student personally free this period can just as genuinely be excused from showing up
       // (sent elsewhere, kept back by another teacher, etc.) as one on a scheduled class visit —
