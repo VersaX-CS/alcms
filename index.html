@@ -5063,9 +5063,19 @@ function fmtTime(v){
 }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function toast(msg){
+function toast(msg, opts){
   const t=$('#toast'); t.textContent=msg; t.classList.add('show');
-  clearTimeout(window.__toastT); window.__toastT=setTimeout(()=>t.classList.remove('show'),2600);
+  t.style.pointerEvents = '';
+  let ms = 2600;
+  if(opts && opts.action && typeof opts.action.onClick==='function'){
+    // A toast with a button (e.g. "Undo") stays up longer and becomes clickable.
+    const b = document.createElement('button');
+    b.type='button'; b.textContent = opts.action.label || 'Undo';
+    b.style.cssText = 'margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,.7);color:#fff;border-radius:6px;padding:3px 10px;cursor:pointer;font-weight:600';
+    b.onclick = ()=>{ t.classList.remove('show'); t.style.pointerEvents=''; clearTimeout(window.__toastT); opts.action.onClick(); };
+    t.appendChild(b); t.style.pointerEvents='auto'; ms = opts.ms || 9000;
+  }
+  clearTimeout(window.__toastT); window.__toastT=setTimeout(()=>{ t.classList.remove('show'); t.style.pointerEvents=''; }, ms);
 }
 function initials(name){
   if(!name) return '?';
@@ -7950,9 +7960,10 @@ function openCheckoutReminder(periods, endTime){
     const chosen = currentlyInLibrary().filter(r=> sel[r.entryId]);
     if(!chosen.length){ toast('Select at least one person to check out'); return; }
     const t = new Date().toTimeString().slice(0,5);
-    chosen.forEach(r=>{ r.timeOut = t; });
+    chosen.forEach(r=>{ stampCheckout(r, t, 'end-of-period reminder'); });
+    const undoIds = chosen.map(r=>r.entryId);
     saveDB(`${chosen.length} people checked out (end of period)`); render();
-    toast(`${chosen.length} checked out`);
+    toast(`${chosen.length} checked out`, {action:{label:'Undo', onClick:()=>undoCheckouts(undoIds)}});
     if(currentlyInLibrary().length) paint(); else close();
   };
   paint();
@@ -17749,10 +17760,12 @@ function pageRegister(){
       {label:'Purpose', get:r=>r.purpose}, {label:'Borrowed?', get:r=>r.source==='DESK'?r.borrow:'—'},
       {label:'Offense', get:r=>r.offense||'—'}, {label:'Note', get:r=>r.note},
     ],
-    rowActions:r=>`<button class="btn secondary small" onclick="openRegisterEdit('${esc(r.entryId)}')">Edit</button>`,
+    rowActionsAllRoles:true,   // staff can undo a check-out; Edit stays admin-only
+    rowActions:r=>`${isAdmin()?`<button class="btn secondary small" onclick="openRegisterEdit('${esc(r.entryId)}')">Edit</button>`:''}${isUndoableCheckout(r)&&isStaff()?` <button class="btn secondary small" onclick="undoCheckouts(['${esc(r.entryId)}'])" title="Reopen this entry — puts them back in the library">Undo check-out</button>`:''}`,
     onRowDblClick:r=>`openRegisterEdit('${esc(r.entryId)}')`,
     hidePrint:true,
     extraActions:[
+      {label:'↶ Undo check-out (selected)', onClick:()=>undoCheckouts([...registerModuleState.selected])},
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
       {label:'✎ Batch edit selected', onClick:()=>bulkEditRegister()},
       {label:'🗑 Clear selected', onClick:()=>bulkClearRegister(), danger:true},
@@ -18026,14 +18039,61 @@ function submitBatch(){
 
 /* ---- batch check-out (from Register page) ---- */
 let checkoutChecked = {};
+/* Check-out stamping + undo. Every desk check-out records who/when/how, so it can be reversed for
+   one person or a whole batch. Undoing simply reopens the entry (clears Time out), which puts the
+   person back in "currently in the library" — check-out reminders and counts pick them up again. */
+function stampCheckout(r, time, via){
+  r.timeOut = time; r.outAt = new Date().toISOString(); r.outBy = actorName()||''; r.outVia = via||'';
+}
+function isUndoableCheckout(r){
+  return !!(r && r.source==='DESK' && r.timeOut && (r.date||'').slice(0,10)===todayISO());
+}
+function undoCheckouts(entryIds){
+  if(!isStaff()) return requireStaff('undo a check-out');
+  const ids = new Set(entryIds||[]);
+  const rows = DB.registerLog.filter(r=> ids.has(r.entryId) && isUndoableCheckout(r));
+  if(!rows.length){ toast('Nothing to undo — only today\'s desk check-outs can be reverted here'); return; }
+  rows.forEach(r=>{ r.timeOut = ''; delete r.outAt; delete r.outBy; delete r.outVia; });
+  rows.forEach(r=>{ delete undoCheckoutChecked[r.entryId]; if(typeof registerModuleState!=='undefined' && registerModuleState.selected) registerModuleState.selected.delete(r.entryId); });
+  const names = rows.slice(0,3).map(r=>r.name||r.id).join(', ') + (rows.length>3 ? ` +${rows.length-3} more` : '');
+  logActivity('register','edit',`Undid check-out for ${rows.length} ${rows.length===1?'person':'people'}: ${names}`);
+  saveDB(`Check-out undone for ${rows.length}`); render();
+  setTimeout(()=>{ mountCheckoutStaging(); if(typeof updateLibraryBannerInModal==='function') updateLibraryBannerInModal(); }, 0);
+  toast(rows.length===1 ? `${rows[0].name||rows[0].id} is back in the library` : `${rows.length} people are back in the library`);
+}
+let undoCheckoutChecked = {};
+function recentCheckoutsToday(){
+  const today = todayISO();
+  return DB.registerLog
+    .filter(r=> r.source==='DESK' && r.timeOut && (r.date||'').slice(0,10)===today)
+    .sort((a,b)=> String(b.outAt||b.timeOut).localeCompare(String(a.outAt||a.timeOut)));
+}
 function currentlyInLibrary(){
   const today = todayISO();
   return DB.registerLog.filter(r=> r.source==='DESK' && (r.date||'').slice(0,10)===today && r.timeIn && !r.timeOut);
 }
+function renderRecentCheckoutsHtml(){
+  const recent = recentCheckoutsToday();
+  if(!recent.length) return '';
+  const nSel = recent.filter(r=>undoCheckoutChecked[r.entryId]).length;
+  return `<details class="recent-checkouts" style="margin-top:14px" ${nSel?'open':''}>
+    <summary style="cursor:pointer;font-weight:600">Checked out today (${recent.length}) — undo a mistake</summary>
+    <table class="stage-table" style="margin-top:8px">
+      <thead><tr><th><input type="checkbox" id="undoCoSelectAll" ${recent.every(r=>undoCheckoutChecked[r.entryId])?'checked':''}></th><th>Name</th><th>Class</th><th>In</th><th>Out</th><th></th></tr></thead>
+      <tbody>${recent.map(r=>`<tr>
+        <td><input type="checkbox" class="undoCoRowCheck" data-id="${esc(r.entryId)}" ${undoCheckoutChecked[r.entryId]?'checked':''}></td>
+        <td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls||'')}</td><td>${fmtTime(r.timeIn)}</td>
+        <td>${fmtTime(r.timeOut)}${r.outBy?`<div style="font-size:11px;color:var(--muted)">by ${esc(r.outBy)}</div>`:''}</td>
+        <td><button class="btn secondary small" onclick="undoCheckouts(['${esc(r.entryId)}'])">Undo</button></td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <button class="btn secondary" style="margin-top:8px" onclick="undoCheckouts(recentCheckoutsToday().filter(r=>undoCheckoutChecked[r.entryId]).map(r=>r.entryId))">Undo check-out for selected (<span id="undoCoSelectedCount">${nSel}</span>)</button>
+  </details>`;
+}
 function renderCheckoutHtml(){
   if(!isStaff()) return `<div class="guest-lock">Batch check-out needs a staff or admin account.</div>`;
   const inLib = currentlyInLibrary();
-  if(!inLib.length) return `<div class="stage-empty">Nobody is currently signed in at the desk.</div>`;
+  if(!inLib.length) return `<div class="stage-empty">Nobody is currently signed in at the desk.</div>` + renderRecentCheckoutsHtml();
   const selectedCount = inLib.filter(r=>checkoutChecked[r.entryId]).length;
   return `
   <table class="stage-table">
@@ -18043,13 +18103,23 @@ function renderCheckoutHtml(){
       <td>${esc(r.id)}</td><td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls)}</td><td>${fmtTime(r.timeIn)}</td>
     </tr>`).join('')}</tbody>
   </table>
-  <button class="btn" onclick="submitCheckout()">Check out selected (<span id="checkoutSelectedCount">${selectedCount}</span>)</button>`;
+  <button class="btn" onclick="submitCheckout()">Check out selected (<span id="checkoutSelectedCount">${selectedCount}</span>)</button>
+  ${renderRecentCheckoutsHtml()}`;
 }
 function mountCheckoutStaging(){
   const el = document.getElementById('checkoutStagingArea');
   if(!el) return;
   el.innerHTML = renderCheckoutHtml();
-  if(!isAdmin()) return;
+  if(!isStaff()) return;
+  const uAll = document.getElementById('undoCoSelectAll');
+  if(uAll) uAll.onchange = e=>{ recentCheckoutsToday().forEach(r=>undoCheckoutChecked[r.entryId]=e.target.checked); mountCheckoutStaging(); };
+  document.querySelectorAll('.undoCoRowCheck').forEach(cb=>{
+    cb.onchange = e=>{
+      undoCheckoutChecked[e.target.dataset.id]=e.target.checked;
+      const c=document.getElementById('undoCoSelectedCount');
+      if(c) c.textContent = recentCheckoutsToday().filter(r=>undoCheckoutChecked[r.entryId]).length;
+    };
+  });
   const selAll = document.getElementById('checkoutSelectAll');
   if(selAll) selAll.onchange = e=>{ currentlyInLibrary().forEach(r=>checkoutChecked[r.entryId]=e.target.checked); mountCheckoutStaging(); };
   document.querySelectorAll('.checkoutRowCheck').forEach(cb=>{
@@ -18065,14 +18135,15 @@ function submitCheckout(){
   const now = new Date().toTimeString().slice(0,5);
   const selected = currentlyInLibrary().filter(r=>checkoutChecked[r.entryId]);
   if(!selected.length){ toast('Select at least one person to check out'); return; }
-  selected.forEach(r=>{ r.timeOut = now; checkoutChecked[r.entryId]=false; });
+  selected.forEach(r=>{ stampCheckout(r, now, 'batch check-out'); checkoutChecked[r.entryId]=false; });
+  const undoIds = selected.map(r=>r.entryId);
   saveDB(`${selected.length} people checked out`); render(); 
   // QUICK ACTION MODAL FIX: Refresh the modal UI and banner count after action completes
   setTimeout(()=>{ 
     mountCheckoutStaging(); 
     updateLibraryBannerInModal();
   }, 0);
-  toast(`${selected.length} checked out`);
+  toast(`${selected.length} checked out`, {action:{label:'Undo', onClick:()=>undoCheckouts(undoIds)}});
 }
 
 function mountBatchStaging(){
