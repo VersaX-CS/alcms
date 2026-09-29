@@ -11761,11 +11761,51 @@ function todaysClassScheduleRows(dateKey, weekday){
     return {sortKey: timeKey!=null ? timeKey : periodSortKey(r[1]), html};
   });
 }
-/* Merged, chronological "Today's Schedule" — class periods and staff timetable events
-   interleaved by actual time, for the Quick Action panel. Each source keeps its own row style
-   (class rows show attendance detail; staff rows show a PASSED badge); only the ordering merges. */
+/* Breaks, lunch and whole-school fixed activities (Assembly, Fellowship…) for today, taken from the
+   bell schedules — so the Quick Action "Today's Schedule" also says when it's time to stop for a
+   break, not just which classes visit. Rows carry live status: NOW while the slot is running,
+   "IN n MIN" within the half hour before it starts, PASSED once it's over. If several bell
+   schedules run today (e.g. Years 7–8 and 9–11) and give the same slot different times, each is
+   shown with its schedule's name; identical slots are merged into one row. */
+function todaysBellBreakRows(weekday){
+  const now = new Date(); const nowMin = now.getHours()*60 + now.getMinutes();
+  const schedules = bellSchedules().filter(sch=> bellRunsOn(sch, weekday));
+  const found = new Map();   // key → {label, kind, start, end, names:[]}
+  schedules.forEach(sch=>{
+    (sch.slots||[]).forEach(sl=>{
+      let label = null, kind = null;
+      if(sl.type==='break' || sl.type==='lunch'){ label = sl.label; kind = sl.type; }
+      else if(sl.type==='period' && sl.fixed && sl.fixed[weekday]){ label = String(sl.fixed[weekday]).trim(); kind = 'activity'; }
+      if(!label) return;
+      const key = kind+'|'+label.toUpperCase()+'|'+sl.start+'|'+sl.end;
+      if(!found.has(key)) found.set(key, {label, kind, start:sl.start, end:sl.end, names:[]});
+      found.get(key).names.push(sch.name||'');
+    });
+  });
+  const anyDiffer = new Set([...found.values()].map(x=>x.kind+'|'+x.label.toUpperCase())).size !== found.size;
+  return [...found.values()].map(x=>{
+    const startMin = timeToMinutes(x.start), endMin = timeToMinutes(x.end);
+    const isPast = endMin!=null && endMin <= nowMin;
+    const isNow = startMin!=null && endMin!=null && startMin <= nowMin && nowMin < endMin;
+    const soon = startMin!=null && startMin > nowMin && startMin - nowMin <= 30 ? startMin - nowMin : null;
+    const tone = x.kind==='lunch' ? 'green' : x.kind==='break' ? 'blue' : 'gold';
+    const tag = x.kind==='lunch' ? 'LUNCH' : x.kind==='break' ? 'BREAK' : 'ACTIVITY';
+    const who = (anyDiffer && x.names.length && x.names.filter(Boolean).length) ? ' · '+esc(x.names.filter(Boolean).join(', ')) : '';
+    const status = isNow ? '<span class="badge green">NOW</span>'
+      : isPast ? '<span class="badge grey">PASSED</span>'
+      : soon!=null ? `<span class="badge gold">IN ${soon} MIN</span>` : '';
+    const html = `<div class="activity-row" style="${isNow?'background:rgba(47,107,68,.10);border-radius:8px':''}"><div class="dot" style="background:${isPast?'#8a8578':x.kind==='lunch'?'#2F6B44':x.kind==='break'?'#3B6EA5':'#B8863E'}"></div>
+      <div style="flex:1"><strong>${esc(x.label)}</strong> <span class="badge ${tone}" style="margin-left:4px">${tag}</span>
+      <div class="meta">${esc(fmtTime(x.start))}–${esc(fmtTime(x.end))}${who}</div></div>${status}</div>`;
+    return {sortKey: startMin==null ? Infinity : startMin, html};
+  });
+}
+/* Merged, chronological "Today's Schedule" — class periods, staff timetable events and the day's
+   breaks / lunch / fixed activities interleaved by actual time, for the Quick Action panel. Each
+   source keeps its own row style (class rows show attendance detail; staff rows show a PASSED
+   badge; break rows show NOW / IN n MIN); only the ordering merges. */
 function renderTodaysScheduleMergedHtml(dateKey, weekday){
-  const rows = [...todaysClassScheduleRows(dateKey, weekday), ...todaysStaffScheduleRows(weekday)];
+  const rows = [...todaysClassScheduleRows(dateKey, weekday), ...todaysStaffScheduleRows(weekday), ...todaysBellBreakRows(weekday)];
   if(!rows.length) return '<div class="empty">Nothing scheduled today</div>';
   rows.sort((a,b)=> a.sortKey - b.sortKey);
   return rows.map(r=>r.html).join('');
@@ -25775,7 +25815,7 @@ function openScheduleModal() {
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
-          <div style="max-height: 400px; overflow-y: auto;">
+          <div id="todaySchedBox" style="max-height: 400px; overflow-y: auto;">
             ${scheduleContent}
           </div>
         </div>
@@ -25789,6 +25829,16 @@ function openScheduleModal() {
   
   // Activate focus management for this modal
   activateFocusOnQuickModal();
+
+  // Keep NOW / IN n MIN / PASSED current while the panel stays open.
+  clearInterval(window._todaySchedTimer);
+  window._todaySchedTimer = setInterval(()=>{
+    const box = document.getElementById('todaySchedBox');
+    if(!box || !document.getElementById('tempOverlay')){ clearInterval(window._todaySchedTimer); return; }
+    const top = box.scrollTop;
+    box.innerHTML = renderTodaysScheduleMergedHtml(todayISO(), weekday);
+    box.scrollTop = top;
+  }, 60000);
 }
 
 function openTimetableModal() {
