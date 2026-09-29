@@ -9638,7 +9638,7 @@ function GenericModule(cfg){
       <div class="table-wrap"><table class="datatable cards-on-mobile">
         <thead><tr>${cfg.selectable?`<th style="width:28px"><input type="checkbox" id="selall_${cfg.key}" ${rows.length && selCount===rows.length?'checked':''}></th>`:''}${cfg.columns.map(c=>`<th>${esc(c.label)}</th>`).join('')}${cfg.rowActions?'<th></th>':''}</tr></thead>
         <tbody>
-        ${rows.length? rows.map(r=>{ const dblJs = cfg.onRowDblClick? cfg.onRowDblClick(r) : ''; return `<tr${cfg.rowClass && cfg.rowClass(r)? ` class="${esc(cfg.rowClass(r))}"`:''}${dblJs? ` ondblclick="${dblJs}" style="cursor:pointer" title="Double-click to open"`:''}>${cfg.selectable?`<td data-label="Select"><input type="checkbox" class="rowsel_${cfg.key}" data-k="${esc(keyOf(r))}" ${state.selected.has(keyOf(r))?'checked':''}></td>`:''}${cfg.columns.map(c=>`<td data-label="${esc(c.label)}">${c.render? c.render(r): esc(r[c.key])}</td>`).join('')}${cfg.rowActions? `<td data-label="Actions"><div class="actions-collapse">${isAdmin()? cfg.rowActions(r):''}</div></td>`:''}</tr>`; }).join('')
+        ${rows.length? rows.map(r=>{ const dblJs = cfg.onRowDblClick? cfg.onRowDblClick(r) : ''; return `<tr${cfg.rowClass && cfg.rowClass(r)? ` class="${esc(cfg.rowClass(r))}"`:''}${dblJs? ` ondblclick="${dblJs}" style="cursor:pointer" title="Double-click to open"`:''}>${cfg.selectable?`<td data-label="Select"><input type="checkbox" class="rowsel_${cfg.key}" data-k="${esc(keyOf(r))}" ${state.selected.has(keyOf(r))?'checked':''}></td>`:''}${cfg.columns.map(c=>`<td data-label="${esc(c.label)}">${c.render? c.render(r): esc(r[c.key])}</td>`).join('')}${cfg.rowActions? `<td data-label="Actions"><div class="actions-collapse">${(cfg.rowActionsAllRoles||isAdmin())? cfg.rowActions(r):''}</div></td>`:''}</tr>`; }).join('')
           : `<tr><td colspan="${cfg.columns.length+(cfg.rowActions?1:0)+(cfg.selectable?1:0)}"><div class="empty"><div class="big">·</div>No matching records</div></td></tr>`}
         </tbody>
       </table></div>
@@ -21107,26 +21107,82 @@ function pageRosterTable(){
 
 /* ================= PAGE: FEEDBACK ================= */
 let feedbackModule;
-let feedbackModuleState = {q:'', filters:{}};
+let feedbackModuleState = {q:'', filters:{}, sort:'attention'};
+const FB_PRI_RANK = {HIGH:0, MEDIUM:1, LOW:2};
+const FB_STATUS_RANK = {'NEW':0, 'IN REVIEW':1, 'RESOLVED':2};
+function fbTruncate(t, n){ t=String(t||''); return t.length>n ? t.slice(0,n).trimEnd()+'…' : t; }
+function fbCmpDateDesc(a,b){ return String(b.date||'').localeCompare(String(a.date||'')); }
+function fbCmpAttention(a,b){
+  const sa=FB_STATUS_RANK[a.status]??0, sb=FB_STATUS_RANK[b.status]??0;
+  const ua=a.status==='RESOLVED'?1:0, ub=b.status==='RESOLVED'?1:0;
+  if(ua!==ub) return ua-ub;
+  const pa=FB_PRI_RANK[a.priority]??1, pb=FB_PRI_RANK[b.priority]??1;
+  if(pa!==pb) return pa-pb;
+  if(sa!==sb) return sa-sb;
+  return String(a.date||'').localeCompare(String(b.date||'')); // oldest first
+}
+/* Summary strip: clickable counts that set the same filters as the toolbar dropdowns. */
+function feedbackSummaryHtml(){
+  const list = Array.isArray(DB.feedback) ? DB.feedback : [];
+  const f = feedbackModuleState.filters||{};
+  const chip = (label, count, key, val, tone)=>{
+    const on = f[key]===val;
+    return `<button type="button" class="badge ${tone}" style="cursor:pointer;border:${on?'2px solid var(--gold,#c9a227)':'2px solid transparent'};padding:6px 12px;font-size:12.5px" onclick="fbApplyChip('${key}','${val}')" aria-pressed="${on}">${esc(label)} · <b>${count}</b></button>`;
+  };
+  const cnt = (fn)=> list.filter(fn).length;
+  const types = ['SUGGESTION','COMPLAINT','REQUEST','COMPLIMENT'];
+  return `<div class="card panel" style="margin-bottom:12px"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    ${chip('New', cnt(x=>x.status==='NEW'), 'status','NEW','grey')}
+    ${chip('In review', cnt(x=>x.status==='IN REVIEW'), 'status','IN REVIEW','gold')}
+    ${chip('Resolved', cnt(x=>x.status==='RESOLVED'), 'status','RESOLVED','green')}
+    ${chip('High priority (open)', cnt(x=>x.priority==='HIGH' && x.status!=='RESOLVED'), 'priority','HIGH','red')}
+    <span style="flex:1"></span>
+    ${types.map(t=>chip(t.charAt(0)+t.slice(1).toLowerCase(), cnt(x=>x.type===t), 'type', t, 'grey')).join('')}
+  </div></div>`;
+}
+function refreshFeedbackSummary(){
+  const el = document.getElementById('fb_summary');
+  if(el) el.innerHTML = feedbackSummaryHtml();
+}
+function fbApplyChip(key, val){
+  const f = feedbackModuleState.filters;
+  f[key] = (f[key]===val) ? '' : val;           // click again to clear
+  softRerender('feedback'); refreshFeedbackSummary();
+}
 function pageFeedback(){
+  const assignees = Array.from(new Set((DB.feedback||[]).map(x=>x.assignedTo).filter(Boolean))).sort();
   feedbackModule = GenericModule({
     state:feedbackModuleState, key:'feedback', title:'Feedback & suggestions', hint:'',
     data:()=>DB.feedback,
-    searchKeys:['userName','subject','text','type'],
-    filters:[{key:'status', label:'Status', options:['NEW','IN REVIEW','RESOLVED']}],
+    searchKeys:['userName','userId','subject','text','type'],
+    filters:[
+      {key:'status', label:'Status', options:['NEW','IN REVIEW','RESOLVED']},
+      {key:'type', label:'Type', options:['SUGGESTION','COMPLAINT','REQUEST','COMPLIMENT']},
+      {key:'priority', label:'Priority', options:['HIGH','MEDIUM','LOW']},
+      ...(assignees.length ? [{key:'assignedTo', label:'Assigned', options:assignees}] : []),
+    ],
+    sortOptions:[
+      {key:'attention', label:'Needs attention first', compare:fbCmpAttention},
+      {key:'newest', label:'Newest first', compare:fbCmpDateDesc},
+      {key:'oldest', label:'Oldest first', compare:(a,b)=>-fbCmpDateDesc(a,b)},
+      {key:'priority', label:'Priority (high first)', compare:(a,b)=>(FB_PRI_RANK[a.priority]??1)-(FB_PRI_RANK[b.priority]??1) || fbCmpDateDesc(a,b)},
+      {key:'status', label:'Status (new first)', compare:(a,b)=>(FB_STATUS_RANK[a.status]??0)-(FB_STATUS_RANK[b.status]??0) || fbCmpDateDesc(a,b)},
+    ],
     dateRange:true,
     selectable:true, rowKey:r=>r.entryId,
     rowClass:r=>isMemberInactive(r.userId)?'row-muted':'',
     columns:[
       {key:'date', label:'Date', render:r=>fmtDate(r.date)},
       {key:'userName', label:'From', render:r=>memberNameHtml(r.userName, r.userId)},{key:'type', label:'Type'},{key:'subject', label:'Subject'},
-      {key:'text', label:'Feedback'},{key:'priority', label:'Priority', render:r=>`<span class="badge ${r.priority==='HIGH'?'red':r.priority==='LOW'?'grey':'gold'}">${esc(r.priority)}</span>`},
-      {key:'status', label:'Status', render:r=>`<span class="badge ${r.status==='RESOLVED'?'green':r.status==='IN REVIEW'?'gold':'grey'}">${esc(r.status)}</span>`},
+      {key:'text', label:'Feedback', render:r=>`<span title="${esc(r.text||'')}">${esc(fbTruncate(r.text, 80))}</span>`},
+      {key:'priority', label:'Priority', render:r=>`<span class="badge ${r.priority==='HIGH'?'red':r.priority==='LOW'?'grey':'gold'}">${esc(r.priority)}</span>`},
+      {key:'status', label:'Status', render:r=>`<span class="badge ${r.status==='RESOLVED'?'green':r.status==='IN REVIEW'?'gold':'grey'}">${esc(r.status)}</span>${r.response?` <span class="badge blue" title="A reply has been recorded">Replied</span>`:''}${r.assignedTo?`<div style="font-size:11.5px;color:var(--muted);margin-top:2px">→ ${esc(r.assignedTo)}</div>`:''}`},
     ],
     exportColumns:[
-      {label:'Date', get:r=>fmtDate(r.date)},{label:'From', get:r=>r.userName},{label:'Member ID', get:r=>r.userId||''},
+      {label:'Ref', get:r=>r.entryId},{label:'Date', get:r=>fmtDate(r.date)},{label:'From', get:r=>r.userName},{label:'Member ID', get:r=>r.userId||''},
       {label:'Type', get:r=>r.type},{label:'Subject', get:r=>r.subject},{label:'Feedback', get:r=>r.text},
       {label:'Priority', get:r=>r.priority},{label:'Status', get:r=>r.status},
+      {label:'Assigned to', get:r=>r.assignedTo||''},{label:'Response', get:r=>r.response||''},
     ],
     addLabel:'+ Submit feedback', onAdd:()=>openFeedbackForm(),
     onRowDblClick:r=>`viewFeedback('${esc(r.entryId)}')`,
@@ -21134,20 +21190,28 @@ function pageFeedback(){
       {label:'🗑 Delete selected', onClick:deleteSelectedFeedback},
       {label:'⚠ Clear all', onClick:clearAllFeedback, danger:true},
     ] : [],
-    rowActions:r=>`<div style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
+    // Staff can view, reply and change status (setFeedbackStatus already allows staff);
+    // Edit and Delete stay admin-only.
+    rowActionsAllRoles: true,
+    rowActions:r=> isStaff() ? `<div style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
       <select onchange="setFeedbackStatus('${r.entryId}',this.value)"><option ${r.status==='NEW'?'selected':''}>NEW</option><option ${r.status==='IN REVIEW'?'selected':''}>IN REVIEW</option><option ${r.status==='RESOLVED'?'selected':''}>RESOLVED</option></select>
       <button class="btn secondary small" onclick="viewFeedback('${r.entryId}')">View</button>
       ${isAdmin()? `<button class="btn secondary small" onclick="openFeedbackForm('${r.entryId}')">Edit</button> <button class="btn danger small" onclick="deleteFeedback('${r.entryId}')">Delete</button>`:''}
-    </div>`,
+    </div>` : `<button class="btn secondary small" onclick="viewFeedback('${r.entryId}')">View</button>`,
   });
-  return `<div id="mod_feedback"></div>`;
+  return `<div id="fb_summary">${feedbackSummaryHtml()}</div><div id="mod_feedback"></div>`;
+}
+function fbFmtDateTime(v){
+  try{ const d=new Date(v); if(isNaN(d)) return ''; return d.toLocaleString(undefined,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; }
 }
 function viewFeedback(entryId){
   const f = DB.feedback.find(x=>x.entryId===entryId); if(!f) return;
   const rows = [
-    ['Date', fmtDate(f.date)], ['Member ID', f.userId||'—'],
+    ['Reference', f.entryId], ['Date', fmtDate(f.date)], ['Member ID', f.userId||'—'],
     ['Type', f.type], ['Priority', f.priority], ['Subject', f.subject], ['Feedback', f.text], ['Status', f.status],
+    ['Assigned to', f.assignedTo||'—'],
   ];
+  const hist = Array.isArray(f.history) ? f.history : [];
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop'; wrap.id = 'mb';
   wrap.innerHTML = `
@@ -21155,14 +21219,55 @@ function viewFeedback(entryId){
       <div class="modal-head"><h3>Feedback details</h3><button id="mClose" aria-label="Close">✕</button></div>
       <div class="modal-body"><table class="datatable">
         <tr><td style="font-weight:600;width:35%">From</td><td>${memberNameHtml(f.userName, f.userId)}</td></tr>
-        ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:35%">${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}</table></div>
-      <div class="modal-foot"><button class="btn secondary" id="mCancel">Close</button></div>
+        ${rows.map(([k,v])=>`<tr><td style="font-weight:600;width:35%">${esc(k)}</td><td style="white-space:pre-wrap">${esc(String(v))}</td></tr>`).join('')}
+        <tr><td style="font-weight:600;width:35%">Response</td><td style="white-space:pre-wrap">${f.response ? esc(f.response)+`<div style="font-size:11.5px;color:var(--muted);margin-top:4px">— ${esc(f.respondedBy||'Staff')}${f.respondedAt?', '+esc(fbFmtDateTime(f.respondedAt)):''}</div>` : '<span style="color:var(--muted)">No response yet</span>'}</td></tr>
+        ${hist.length ? `<tr><td style="font-weight:600;width:35%">History</td><td>${hist.map(h=>`<div style="font-size:12.5px;margin-bottom:3px">${esc(h.status)} <span style="color:var(--muted)">· ${esc(h.by||'—')} · ${esc(fbFmtDateTime(h.at))}</span></div>`).join('')}</td></tr>` : ''}
+      </table></div>
+      <div class="modal-foot">${isStaff()?'<button class="btn" id="mReply">Reply / assign</button>':''}<button class="btn secondary" id="mCancel">Close</button></div>
     </div>`;
   document.body.appendChild(wrap);
   const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
   wrap.onclick = e=>{ if(e.target===wrap) close(); };
   wrap.querySelector('#mClose').onclick = close;
   wrap.querySelector('#mCancel').onclick = close;
+  const rb = wrap.querySelector('#mReply');
+  if(rb) rb.onclick = ()=>{ close(); setTimeout(()=>openFeedbackReply(entryId), 200); };
+}
+/* Reply / assign — open to staff, same permission as changing status. Records who replied
+   and when, and logs a status-history entry whenever the status actually changes. */
+async function openFeedbackReply(entryId){
+  if(!isStaff()) return requireStaff('reply to feedback');
+  const f = DB.feedback.find(x=>x.entryId===entryId); if(!f) return;
+  let staffNames = [];
+  try{
+    const accts = await loadAccounts();
+    staffNames = accts.filter(a=>a.role==='ADMIN'||a.role==='STAFF').map(a=>a.fullName).filter(Boolean);
+  }catch(e){}
+  if(f.assignedTo && !staffNames.includes(f.assignedTo)) staffNames.push(f.assignedTo);
+  openModal({
+    title:'Reply to feedback',
+    fields:[
+      {row:[
+        {key:'status', label:'Status', type:'select', placeholder:false, options:['NEW','IN REVIEW','RESOLVED'], default:f.status},
+        {key:'assignedTo', label:'Assigned to', type:'select', options:['', ...staffNames], placeholder:'Unassigned', default:f.assignedTo||''},
+      ]},
+      {key:'response', label:'Response / action taken', type:'textarea', default:f.response||''},
+    ],
+    onSave:(vals)=>{
+      const who = actorName();
+      f.history = Array.isArray(f.history) ? f.history : [{status:'NEW', by:'', at:f.date}];
+      if(vals.status && vals.status!==f.status){
+        f.status = vals.status;
+        f.history.push({status:vals.status, by:who, at:new Date().toISOString()});
+      }
+      f.assignedTo = vals.assignedTo||'';
+      if((vals.response||'').trim() !== (f.response||'').trim()){
+        f.response = (vals.response||'').trim();
+        f.respondedBy = who; f.respondedAt = new Date().toISOString();
+      }
+      saveDB('Feedback reply saved'); render(); toast('Reply saved');
+    }
+  });
 }
 function deleteFeedback(entryId){
   if(!isAdmin()) return requireAdmin('delete feedback');
@@ -21192,28 +21297,84 @@ function clearAllFeedback(){
 function openFeedbackForm(entryId){
   const existing = entryId ? DB.feedback.find(x=>x.entryId===entryId) : null;
   if(existing && !isAdmin()) return requireAdmin('edit feedback entries');
+  let fbPicker = null, dupWarned = false;
   openModal({
     title: existing ? 'Edit feedback' : 'Submit feedback',
     fields:[
-      {row:[{key:'userId',label:'Member ID', default:existing?existing.userId:''},{key:'userName',label:'Full name', required:true, default:existing?existing.userName:actorName()}]},
+      {key:'anon', label:'Submitted as', type:'select', placeholder:false, options:['Named','Anonymous'], default:(existing && existing.userName==='Anonymous' && !existing.userId)?'Anonymous':'Named'},
+      {row:[
+        // Member is picked from the membership list (search by ID or name); the hidden f_userId
+        // input is what the form actually saves, and picking also fills in Full name.
+        {type:'custom', key:'userId', html:`<div class="field" id="fbMemberWrap"><label>Member</label>${quickPickerHtml('fbMember','Search member ID or name…')}<input type="hidden" id="f_userId" value="${esc(existing?(existing.userId||''):'')}"><p class="field-hint" style="margin-top:4px">Not a member? Leave this blank and type the name instead.</p></div>`},
+        {key:'userName',label:'Full name', default:existing?existing.userName:actorName()}
+      ]},
       {row:[{key:'type',label:'Type', type:'select', options:['SUGGESTION','COMPLAINT','REQUEST','COMPLIMENT'], default:existing?existing.type:'SUGGESTION'},{key:'priority',label:'Priority', type:'select', options:['LOW','MEDIUM','HIGH'], default:existing?existing.priority:'MEDIUM'}]},
       {key:'subject', label:'Subject', required:true, default:existing?existing.subject:''},
       {key:'text', label:'Feedback', type:'textarea', required:true, default:existing?existing.text:''},
     ],
+    postRender:()=>{
+      const idEl = document.getElementById('f_userId');
+      const nameEl = document.getElementById('f_userName');
+      const qpInput = document.getElementById('qp_input_fbMember');
+      const anonEl = document.getElementById('f_anon');
+      const memberWrap = document.getElementById('fbMemberWrap');
+      if(!idEl || !nameEl || !qpInput) return;
+      fbPicker = bindQuickPicker('fbMember', {
+        items: (DB.users||[]).map(u=>({id:u.id, label:u.name})),
+        formatPicked: it=>`<strong>${esc(it.id)}</strong> — ${esc(it.label)}`,
+        onPick: it=>{ idEl.value = it.id; nameEl.value = it.label; nameEl.readOnly = true; }
+      });
+      qpInput.addEventListener('input', ()=>{ idEl.value=''; nameEl.readOnly=false; });
+      if(existing && existing.userId){
+        const u = (DB.users||[]).find(x=>x.id===existing.userId);
+        if(u){ fbPicker.pick({id:u.id, label:u.name}); nameEl.value = existing.userName || u.name; }
+      }
+      const syncAnon = ()=>{
+        const anon = anonEl && anonEl.value==='Anonymous';
+        if(memberWrap) memberWrap.style.opacity = anon ? '.45' : '';
+        qpInput.disabled = anon; nameEl.disabled = anon;
+      };
+      if(anonEl){ anonEl.addEventListener('change', syncAnon); syncAnon(); }
+    },
+    validate:(vals)=>{
+      const anon = vals.anon==='Anonymous';
+      if(!anon && !(vals.userName||'').trim()) return '"Full name" is required (or choose Anonymous)';
+      // Possible duplicate: same member (or same name) + same subject in the last 7 days.
+      // First Save warns; pressing Save again submits anyway.
+      if(!existing && !dupWarned){
+        const subj = (vals.subject||'').trim().toLowerCase();
+        const cutoff = Date.now() - 7*86400000;
+        const dup = DB.feedback.find(x=> (x.subject||'').trim().toLowerCase()===subj
+          && new Date(x.date).getTime()>=cutoff
+          && (anon ? x.userName==='Anonymous' : (vals.userId ? x.userId===vals.userId : (x.userName||'').toLowerCase()===(vals.userName||'').trim().toLowerCase())));
+        if(dup){ dupWarned = true; return `Similar feedback was already submitted (${dup.entryId}, ${fmtDate(dup.date)}). Press Save again to submit anyway.`; }
+      }
+      return null;
+    },
     onSave:(vals)=>{
+      if(vals.anon==='Anonymous'){ vals.userName='Anonymous'; vals.userId=''; }
+      delete vals.anon;
       if(existing){
         Object.assign(existing, vals); saveDB('Feedback updated'); render(); toast('Feedback updated');
       } else {
         vals.entryId=uid('FB'); vals.date=new Date().toISOString(); vals.status='NEW';
-        DB.feedback.unshift(vals); saveDB('Feedback submitted'); render(); toast('Feedback submitted — thank you');
+        vals.history=[{status:'NEW', by:actorName(), at:vals.date}];
+        DB.feedback.unshift(vals); saveDB('Feedback submitted'); render(); toast(`Feedback submitted — thank you (ref ${vals.entryId})`);
       }
     }
   });
 }
 function setFeedbackStatus(entryId, status){
   if(!isStaff()) return requireStaff('update feedback status');
-  const f = DB.feedback.find(x=>x.entryId===entryId); if(f){ f.status=status; saveDB(`Feedback status updated to ${status}`); }
+  const f = DB.feedback.find(x=>x.entryId===entryId); if(!f) return;
+  if(f.status!==status){
+    f.history = Array.isArray(f.history) ? f.history : [{status:'NEW', by:'', at:f.date}];
+    f.history.push({status, by:actorName(), at:new Date().toISOString()});
+    f.status = status;
+    saveDB(`Feedback status updated to ${status}`);
+  }
   toast('Status updated to '+status);
+  softRerender('feedback'); refreshFeedbackSummary();
 }
 
 /* ================= PAGE: ASSETS & EQUIPMENT ================= */
