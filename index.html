@@ -3707,6 +3707,8 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 @keyframes wxFloat{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-3px);} }
 @keyframes wxWave{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-2.5px);} }
 @keyframes wxShoot{ 0%{ opacity:0; transform:translate(0,0);} 2%{ opacity:1;} 9%{ opacity:0; transform:translate(-150px,53px);} 100%{ opacity:0; transform:translate(-150px,53px);} }
+.weather-ambience .wx-suncloud{ animation:wxSunDrift 30s ease-in-out infinite alternate;}
+@keyframes wxSunDrift{ from{ transform:translateX(-14px);} to{ transform:translateX(14px);} }
 @keyframes wxDot{ 0%,100%{ transform:scale(1); opacity:1;} 50%{ transform:scale(1.25); opacity:.7;} }
 @media (prefers-reduced-motion: reduce){
   .weather-ambience *, .weather-label-dot{ animation:none !important;}
@@ -11068,7 +11070,7 @@ function weatherPeriodForHour(hour){
 }
 function renderWeatherLabel(){
   if(!PREFS.weatherAmbience) return '';
-  const key = weatherPeriodForHour(new Date().getHours());
+  const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
   const p = WEATHER_PERIODS[key];
   const dotColor = p.moon || p.sun;
   return `<div class="weather-label" onclick="cycleWeatherAmbienceSet()" title="Click to change the weather scene"><span class="weather-label-dot" style="background:${dotColor};box-shadow:0 0 10px 2px ${dotColor}"></span>It's ${esc(p.label)}</div>`;
@@ -11129,18 +11131,188 @@ const WEATHER_SETS = {
   minimal: {label:'Minimal', render:(p,w,h,op)=>`
     <rect x="0" y="${h-14}" width="${w}" height="14" fill="${p.hillFront}" opacity="${op*0.7}"/>`},
 };
+/* ===== Sky geometry (shared by the full render and the once-a-minute in-place update) ===== */
+const WX_TILE = 320, WX_H = 150, WX_REPEATS = 6, WX_W = WX_TILE*WX_REPEATS;
+/* Where each scene's "ground line" sits, so the sun/moon can rise from and sink behind it. */
+const WX_HORIZON = {hills:92, mountains:102, ocean:110, city:118, desert:108, forest:124, lake:82, meadow:120, savanna:134, minimal:136};
+
+/* Sun path, as keyframes: [hour, x (0 = left end of the arc, 1 = right end), elevation (0 = on the
+   horizon, 1 = highest point, negative = below it), core radius, halo radius, halo strength].
+   Positions between keyframes are blended linearly from the real clock time, so the sun creeps
+   along the sky minute by minute rather than jumping when the period label changes. */
+const WX_SUN_FRAMES = [
+  [5.5, -0.04,-0.30, 13, 40,.30],
+  [6.0,  0.00,-0.08, 14, 62,.50],   /* sunrise: half-hidden behind the hills, wide soft glow */
+  [7.0,  0.08, 0.12, 15, 60,.50],
+  [8.0,  0.18, 0.32, 16, 54,.45],
+  [9.5,  0.33, 0.62, 17, 52,.45],   /* morning: climbing */
+  [11.0, 0.47, 0.90, 19, 60,.50],
+  [12.0, 0.55, 1.00, 21, 72,.58],   /* noon: highest, biggest, strongest glow */
+  [13.0, 0.63, 0.96, 21, 70,.58],
+  [14.5, 0.74, 0.78, 20, 60,.50],   /* afternoon: descending, softer */
+  [16.0, 0.84, 0.55, 20, 58,.48],
+  [17.0, 0.90, 0.36, 22, 62,.50],   /* golden hour: low and large */
+  [18.0, 0.95, 0.16, 23, 66,.52],   /* sunset */
+  [19.0, 0.99, 0.02, 21, 58,.42],
+  [19.75,1.02,-0.10, 17, 44,.30],   /* evening: just a sliver left */
+  [20.75,1.05,-0.35, 14, 36,.20]
+];
+/* Moon path — hours after midnight are written as 24+ so the night runs 21:00 → 06:00 in one go. */
+const WX_MOON_FRAMES = [
+  [20.0,-0.02,-0.25, 24, 56,.14],
+  [21.0, 0.04, 0.22, 25, 56,.16],
+  [22.5, 0.20, 0.55, 26, 60,.18],
+  [24.0, 0.42, 0.85, 26, 62,.20],
+  [25.5, 0.55, 1.00, 26, 64,.20],
+  [27.0, 0.70, 0.85, 26, 62,.20],
+  [28.5, 0.84, 0.55, 25, 58,.18],
+  [29.5, 0.94, 0.22, 25, 56,.16],
+  [30.2, 1.02,-0.12, 24, 50,.12]
+];
+/* Clouds per period.
+   tint    – cloud colour for that light (peach in the afternoon, lilac in the evening…)
+   amb     – how visible the drifting background clouds are (0 = none, 1 = bold)
+   flat    – long flat streaks (late-day) instead of puffy clouds
+   chance  – how likely a cloud is to drift in front of the sun/moon that day
+   strength– how opaque that cloud is (a thin veil vs. a thick bank)
+   second  – chance of a second cloud overlapping the first (like the afternoon in the reference) */
+const WX_CLOUDS = {
+  lateNight: {tint:'#8FA2CC', amb:.22, chance:.35, strength:.30, second:0},
+  dawn:      {tint:'#B4C0E0', amb:.30, chance:.40, strength:.30, second:0},
+  sunrise:   {tint:'#E8FBF4', amb:.35, chance:.60, strength:.35, second:.10},
+  morning:   {tint:'#FFFFFF', amb:.55, chance:.75, strength:.45, second:.25},
+  noon:      {tint:'#FFFFFF', amb:.25, chance:.25, strength:.30, second:0},
+  afternoon: {tint:'#FFE4D6', amb:.70, flat:true, chance:1.0, strength:.85, second:.70},
+  goldenHour:{tint:'#FFE8C2', amb:.65, flat:true, chance:.80, strength:.65, second:.30},
+  sunset:    {tint:'#FFC9AA', amb:.70, flat:true, chance:.85, strength:.60, second:.35},
+  evening:   {tint:'#DCCFEF', amb:.55, flat:true, chance:.80, strength:.55, second:.25},
+  night:     {tint:'#8FA4CE', amb:.30, chance:.50, strength:.30, second:0}
+};
+/* Current time as a decimal hour. Add ?wxhour=15.5 to the page address to preview any time of day. */
+function weatherHourNow(){
+  try{
+    const q = new URLSearchParams(location.search).get('wxhour');
+    if(q!==null && q!=='' && isFinite(+q)) return ((+q)%24+24)%24;
+  }catch(e){}
+  const d = new Date();
+  return d.getHours() + d.getMinutes()/60 + d.getSeconds()/3600;
+}
+function wxInterp(fr, t){
+  if(t<=fr[0][0]) return fr[0].slice(1);
+  for(let i=1;i<fr.length;i++){
+    if(t<=fr[i][0]){
+      const a=fr[i-1], b=fr[i], k=(t-a[0])/(b[0]-a[0]);
+      return b.slice(1).map((v,j)=> a[j+1]+(v-a[j+1])*k);
+    }
+  }
+  return fr[fr.length-1].slice(1);
+}
+/* Cloud outline drawn around (0,0). 'puff' = rounded cumulus, 'flat' = long late-day streak. */
+function wxCloudShape(flat, tint){
+  return flat
+    ? `<ellipse cx="2" cy="6.5" rx="38" ry="2.5" fill="#000" opacity="0.05"/>
+       <ellipse cx="0" cy="3" rx="46" ry="5.5" fill="${tint}"/>
+       <ellipse cx="-14" cy="-2" rx="26" ry="5" fill="${tint}"/>
+       <ellipse cx="16" cy="-4" rx="14" ry="6" fill="${tint}"/>`
+    : `<ellipse cx="0" cy="6" rx="26" ry="8" fill="#000" opacity="0.06"/>
+       <ellipse cx="-14" cy="0" rx="15" ry="11" fill="${tint}"/>
+       <ellipse cx="10" cy="-3" rx="19" ry="14" fill="${tint}"/>
+       <ellipse cx="26" cy="2" rx="13" ry="9" fill="${tint}"/>`;
+}
+/* The sun or moon (rising/setting along its arc, clipped by the horizon) plus any cloud(s) drifting
+   across it. Returned as the inside of <g class="wx-celestial">, so it can be rebuilt in place
+   every minute without touching the rest of the scene or any sky activity in progress. */
+function weatherCelestialMarkup(key){
+  const p = WEATHER_PERIODS[key], cc = WX_CLOUDS[key] || WX_CLOUDS.noon;
+  const op = PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4;
+  const hf = weatherHourNow();
+  const setKey = WEATHER_SETS[PREFS.weatherAmbienceSet] ? PREFS.weatherAmbienceSet : 'hills';
+  const hz = WX_HORIZON[setKey] || 92;
+  /* Narrower arc on small screens so the sun stays inside the visible strip of the hero. */
+  const vw = (typeof window!=='undefined' && window.innerWidth) || 1000;
+  const span = Math.max(140, Math.min(300, vw/1.47*0.45));
+  const xR = WX_W-55, xL = xR-span;
+  const isMoon = !!p.moon;
+  const f = isMoon ? wxInterp(WX_MOON_FRAMES, hf<12 ? hf+24 : hf) : wxInterp(WX_SUN_FRAMES, hf);
+  const cx = +(xL + f[0]*span).toFixed(1);
+  const cy = +(hz - f[1]*(hz-26)).toFixed(1);
+  const r = f[2], halo = f[3], hop = f[4];
+  let body;
+  if(isMoon){
+    body = `<g class="wx-float">
+        <circle class="wx-glow" cx="${cx}" cy="${cy}" r="${halo}" fill="${p.moon}" opacity="${(op*hop*0.8).toFixed(3)}"/>
+        <circle class="wx-glow" style="animation-delay:-2s" cx="${cx}" cy="${cy}" r="${(halo*0.62).toFixed(1)}" fill="${p.moon}" opacity="${(op*hop*1.2).toFixed(3)}"/>
+        <mask id="wxMoonMask-${key}" maskUnits="userSpaceOnUse" x="${cx-60}" y="${cy-60}" width="120" height="120"><rect x="${cx-60}" y="${cy-60}" width="120" height="120" fill="#fff"/><circle cx="${(cx+r*0.42).toFixed(1)}" cy="${(cy-r*0.31).toFixed(1)}" r="${(r*0.88).toFixed(1)}" fill="#000"/></mask>
+        <g clip-path="url(#wxHz-${key})"><g mask="url(#wxMoonMask-${key})">
+          <circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.moon}" opacity="${op}"/>
+          <circle cx="${cx-8}" cy="${cy-6}" r="3.4" fill="${p.hillBack}" opacity="${op*0.3}"/>
+          <circle cx="${cx-2}" cy="${cy+8}" r="2.2" fill="${p.hillBack}" opacity="${op*0.25}"/>
+          <circle cx="${cx-11}" cy="${cy+4}" r="1.6" fill="${p.hillBack}" opacity="${op*0.22}"/>
+        </g></g></g>`;
+  } else {
+    body = `<circle class="wx-glow" style="animation-duration:9s" cx="${cx}" cy="${cy}" r="${(halo*1.55).toFixed(1)}" fill="${p.sunGlow}" opacity="${(op*hop*0.30).toFixed(3)}"/>
+        <circle class="wx-glow" style="animation-duration:7s" cx="${cx}" cy="${cy}" r="${halo}" fill="${p.sunGlow}" opacity="${(op*hop*0.70).toFixed(3)}"/>
+        <circle class="wx-glow" style="animation-duration:5s;animation-delay:-1.8s" cx="${cx}" cy="${cy}" r="${(halo*0.68).toFixed(1)}" fill="${p.sunGlow}" opacity="${Math.min(1,op*hop).toFixed(3)}"/>
+        <g clip-path="url(#wxHz-${key})"><circle class="wx-core" cx="${cx}" cy="${cy}" r="${r}" fill="${p.sun}" opacity="${op}"/></g>`;
+  }
+  /* Cloud(s) in front of the sun/moon. Which ones show is decided by a seed made from today's date
+     and the period, so it varies day to day but stays steady while you look at it. */
+  const idx = Object.keys(WEATHER_PERIODS).indexOf(key);
+  const day = Math.floor((Date.now() - new Date().getTimezoneOffset()*6e4)/864e5);
+  const rnd = n => { const x = Math.sin((day*13 + idx*7 + n)*12.9898)*43758.5453; return x-Math.floor(x); };
+  let over = '';
+  if(rnd(1) < cc.chance){
+    const n = rnd(2) < cc.second ? 2 : 1;
+    for(let i=0;i<n;i++){
+      const dx = (i ? 14 : -12) + (rnd(4+i)-.5)*14;
+      const dy = (i ? -7 : 5) + (rnd(6+i)-.5)*8;
+      const sc = (i ? 0.8 : 1.15) + rnd(8+i)*0.3;
+      const dur = 24 + rnd(10+i)*14;
+      const phase = ((Date.now()/1000) % (2*dur)).toFixed(2);   /* keeps the drift continuous across updates */
+      const alpha = Math.min(0.95, (0.35+0.65*op) * cc.strength * (i ? 0.85 : 1)).toFixed(3);
+      over += `<g class="wx-suncloud" style="animation-duration:${dur.toFixed(1)}s;animation-delay:-${phase}s;${i?'animation-direction:alternate-reverse;':''}">
+        <g opacity="${alpha}" transform="translate(${(cx+dx).toFixed(1)},${(cy+dy).toFixed(1)}) scale(${sc.toFixed(2)})">${wxCloudShape(cc.flat, cc.tint)}</g></g>`;
+    }
+  }
+  return `<clipPath id="wxHz-${key}"><rect x="${cx-160}" y="0" width="320" height="${hz+3}"/></clipPath>
+    ${body}${over}`;
+}
+/* Once a minute: nudge the sun/moon along its arc without a full re-render. If the period itself has
+   just changed (new sky colours), swap in a fresh scene — but only when no sky activity is running. */
+let weatherTickTimer = null;
+function weatherTick(){
+  const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
+  const busy = Date.now() < Math.max(skyState.flyerUntil||0, skyState.precipUntil||0, skyState.groundUntil||0);
+  document.querySelectorAll('svg.weather-ambience').forEach(svg=>{
+    if(svg.getAttribute('data-key') !== key){
+      if(busy || !PREFS.weatherAmbience) return;
+      const label = svg.closest('.home-hero') && svg.closest('.home-hero').querySelector('.weather-label');
+      svg.outerHTML = renderWeatherAmbience();
+      if(label) label.outerHTML = renderWeatherLabel();
+      return;
+    }
+    const g = svg.querySelector('.wx-celestial');
+    if(g) g.innerHTML = weatherCelestialMarkup(key);
+  });
+}
+function ensureWeatherTick(){
+  if(weatherTickTimer) return;
+  weatherTickTimer = setInterval(()=>{ if(!document.hidden) weatherTick(); }, 60000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) weatherTick(); });
+}
 function renderWeatherAmbience(){
   if(!PREFS.weatherAmbience) return '';
   ensureSkyActivityLoop();
-  const hour = new Date().getHours();
-  const key = weatherPeriodForHour(hour);
+  ensureWeatherTick();
+  const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
   const p = WEATHER_PERIODS[key];
+  const cc = WX_CLOUDS[key] || WX_CLOUDS.noon;
   const vivid = PREFS.weatherAmbienceStyle==='vivid';
   const op = vivid ? 0.85 : 0.4;
   // The ground scene (and clouds) repeat side-by-side several times so the illustration can
   // bleed edge-to-edge on any hero width without ever cropping — but the sun/moon is a single,
-  // one-of-a-kind element drawn once near the right, same spot every time.
-  const tileW=320, h=150, REPEATS=6, w=tileW*REPEATS, cx=w-65, cy=48;
+  // one-of-a-kind element that now travels along its own arc (see weatherCelestialMarkup).
+  const tileW=WX_TILE, h=WX_H, REPEATS=WX_REPEATS, w=WX_W;
   let stars = '';
   if(p.stars){
     const rand = (seed)=> { const x = Math.sin(seed*999)*10000; return x-Math.floor(x); };
@@ -11155,31 +11327,14 @@ function renderWeatherAmbience(){
        <line x1="${m.x}" y1="${m.y}" x2="${m.x+64}" y2="${m.y-22}" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="${(0.35*op).toFixed(3)}"/>
        <line x1="${m.x}" y1="${m.y}" x2="${m.x+30}" y2="${m.y-10.5}" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity="${op}"/>
      </g>`).join('') : '';
-  let clouds = '';
-  if(!p.stars){
-    // Soft overlapping ellipses read as a puffy cloud, with a slightly darker underside for depth.
-    const cloudFn = (x,y,scale,fade,idx)=>`
-      <g class="wx-cloud" style="animation-duration:${22 + (idx*7)%17}s;animation-delay:-${(idx*5.3)%19}s"><g opacity="${op*fade}" transform="translate(${x},${y}) scale(${scale})">
-        <ellipse cx="0" cy="6" rx="26" ry="8" fill="#000" opacity="0.06"/>
-        <ellipse cx="-14" cy="0" rx="15" ry="11" fill="#fff"/>
-        <ellipse cx="10" cy="-3" rx="19" ry="14" fill="#fff"/>
-        <ellipse cx="26" cy="2" rx="13" ry="9" fill="#fff"/>
-      </g></g>`;
-    // One staggered pair of clouds per tile so the repeat reads as a continuous sky, not a stamp.
-    clouds = Array.from({length:REPEATS},(_,i)=> cloudFn(52+i*tileW,26,0.8,0.5,i*2) + cloudFn(150+i*tileW,18,0.55,0.38,i*2+1)).join('');
-  }
-  const celestial = p.moon
-    ? `<g class="wx-float"><circle class="wx-glow" cx="${cx}" cy="${cy}" r="40" fill="${p.moon}" opacity="${op*0.12}"/>
-       <mask id="wxMoonMask-${key}"><rect x="0" y="0" width="${w}" height="${h}" fill="#fff"/><circle cx="${cx+11}" cy="${cy-8}" r="23" fill="#000"/></mask>
-       <g mask="url(#wxMoonMask-${key})">
-         <circle cx="${cx}" cy="${cy}" r="26" fill="${p.moon}" opacity="${op}"/>
-         <circle cx="${cx-8}" cy="${cy-6}" r="3.4" fill="${p.hillBack}" opacity="${op*0.3}"/>
-         <circle cx="${cx-2}" cy="${cy+8}" r="2.2" fill="${p.hillBack}" opacity="${op*0.25}"/>
-         <circle cx="${cx-11}" cy="${cy+4}" r="1.6" fill="${p.hillBack}" opacity="${op*0.22}"/>
-       </g></g>`
-    : `<circle class="wx-glow" style="animation-duration:7s" cx="${cx}" cy="${cy}" r="44" fill="${p.sunGlow}" opacity="${op*0.35}"/>
-       <circle class="wx-glow" style="animation-duration:5s;animation-delay:-1.8s" cx="${cx}" cy="${cy}" r="30" fill="${p.sunGlow}" opacity="${op*0.5}"/>
-       <circle class="wx-core" cx="${cx}" cy="${cy}" r="18" fill="${p.sun}" opacity="${op}"/>`;
+  // Background clouds now exist in every period (tinted by the light — peach in the afternoon,
+  // lilac in the evening, blue-grey at night) and are more or less visible depending on the hour.
+  const ambScale = cc.amb/0.5;
+  const cloudFn = (x,y,scale,fade,idx)=>`
+      <g class="wx-cloud" style="animation-duration:${22 + (idx*7)%17}s;animation-delay:-${(idx*5.3)%19}s"><g opacity="${Math.min(0.95, op*fade*ambScale).toFixed(3)}" transform="translate(${x},${y}) scale(${scale})">${wxCloudShape(cc.flat, cc.tint)}</g></g>`;
+  const clouds = Array.from({length:REPEATS},(_,i)=>
+    cloudFn(52+i*tileW,26,0.8,0.5,i*2) + cloudFn(150+i*tileW,18,0.55,0.38,i*2+1) +
+    (cc.flat ? cloudFn(230+i*tileW,52,0.9,0.42,i*2+9) : '')).join('');
   const sceneFn = (WEATHER_SETS[PREFS.weatherAmbienceSet]||WEATHER_SETS.hills).render;
   const scene = Array.from({length:REPEATS},(_,i)=>`<g transform="translate(${i*tileW},0)">${sceneFn(p,tileW,h,op)}</g>`).join('');
   const inner = `
@@ -11194,7 +11349,7 @@ function renderWeatherAmbience(){
     <rect x="0" y="0" width="${w}" height="${h}" fill="url(#wxSky-${key})" opacity="${op*0.9}"/>
     ${stars}
     ${shooting}
-    ${celestial}
+    <g class="wx-celestial">${weatherCelestialMarkup(key)}</g>
     ${clouds}
     <g class="wx-sky-layer"></g>
     ${scene}
