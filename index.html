@@ -15255,6 +15255,21 @@ function appendRegisterNote(entry, line){
   const existing = (entry.note||'').trim();
   entry.note = existing ? existing + ' • ' + line : line;
 }
+/* A member who FRESHLY borrows or returns (no open register entry yet) is logged straight into the
+   register — they are never added to the check-in staging list or a batch. If they happened to be
+   staged already, that stale staged copy is dropped so a later "Submit" can't log the same visit
+   twice. A member who was ALREADY signed in is left exactly as they are (see below). */
+function dropFromCheckinStaging(userId){
+  const had = batchStaging.some(s=>s.id===userId);
+  batchStaging = batchStaging.filter(s=>s.id!==userId);
+  delete batchChecked[userId];
+  if(had){
+    // Refresh the staging panel in place (no focus change) if it is on screen.
+    const el = document.getElementById('batchStagingArea');
+    if(el){ el.innerHTML = renderBatchStagingHtml(); bindBatchStagingEvents(); }
+  }
+  return had;
+}
 function autoCheckInForCirculation(user, purpose, borrowFlag, actionLabel, title){
   if(!user) return;
   const line = circEventLine(actionLabel, title);
@@ -15267,12 +15282,14 @@ function autoCheckInForCirculation(user, purpose, borrowFlag, actionLabel, title
     return;
   }
   if(memberCheckinBlockReason(user)) return; // e.g. INACTIVE — don't silently add them to the register
+  dropFromCheckinStaging(user.id);             // fresh visit logged directly → no staged copy needed
   if(!Array.isArray(DB.registerLog)) DB.registerLog = [];
   DB.registerLog.unshift({
     entryId: uid('REG'), source:'DESK', date: todayISO(), timeIn: new Date().toTimeString().slice(0,5), timeOut:'', period:'',
     id:user.id, name:user.name, category:user.category, cls:user.cls, purpose,
     conduct:'NONE', action:'NONE', borrow: borrowFlag?'YES':'NO', verifiedBy:actorName(),
-    note: `Auto checked-in — ${line}`, offense:'', offenseOther:'', consequence:'', consequenceOther:''
+    note: `Auto checked-in — ${line}`, offense:'', offenseOther:'', consequence:'', consequenceOther:'',
+    inAt:new Date().toISOString(), inBy:actorName()||'', inVia:'auto: '+purpose.toLowerCase()
   });
   logActivity('register', 'auto-checkin', `${user.name} (${user.id}) auto checked-in via ${purpose.toLowerCase()}`);
 }
@@ -18016,7 +18033,10 @@ function submitBatch(){
   const selected = batchStaging.filter(s=>batchChecked[s.id]);
   if(!selected.length){ toast('Select at least one student to submit'); return; }
   const blockedIds = new Set(), blockedNames = [];
+  const alreadyIn = new Set(), alreadyNames = [];
   const eligible = selected.filter(s=>{
+    // Already signed in (e.g. automatically, when they borrowed or returned a book) — no second entry.
+    if(openDeskEntryToday(s.id)){ alreadyIn.add(s.id); alreadyNames.push(s.name); return false; }
     const u = DB.users.find(x=>x.id===s.id);
     const reason = memberCheckinBlockReason(u) || (isAbsentFromSchool(s.id, todayISO()) ? 'absent' : null);
     if(reason){ blockedIds.add(s.id); blockedNames.push(s.name); return false; }
@@ -18036,7 +18056,7 @@ function submitBatch(){
     }
     sendScanWebhook('checkin', {memberId:s.id, memberName:s.name, purpose});
   });
-  batchStaging = batchStaging.filter(s=>!batchChecked[s.id] || blockedIds.has(s.id));
+  batchStaging = batchStaging.filter(s=>!batchChecked[s.id] || blockedIds.has(s.id) || alreadyIn.has(s.id));
   batchChecked = {};
   // The new entries are the first eligible.length rows (each was unshifted). Stamp who/when/how so
   // a mistaken check-in can be reversed for one person or the whole batch.
@@ -18050,9 +18070,10 @@ function submitBatch(){
     mountCheckoutStaging();
     updateLibraryBannerInModal();
   }, 0);
-  if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive or absent from school): ${blockedNames.join(', ')}. ${eligible.length} checked in.`);
-  else if(eligible.length) toast(`${eligible.length} student(s) checked in`, {action:{label:'Undo', onClick:()=>undoCheckins(undoInIds)}});
-  else toast('Nobody was checked in');
+  const alreadyNote = alreadyNames.length ? ` ${alreadyNames.length} already in the library (${alreadyNames.slice(0,3).join(', ')}${alreadyNames.length>3?'…':''}) — not logged again, left as they are.` : '';
+  if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive or absent from school): ${blockedNames.join(', ')}. ${eligible.length} checked in.${alreadyNote}`);
+  else if(eligible.length) toast(`${eligible.length} student(s) checked in.${alreadyNote}`, {action:{label:'Undo', onClick:()=>undoCheckins(undoInIds)}});
+  else toast(alreadyNote.trim() || 'Nobody was checked in');
 }
 /* ---- undo check-in ----
    A mistaken check-in never happened, so undoing it REMOVES the open desk entry (the person drops
