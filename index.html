@@ -3719,6 +3719,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
   z-index:5 !important; display:flex !important; align-items:center; gap:7px; cursor:pointer;
   font-size:11.5px; font-weight:600; letter-spacing:.3px; color:#F3EEDD; text-shadow:0 1px 4px rgba(0,0,0,.4);
 }
+.home-hero h1, .home-hero p{ text-shadow:0 1px 8px rgba(0,0,0,.28);}
 .weather-label-dot{ width:9px; height:9px; border-radius:50%; flex:none;}
 .home-hero > *:not(.weather-ambience):not(.weather-label){ position:relative; z-index:1;}
 @media (max-width:1100px){
@@ -11077,62 +11078,120 @@ function renderWeatherLabel(){
 }
 /* WEATHER_SETS — the actual choosable "look" of the ambience illustration (the landscape drawn
    in front of the sky/sun/moon). Independent of time-of-day (WEATHER_PERIODS), which only
-   controls colours/lighting. Each render fn returns SVG for the w×h canvas using the current
-   period's colours, so any scene works at any time of day. */
+   controls colours/lighting. Each scene is drawn ONCE across the whole 1920-unit-wide canvas
+   (no repeating tile), generated from fixed seeds so it never changes between renders. Every
+   render fn returns SVG for the w×h canvas using the current period's colours. */
+function wxRandom(seed){ let s = (seed>>>0) || 1; return ()=>{ s = (Math.imul(s,1664525) + 1013904223)>>>0; return s/4294967296; }; }
+/* Smooth 1-D noise in about [-1,1], built from a few sine waves ([wavelength, weight]) with seeded phases. */
+function wxNoise(seed, comps){
+  const r = wxRandom(seed), parts = comps.map(([wl,a])=>({k:2*Math.PI/wl, a, ph:r()*Math.PI*2}));
+  const norm = parts.reduce((s,q)=>s+q.a,0);
+  return x => parts.reduce((s,q)=>s+q.a*Math.sin(x*q.k+q.ph),0)/norm;
+}
+/* Filled shape under a rolling ridge line: y = base - amp*f(x). */
+function wxRidge(f, w, h, base, amp, bottom){
+  let d = `M0,${bottom||h}`;
+  for(let x=0;x<=w;x+=10) d += ` L${x},${(base-amp*f(x)).toFixed(1)}`;
+  return d + ` L${w},${bottom||h} Z`;
+}
+/* A wavy line across the whole width (wavelength s), animated by the .wx-wave class. */
+function wxWaveLine(w, y, s, amp){
+  let d = `M0,${y} Q${s/2},${y-amp} ${s},${y}`;
+  for(let x=s*2;x<=w+s;x+=s) d += ` T${x},${y}`;
+  return d;
+}
 const WEATHER_SETS = {
-  hills:   {label:'Rolling hills (default)', render:(p,w,h,op)=>`
-    <path d="M0,95 Q60,78 130,92 T${w},85 V${h} H0 Z" fill="${p.hillBack}" opacity="${op*0.85}"/>
-    <path d="M120,${h} C120,${h-42} 155,${h-70} 185,${h-70} C210,${h-70} 235,${h-50} 245,${h-30} C258,${h-55} 285,${h-62} ${w},${h-40} V${h} Z" fill="${p.hillFront}" opacity="${op}"/>
-    <path d="M60,${h} C60,${h-28} 90,${h-48} 115,${h-48} C135,${h-48} 152,${h-36} 158,${h-20} V${h} Z" fill="${p.hillFrontDark}" opacity="${op*0.95}"/>`},
-  mountains:{label:'Mountains', render:(p,w,h,op)=>`
-    <path d="M0,${h} L40,58 L75,94 L112,38 L152,90 L192,54 L232,98 L272,64 L${w},${h-30} V${h} Z" fill="${p.hillBack}" opacity="${op*0.8}"/>
-    <path d="M0,${h} L58,86 L100,110 L150,68 L200,106 L${w},80 V${h} Z" fill="${p.hillFront}" opacity="${op}"/>
-    <path d="M32,66 L40,58 L48,66 Z" fill="#fff" opacity="${op*0.55}"/>
-    <path d="M104,46 L112,38 L120,46 Z" fill="#fff" opacity="${op*0.55}"/>
-    <path d="M184,62 L192,54 L200,62 Z" fill="#fff" opacity="${op*0.55}"/>`},
+  hills:   {label:'Rolling hills (default)', render:(p,w,h,op)=>{
+    const hz = WX_HORIZON.hills;
+    const fa = wxNoise(11,[[560,1],[250,.5],[120,.2]]), fb = wxNoise(23,[[420,1],[190,.5],[90,.2]]),
+          fc = wxNoise(37,[[330,1],[150,.45]]),         fd = wxNoise(41,[[260,1],[120,.4]]);
+    return `<path d="${wxRidge(fa,w,h,hz-4,9)}" fill="${p.hillBack}" opacity="${op*0.85}"/>
+      <path d="${wxRidge(fb,w,h,hz+18,9)}" fill="${p.hillBack}" opacity="${op*0.6}"/>
+      <path d="${wxRidge(fc,w,h,h-40,30)}" fill="${p.hillFront}" opacity="${op}"/>
+      <path d="${wxRidge(fd,w,h,h-12,10)}" fill="${p.hillFrontDark}" opacity="${op*0.95}"/>`;
+  }},
+  mountains:{label:'Mountains', render:(p,w,h,op)=>{
+    const r = wxRandom(5);
+    const ridge = (pk0,pk1,vl0,vl1,d0,d1)=>{
+      const pts = []; let x = -30;
+      while(x < w+60){ const dx = d0+r()*(d1-d0);
+        pts.push({x, y:pk0+r()*(pk1-pk0), peak:true});
+        pts.push({x:x+dx*(.4+.2*r()), y:vl0+r()*(vl1-vl0)});
+        x += dx; }
+      return {pts, path:`M-30,${h}`+pts.map(q=>` L${q.x.toFixed(1)},${q.y.toFixed(1)}`).join('')+` L${w+60},${h} Z`};
+    };
+    const back = ridge(38,78,92,108,70,125), front = ridge(80,102,108,124,50,95);
+    let caps = '';
+    back.pts.forEach((q,i)=>{
+      if(!q.peak || i<1 || i>=back.pts.length-1 || q.y>62) return;
+      const L = back.pts[i-1], R = back.pts[i+1], lx = q.x+(L.x-q.x)*.24, ly = q.y+(L.y-q.y)*.24, rx = q.x+(R.x-q.x)*.24, ry = q.y+(R.y-q.y)*.24;
+      caps += `<polygon points="${lx.toFixed(1)},${ly.toFixed(1)} ${q.x.toFixed(1)},${q.y.toFixed(1)} ${rx.toFixed(1)},${ry.toFixed(1)} ${(q.x+(rx-q.x)*.55).toFixed(1)},${(ry+5).toFixed(1)} ${q.x.toFixed(1)},${(q.y+(ry-q.y)*.6).toFixed(1)} ${(q.x+(lx-q.x)*.55).toFixed(1)},${(ly+5).toFixed(1)}" fill="#fff" opacity="${op*0.55}"/>`;
+    });
+    return `<path d="${back.path}" fill="${p.hillBack}" opacity="${op*0.8}"/>${caps}<path d="${front.path}" fill="${p.hillFront}" opacity="${op}"/>`;
+  }},
   ocean:   {label:'Ocean waves', render:(p,w,h,op)=>{
-    let waves='';
-    for(let i=0;i<4;i++){ const yy=h-36+i*9; waves+=`<path class="wx-wave" style="animation-delay:-${(i*0.95).toFixed(2)}s" d="M0,${yy} Q${w/4},${yy-7} ${w/2},${yy} T${w},${yy}" stroke="${i%2?p.hillFront:p.hillBack}" stroke-width="2" fill="none" opacity="${op*(0.55-i*0.08)}"/>`; }
-    return `<rect x="0" y="${h-40}" width="${w}" height="40" fill="${p.hillBack}" opacity="${op*0.55}"/>${waves}`;
+    const top = h-40, fi = wxNoise(61,[[300,1],[130,.5]]);
+    let waves = '';
+    for(let i=0;i<4;i++){ const yy = top+i*9;
+      waves += `<path class="wx-wave" style="animation-delay:-${(i*0.95).toFixed(2)}s" d="${wxWaveLine(w,yy,44+i*10,6)}" stroke="${i%2?p.hillFront:p.hillBack}" stroke-width="2" fill="none" opacity="${op*(0.55-i*0.08)}"/>`; }
+    return `<path d="${wxRidge(fi,w,h,top-1,3.5,top+2)}" fill="${p.hillBack}" opacity="${op*0.45}"/>
+      <rect x="0" y="${top}" width="${w}" height="40" fill="${p.hillBack}" opacity="${op*0.55}"/>${waves}`;
   }},
   city:    {label:'City skyline', render:(p,w,h,op)=>{
-    const buildings=[[8,50,38],[52,68,28],[90,40,52],[148,62,32],[188,86,44],[240,54,38],[286,72,30]];
-    return buildings.map(([x,bh,bw],i)=>{
-      const y=h-bh; let windows='';
-      for(let wy=y+8; wy<h-6; wy+=13) for(let wx=x+6; wx<x+bw-6; wx+=12) windows+=`<rect x="${wx}" y="${wy}" width="4" height="5" fill="${p.sun||p.moon}" opacity="${op*0.55}"/>`;
-      return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${i%2?p.hillFront:p.hillBack}" opacity="${op*0.9}"/>${windows}`;
-    }).join('');
+    const r = wxRandom(9), lit = p.sun||p.moon; let back = '', front = '';
+    for(let x=-10; x<w; ){ const bw = 34+r()*28, bh = 52+r()*50;
+      back += `<rect x="${x.toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${p.hillBack}" opacity="${op*0.6}"/>`;
+      x += bw+2+r()*8; }
+    for(let x=0, i=0; x<w; i++){ const bw = 24+r()*24, bh = 28+r()*48, y = h-bh; let win = '';
+      for(let wy=y+8; wy<h-6; wy+=13) for(let wx=x+6; wx<x+bw-6; wx+=12) win += `<rect x="${(wx).toFixed(1)}" y="${wy.toFixed(1)}" width="4" height="5" fill="${lit}" opacity="${op*0.55}"/>`;
+      front += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${i%2?p.hillFront:p.hillBack}" opacity="${op*0.9}"/>${win}`;
+      x += bw+3+r()*10; }
+    return back+front;
   }},
-  desert:  {label:'Desert dunes', render:(p,w,h,op)=>`
-    <path d="M0,${h} C40,${h-30} 90,${h-15} 140,${h-35} C190,${h-55} 230,${h-20} ${w},${h-40} V${h} Z" fill="${p.hillBack}" opacity="${op*0.8}"/>
-    <path d="M0,${h} C50,${h-15} 100,${h-5} 160,${h-22} C210,${h-35} 260,${h-8} ${w},${h-18} V${h} Z" fill="${p.hillFront}" opacity="${op}"/>
-    <path d="M250,${h-18} L250,${h-46} M244,${h-38} L232,${h-30} M256,${h-40} L268,${h-32}" stroke="${p.hillFrontDark}" stroke-width="4" stroke-linecap="round" fill="none" opacity="${op*0.85}"/>`},
+  desert:  {label:'Desert dunes', render:(p,w,h,op)=>{
+    const fa = wxNoise(71,[[520,1],[240,.35]]), fb = wxNoise(83,[[380,1],[170,.3]]), r = wxRandom(3);
+    let cacti = '';
+    for(let i=0;i<5;i++){ const x = 90+r()*(w-180), yb = h-16-10*fb(x)+6;
+      cacti += `<path d="M${x.toFixed(1)},${yb.toFixed(1)} L${x.toFixed(1)},${(yb-28).toFixed(1)} M${(x-6).toFixed(1)},${(yb-20).toFixed(1)} L${(x-12).toFixed(1)},${(yb-14).toFixed(1)} M${(x+6).toFixed(1)},${(yb-22).toFixed(1)} L${(x+12).toFixed(1)},${(yb-16).toFixed(1)}" stroke="${p.hillFrontDark}" stroke-width="4" stroke-linecap="round" fill="none" opacity="${op*0.85}"/>`; }
+    return `<path d="${wxRidge(fa,w,h,h-34,16)}" fill="${p.hillBack}" opacity="${op*0.8}"/><path d="${wxRidge(fb,w,h,h-16,10)}" fill="${p.hillFront}" opacity="${op}"/>${cacti}`;
+  }},
   forest:  {label:'Forest', render:(p,w,h,op)=>{
-    const xs=[18,52,86,124,168,208,248,286]; let trees='';
-    xs.forEach((x,i)=>{ const th=54+(i%3)*11; trees+=`<polygon points="${x},${h-th} ${x-15},${h-9} ${x+15},${h-9}" fill="${i%2?p.hillFront:p.hillBack}" opacity="${op*(i%2?1:0.75)}"/>`; });
-    return `<rect x="0" y="${h-9}" width="${w}" height="9" fill="${p.hillFrontDark}" opacity="${op*0.8}"/>${trees}`;
+    const r = wxRandom(17); let back = '', front = '';
+    for(let x=0; x<w; x+=22+r()*18){ const th = 44+r()*26;
+      back += `<polygon points="${x.toFixed(1)},${(h-14-th).toFixed(1)} ${(x-13).toFixed(1)},${h-14} ${(x+13).toFixed(1)},${h-14}" fill="${p.hillBack}" opacity="${op*0.55}"/>`; }
+    for(let x=10, i=0; x<w; x+=26+r()*16, i++){ const th = 54+r()*34;
+      front += `<polygon points="${x.toFixed(1)},${(h-th).toFixed(1)} ${(x-15).toFixed(1)},${h-9} ${(x+15).toFixed(1)},${h-9}" fill="${i%2?p.hillFront:p.hillBack}" opacity="${op*(i%2?1:0.75)}"/>`; }
+    return `${back}${front}<rect x="0" y="${h-9}" width="${w}" height="9" fill="${p.hillFrontDark}" opacity="${op*0.8}"/>`;
   }},
-  lake:    {label:'Lake reflection', render:(p,w,h,op)=>`
-    <path d="M0,80 Q60,66 130,78 T${w},72 V${h-18} H0 Z" fill="${p.hillBack}" opacity="${op*0.85}"/>
-    <path d="M120,${h-18} C120,${h-52} 155,${h-76} 185,${h-76} C215,${h-76} 240,${h-56} 248,${h-38} V${h-18} Z" fill="${p.hillFront}" opacity="${op}"/>
-    <rect x="0" y="${h-18}" width="${w}" height="18" fill="${p.hillBack}" opacity="${op*0.3}"/>
-    <path class="wx-wave" d="M0,${h-10} Q${w/4},${h-14} ${w/2},${h-10} T${w},${h-10}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.4}"/>
-    <path class="wx-wave" style="animation-delay:-1.6s" d="M0,${h-4} Q${w/4},${h-7} ${w/2},${h-4} T${w},${h-4}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.3}"/>`},
+  lake:    {label:'Lake reflection', render:(p,w,h,op)=>{
+    const fa = wxNoise(91,[[500,1],[220,.45]]), fb = wxNoise(97,[[360,1],[160,.4]]), lakeTop = h-18;
+    return `<path d="${wxRidge(fa,w,h,80,11,lakeTop)}" fill="${p.hillBack}" opacity="${op*0.85}"/>
+      <path d="${wxRidge(fb,w,h,h-58,24,lakeTop)}" fill="${p.hillFront}" opacity="${op}"/>
+      <rect x="0" y="${lakeTop}" width="${w}" height="18" fill="${p.hillBack}" opacity="${op*0.3}"/>
+      <path class="wx-wave" d="${wxWaveLine(w,h-10,60,4)}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.4}"/>
+      <path class="wx-wave" style="animation-delay:-1.6s" d="${wxWaveLine(w,h-4,76,3)}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.3}"/>`;
+  }},
   meadow:  {label:'Meadow', render:(p,w,h,op)=>{
-    const rand=(seed)=>{ const x=Math.sin(seed*777)*10000; return x-Math.floor(x); };
-    let flowers='';
-    for(let i=0;i<10;i++){ const x=(rand(i+1)*w).toFixed(1), y=(h-6-rand(i+9)*16).toFixed(1); flowers+=`<circle cx="${x}" cy="${y}" r="2.2" fill="${p.sun||p.moon}" opacity="${op*0.6}"/>`; }
-    return `<path d="M0,${h-18} Q${w/2},${h-30} ${w},${h-16} V${h} H0 Z" fill="${p.hillFront}" opacity="${op*0.9}"/>${flowers}`;
+    const fa = wxNoise(101,[[480,1],[210,.4]]), fg = wxNoise(107,[[300,1],[130,.35]]), r = wxRandom(21);
+    let flowers = '';
+    for(let i=0;i<70;i++){ const x = r()*w, gy = h-24-7*fg(x), y = gy+4+r()*(h-gy-8);
+      flowers += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2" fill="${p.sun||p.moon}" opacity="${op*0.6}"/>`; }
+    return `<path d="${wxRidge(fa,w,h,h-46,10)}" fill="${p.hillBack}" opacity="${op*0.5}"/><path d="${wxRidge(fg,w,h,h-24,7)}" fill="${p.hillFront}" opacity="${op*0.9}"/>${flowers}`;
   }},
-  savanna: {label:'Savanna', render:(p,w,h,op)=>`
-    <path d="M0,${h-14} Q${w/2},${h-22} ${w},${h-12} V${h} H0 Z" fill="${p.hillFront}" opacity="${op*0.85}"/>
-    <path d="M248,${h-14} L248,${h-46}" stroke="${p.hillFrontDark}" stroke-width="4" opacity="${op}"/>
-    <ellipse cx="248" cy="${h-50}" rx="30" ry="8" fill="${p.hillFrontDark}" opacity="${op*0.9}"/>`},
+  savanna: {label:'Savanna', render:(p,w,h,op)=>{
+    const fa = wxNoise(111,[[440,1],[200,.3]]), fg = wxNoise(113,[[360,1],[150,.3]]), r = wxRandom(8);
+    let trees = '';
+    for(let i=0;i<7;i++){ const x = (i+.25+r()*.5)*w/7, gy = h-14-5*fg(x), th = 28+r()*22, rx = 24+r()*14;
+      trees += `<path d="M${x.toFixed(1)},${(gy+2).toFixed(1)} L${x.toFixed(1)},${(gy-th).toFixed(1)}" stroke="${p.hillFrontDark}" stroke-width="4" opacity="${op}"/>
+        <ellipse cx="${x.toFixed(1)}" cy="${(gy-th-3).toFixed(1)}" rx="${rx.toFixed(1)}" ry="${(7+r()*3).toFixed(1)}" fill="${p.hillFrontDark}" opacity="${op*0.9}"/>`; }
+    return `<path d="${wxRidge(fa,w,h,h-30,6)}" fill="${p.hillBack}" opacity="${op*0.4}"/><path d="${wxRidge(fg,w,h,h-14,5)}" fill="${p.hillFront}" opacity="${op*0.85}"/>${trees}`;
+  }},
   minimal: {label:'Minimal', render:(p,w,h,op)=>`
     <rect x="0" y="${h-14}" width="${w}" height="14" fill="${p.hillFront}" opacity="${op*0.7}"/>`},
 };
+
 /* ===== Sky geometry (shared by the full render and the once-a-minute in-place update) ===== */
-const WX_TILE = 320, WX_H = 150, WX_REPEATS = 6, WX_W = WX_TILE*WX_REPEATS;
+const WX_H = 150, WX_W = 1920;   /* one canvas, drawn once — no repeating tiles */
 /* Where each scene's "ground line" sits, so the sun/moon can rise from and sink behind it. */
 const WX_HORIZON = {hills:92, mountains:102, ocean:110, city:118, desert:108, forest:124, lake:82, meadow:120, savanna:134, minimal:136};
 
@@ -11219,22 +11278,34 @@ function wxCloudShape(flat, tint){
        <ellipse cx="10" cy="-3" rx="19" ry="14" fill="${tint}"/>
        <ellipse cx="26" cy="2" rx="13" ry="9" fill="${tint}"/>`;
 }
+/* The slice of the 1920-wide canvas that is actually visible in the hero (it is cropped from the
+   right-hand edge), measured from the real element when it is on screen, estimated otherwise. */
+function weatherVisibleStrip(svg){
+  let width = 0, height = 0;
+  if(svg){ const r = svg.getBoundingClientRect(); width = r.width; height = r.height; }
+  if(!width || !height){ const iw = window.innerWidth || 1000; width = Math.min(iw-40, 1100); height = iw>820 ? 220 : 170; }
+  const scale = Math.max(width/WX_W, height/WX_H), vis = Math.min(WX_W, width/scale);
+  return {x0: WX_W-vis, vis};
+}
+function updateWeatherCelestial(svg){
+  const g = svg.querySelector('.wx-celestial');
+  if(g) g.innerHTML = weatherCelestialMarkup(svg.getAttribute('data-key'), svg);
+}
 /* The sun or moon (rising/setting along its arc, clipped by the horizon) plus any cloud(s) drifting
    across it. Returned as the inside of <g class="wx-celestial">, so it can be rebuilt in place
    every minute without touching the rest of the scene or any sky activity in progress. */
-function weatherCelestialMarkup(key){
+function weatherCelestialMarkup(key, svg){
   const p = WEATHER_PERIODS[key], cc = WX_CLOUDS[key] || WX_CLOUDS.noon;
   const op = PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4;
   const hf = weatherHourNow();
   const setKey = WEATHER_SETS[PREFS.weatherAmbienceSet] ? PREFS.weatherAmbienceSet : 'hills';
   const hz = WX_HORIZON[setKey] || 92;
-  /* Narrower arc on small screens so the sun stays inside the visible strip of the hero. */
-  const vw = (typeof window!=='undefined' && window.innerWidth) || 1000;
-  const span = Math.max(140, Math.min(300, vw/1.47*0.45));
-  const xR = WX_W-55, xL = xR-span;
+  /* The sun/moon crosses the whole visible hero: rising at the left (east) edge and setting at the
+     right (west) edge. The visible strip is measured from the real hero, so it also fits phones. */
+  const {x0, vis} = weatherVisibleStrip(svg);
   const isMoon = !!p.moon;
   const f = isMoon ? wxInterp(WX_MOON_FRAMES, hf<12 ? hf+24 : hf) : wxInterp(WX_SUN_FRAMES, hf);
-  const cx = +(xL + f[0]*span).toFixed(1);
+  const cx = +(x0 + vis*(0.05 + 0.90*f[0])).toFixed(1);
   const cy = +(hz - f[1]*(hz-26)).toFixed(1);
   const r = f[2], halo = f[3], hop = f[4];
   let body;
@@ -11279,11 +11350,13 @@ function weatherCelestialMarkup(key){
 }
 /* Once a minute: nudge the sun/moon along its arc without a full re-render. If the period itself has
    just changed (new sky colours), swap in a fresh scene — but only when no sky activity is running. */
-let weatherTickTimer = null;
+let weatherTickTimer = null, weatherRO = null, weatherROTimer = null;
 function weatherTick(){
   const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
   const busy = Date.now() < Math.max(skyState.flyerUntil||0, skyState.precipUntil||0, skyState.groundUntil||0);
   document.querySelectorAll('svg.weather-ambience').forEach(svg=>{
+    /* Re-fit the sun's path whenever the hero changes size (window resize, sidebar pinned/unpinned…). */
+    if(weatherRO && !svg.__wxObs){ svg.__wxObs = true; weatherRO.observe(svg); }
     if(svg.getAttribute('data-key') !== key){
       if(busy || !PREFS.weatherAmbience) return;
       const label = svg.closest('.home-hero') && svg.closest('.home-hero').querySelector('.weather-label');
@@ -11291,19 +11364,25 @@ function weatherTick(){
       if(label) label.outerHTML = renderWeatherLabel();
       return;
     }
-    const g = svg.querySelector('.wx-celestial');
-    if(g) g.innerHTML = weatherCelestialMarkup(key);
+    updateWeatherCelestial(svg);
   });
 }
 function ensureWeatherTick(){
   if(weatherTickTimer) return;
   weatherTickTimer = setInterval(()=>{ if(!document.hidden) weatherTick(); }, 60000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) weatherTick(); });
+  if(typeof ResizeObserver !== 'undefined'){
+    weatherRO = new ResizeObserver(()=>{
+      clearTimeout(weatherROTimer);
+      weatherROTimer = setTimeout(()=> document.querySelectorAll('svg.weather-ambience').forEach(updateWeatherCelestial), 120);
+    });
+  }
 }
 function renderWeatherAmbience(){
   if(!PREFS.weatherAmbience) return '';
   ensureSkyActivityLoop();
   ensureWeatherTick();
+  setTimeout(weatherTick, 0);   /* once the hero is in the page: measure it and fit the sun's path */
   const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
   const p = WEATHER_PERIODS[key];
   const cc = WX_CLOUDS[key] || WX_CLOUDS.noon;
@@ -11312,11 +11391,11 @@ function renderWeatherAmbience(){
   // The ground scene (and clouds) repeat side-by-side several times so the illustration can
   // bleed edge-to-edge on any hero width without ever cropping — but the sun/moon is a single,
   // one-of-a-kind element that now travels along its own arc (see weatherCelestialMarkup).
-  const tileW=WX_TILE, h=WX_H, REPEATS=WX_REPEATS, w=WX_W;
+  const h=WX_H, w=WX_W;
   let stars = '';
   if(p.stars){
     const rand = (seed)=> { const x = Math.sin(seed*999)*10000; return x-Math.floor(x); };
-    stars = Array.from({length:14*REPEATS},(_,i)=>{
+    stars = Array.from({length:84},(_,i)=>{
       const x = Math.round(rand(i+1)*w), y = Math.round(rand(i+50)*70), r = rand(i+80)<0.25?1.6:0.9;
       const dur = 2.4 + rand(i+120)*3.6, dl = rand(i+160)*dur;
       return `<circle class="wx-twinkle" style="--o:${(0.55*op).toFixed(3)};animation-duration:${dur.toFixed(2)}s;animation-delay:-${dl.toFixed(2)}s" cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${0.55*op}"/>`;
@@ -11332,11 +11411,11 @@ function renderWeatherAmbience(){
   const ambScale = cc.amb/0.5;
   const cloudFn = (x,y,scale,fade,idx)=>`
       <g class="wx-cloud" style="animation-duration:${22 + (idx*7)%17}s;animation-delay:-${(idx*5.3)%19}s"><g opacity="${Math.min(0.95, op*fade*ambScale).toFixed(3)}" transform="translate(${x},${y}) scale(${scale})">${wxCloudShape(cc.flat, cc.tint)}</g></g>`;
-  const clouds = Array.from({length:REPEATS},(_,i)=>
-    cloudFn(52+i*tileW,26,0.8,0.5,i*2) + cloudFn(150+i*tileW,18,0.55,0.38,i*2+1) +
-    (cc.flat ? cloudFn(230+i*tileW,52,0.9,0.42,i*2+9) : '')).join('');
+  // Scattered across the whole sky at seeded, uneven spacing and sizes (no repeating pattern).
+  const cr = wxRandom(401), clouds = Array.from({length:15},(_,i)=>
+    cloudFn(((i+.15+cr()*.7)*w/15).toFixed(0), (10+cr()*44).toFixed(0), (0.5+cr()*0.5).toFixed(2), 0.3+cr()*0.25, i)).join('');
   const sceneFn = (WEATHER_SETS[PREFS.weatherAmbienceSet]||WEATHER_SETS.hills).render;
-  const scene = Array.from({length:REPEATS},(_,i)=>`<g transform="translate(${i*tileW},0)">${sceneFn(p,tileW,h,op)}</g>`).join('');
+  const scene = sceneFn(p,w,h,op);   // one continuous scene across the full width
   const inner = `
     <defs>
       <linearGradient id="wxSky-${key}" x1="0" y1="0" x2="0" y2="1">
@@ -11349,7 +11428,7 @@ function renderWeatherAmbience(){
     <rect x="0" y="0" width="${w}" height="${h}" fill="url(#wxSky-${key})" opacity="${op*0.9}"/>
     ${stars}
     ${shooting}
-    <g class="wx-celestial">${weatherCelestialMarkup(key)}</g>
+    <g class="wx-celestial">${weatherCelestialMarkup(key, null)}</g>
     ${clouds}
     <g class="wx-sky-layer"></g>
     ${scene}
@@ -11771,11 +11850,25 @@ const SKY_ACTIVITIES = [
   {name:'thunderstorm', when:'any', slot:'precip', weight:2, run(c){ return skyPrecip(c, {kind:'rain', T:skyRnd(14000,18000), dense:1.9, storm:true}); }},
   {name:'rainbow', when:'day', slot:'flyer', weight:2, run(c){ return skyRainbow(c); }},
 ];
+let wxRainbowId = 0;
+/* A wide, thin rainbow spanning the whole hero. It draws itself in from the left over a few seconds,
+   is strongest at the crown and fades to nothing toward both ends, and sits away from the sun. */
 function skyRainbow(c){
-  const cx = skyRnd(c.x0+c.vis*.35, c.x0+c.vis*.7), cy = c.H-4, T = 11000, cols = ['#E4573D','#F28C38','#F7C873','#7BC47F','#4FA3E0','#5C6BC0','#9B5DE5'];
-  const arcs = cols.map((col,i)=>{ const r = 96-i*6; return `<path d="M${cx-r},${cy} A${r},${r} 0 0 1 ${cx+r},${cy}" fill="none" stroke="${col}" stroke-width="5.6"/>`; }).join('');
-  const g = skyEl(c.sky, arcs, 'opacity:0');
-  skyGo(g, [{opacity:0, offset:0},{opacity:.55, offset:.25},{opacity:.55, offset:.75},{opacity:0, offset:1}], {duration:T, easing:'ease-in-out'});
+  const T = 14000, id = 'wxRb'+(++wxRainbowId), cols = ['#E4573D','#F28C38','#F7C873','#7BC47F','#4FA3E0','#5C6BC0','#9B5DE5'];
+  const core = c.svg.querySelector('.wx-core');
+  let frac = .5;
+  if(core){ const sf = (parseFloat(core.getAttribute('cx')) - c.x0)/c.vis; frac = sf>.5 ? .4 : .6; }
+  const cx = c.x0 + c.vis*frac, rx = c.vis*.62, ry = Math.min(112, rx*.62), cy = c.H-6, step = 2.6;
+  const arcs = cols.map((col,i)=>{ const a = rx-i*step, b = ry-i*step;
+    return `<path d="M${(cx-a).toFixed(1)},${cy} A${a.toFixed(1)},${b.toFixed(1)} 0 0 1 ${(cx+a).toFixed(1)},${cy}" pathLength="1" fill="none" stroke="${col}" stroke-width="2.8" style="stroke-dasharray:1;stroke-dashoffset:1"/>`; }).join('');
+  const g = skyEl(c.sky, `<defs>
+      <linearGradient id="${id}g" gradientUnits="userSpaceOnUse" x1="${(cx-rx).toFixed(1)}" y1="0" x2="${(cx+rx).toFixed(1)}" y2="0">
+        <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>
+      <mask id="${id}m" maskUnits="userSpaceOnUse" x="${(c.x0-60).toFixed(1)}" y="0" width="${(c.vis+120).toFixed(1)}" height="${c.H}"><rect x="${(c.x0-60).toFixed(1)}" y="0" width="${(c.vis+120).toFixed(1)}" height="${c.H}" fill="url(#${id}g)"/></mask>
+    </defs><g mask="url(#${id}m)">${arcs}</g>`, 'opacity:0');
+  skyGo(g, [{opacity:0, offset:0},{opacity:1, offset:.12},{opacity:1, offset:.72},{opacity:0, offset:1}], {duration:T, easing:'linear'});
+  g.querySelectorAll('path').forEach((pa,i)=> skyGo(pa, [{strokeDashoffset:1},{strokeDashoffset:0}], {duration:5200, delay:i*140, easing:'ease-out', fill:'both'}));
   return {nodes:[g], duration:T};
 }
 /* Rain, snow and storms: a tall strip of streaks/flakes that loops downward forever while a group
