@@ -14894,7 +14894,7 @@ function pageCirculationTable(){
       {key:'title', label:'Title'},
       {key:'name', label:'Borrower', render:r=>`<span class="${getMemberStatusClass(r.userId)}">${esc(r.name)}</span><div style="color:var(--muted);font-size:11px">${esc(r.userId)}</div>`},
       {key:'dateBorrowed', label:'Borrowed', render:r=>fmtDate(r.dateBorrowed)},
-      {key:'dueDate', label:'Due', render:r=>fmtDate(r.dueDate)},
+      {key:'dueDate', label:'Due', render:r=>fmtDate(r.dueDate) + (dueShiftNote(r)?`<div style="font-size:11px;color:var(--muted)" title="Falls on a weekend, holiday or non-operational day, so it moves to the next operational day">${esc(dueShiftNote(r))}</div>`:'')},
       {key:'returnDate', label:'Returned', render:r=>r.returnDate?fmtDate(r.returnDate):'—'},
       {key:'status', label:'Status', render:r=>{
         const badge = `<span class="badge ${r.status==='RETURNED'?'green':r.status==='OVERDUE'?'red':r.status==='MISSING'?'red':'gold'}">${r.status}</span>`;
@@ -15282,9 +15282,12 @@ function doIssueOne(user, book, opts={}){
   const trx = {
     trxId:'TRX-'+book.acc+'-'+user.id+'-'+Date.now()+'-'+Math.floor(Math.random()*1000), acc:book.acc, title:book.title, userId:user.id, name:user.name,
     category:user.category, cls:user.cls, dateBorrowed:now.toISOString().slice(0,10),
-    dueDate: addDays(now,7).toISOString().slice(0,10), returnDate:null, condition:book.condition, note:''
+    dueDate: dateToKey(addDays(now,7)), returnDate:null, condition:book.condition, note:''
   };
-  trx.history = [{date:trx.dateBorrowed, event:'ISSUED', detail:`Issued to ${user.name} — due ${fmtDate(trx.dueDate)}`}];
+  // A due date on a weekend / holiday / closed day falls on the next operational day instead.
+  const nominalDue = trx.dueDate, effDue = rollDueDatesOn() ? nextOperationalDay(nominalDue) : nominalDue;
+  if(effDue!==nominalDue){ trx.dueDateOrig = nominalDue; trx.dueDate = effDue; }
+  trx.history = [{date:trx.dateBorrowed, event:'ISSUED', detail:`Issued to ${user.name} — due ${fmtDate(trx.dueDate)}${effDue!==nominalDue?` (moved from ${fmtDate(nominalDue)} — ${dueShiftReason(nominalDue)})`:''}`}];
   DB.circulation.unshift(trx);
   book.available = 'ISSUED';
   if(!Array.isArray(book.history)) book.history = [];
@@ -16086,7 +16089,10 @@ function renewLoan(trxId){
   const days = DB.setup.renewalDays || 7;
   const due = parseAnyDate(t.dueDate) || new Date();
   due.setDate(due.getDate()+days);
-  t.dueDate = due.toISOString().slice(0,10);
+  const nominalDue = dateToKey(due);   // local date — toISOString() would shift it back a day in UTC+ time zones
+  const effDue = rollDueDatesOn() ? nextOperationalDay(nominalDue) : nominalDue;
+  t.dueDate = effDue;
+  if(effDue!==nominalDue) t.dueDateOrig = nominalDue; else delete t.dueDateOrig;
   t.renewCount = (t.renewCount||0)+1;
   if(!Array.isArray(t.history)) t.history = [];
   t.history.unshift({date:todayISO(), event:'RENEWED', detail:`Due date extended to ${fmtDate(t.dueDate)} (${t.renewCount}/${max} renewals used)`});
@@ -18407,6 +18413,7 @@ function renderClosedDaysPanel(){
   return `<div class="panel-head"><div><h3>Public holidays &amp; non-operational days</h3>
       <p class="field-hint" style="margin:2px 0 0">Days academic activities did not run. They are not counted as skipped library periods, and schedule alerts are silenced on them.</p></div>
       <button class="btn" onclick="openClosedDayForm()">+ Add day(s)</button></div>
+    <label style="display:flex;gap:6px;align-items:flex-start;cursor:pointer;margin:6px 0 2px"><input type="checkbox" style="margin-top:3px" ${rollDueDatesOn()?'checked':''} onchange="setRollDueDates(this.checked)"> <span><strong>Move due dates to the next operational day</strong><br><span class="field-hint">A loan due on a weekend, public holiday or non-operational day is due on the next operational day instead — for past loans too, so overdue status and fines are recalculated.</span></span></label>
     ${renderAutoHolidaysHtml()}
     <h4 style="margin:16px 0 4px">Your own days (term breaks, closures, moveable holidays)</h4>
     ${list.length ? `${upcoming.length?`<h4 style="margin:10px 0 4px">Upcoming &amp; current</h4>${table(upcoming)}`:''}
@@ -18444,6 +18451,66 @@ function removeClosedDay(id){
     logActivity('setup','delete',`Removed non-operational day(s): ${closedDayLabel(c)} (${closedDayRangeText(c)})`);
     saveDB('Non-operational day removed'); render(); toast('Removed');
   });
+}
+/* ================= DUE DATES ROLL TO THE NEXT OPERATIONAL DAY =================
+   A loan whose due date lands on a Saturday/Sunday, a public holiday or any non-operational day is
+   due on the next operational day instead. The date the loan originally fell due is kept in
+   t.dueDateOrig and t.dueDate holds the effective one, so everything that reads t.dueDate — overdue
+   status, fines, reminders, near-due alerts, receipts, exports — follows automatically, for old
+   loans as well as new ones. syncDueDates() re-derives every loan from its ORIGINAL date, so adding
+   or removing a holiday (or switching the setting off) moves due dates, overdue status and fines
+   back and forth consistently. Fine payments already recorded are kept; the amount owed is simply
+   recalculated. */
+function isWeekendKey(k){ const d = new Date(k+'T00:00:00Z').getUTCDay(); return d===0 || d===6; }
+function nextOperationalDay(key){
+  let k = key, g = 0;
+  while((isWeekendKey(k) || isSchoolClosed(k)) && g++<60) k = isoAddDays(k,1);
+  return k;
+}
+function rollDueDatesOn(){ return !(DB && DB.setup && DB.setup.rollDueDates===false); }
+function dueShiftReason(k){
+  if(isWeekendKey(k)) return 'weekend';
+  const c = closedDayFor(k);
+  return c ? closedDayLabel(c) : 'non-operational day';
+}
+/* Short note for screens: "(moved from Sat 03 Oct — weekend)". Empty when the date was not moved. */
+function dueShiftNote(t){
+  if(!t || !t.dueDateOrig || !t.dueDate) return '';
+  const o = dateToKey(parseAnyDate(t.dueDateOrig)), e = dateToKey(parseAnyDate(t.dueDate));
+  return o && e && o!==e ? `moved from ${fmtDate(o)} — ${dueShiftReason(o)}` : '';
+}
+function syncDueDates(){
+  if(!DB || !Array.isArray(DB.circulation)) return 0;
+  const on = rollDueDatesOn();
+  const cache = new Map();
+  const roll = k=>{ if(!cache.has(k)) cache.set(k, on ? nextOperationalDay(k) : k); return cache.get(k); };
+  let changed = 0;
+  DB.circulation.forEach(t=>{
+    const baseRaw = t.dueDateOrig || t.dueDate;
+    const pd = parseAnyDate(baseRaw); if(!pd) return;
+    const baseKey = dateToKey(pd);
+    const eff = roll(baseKey);
+    const curD = parseAnyDate(t.dueDate), curKey = curD ? dateToKey(curD) : '';
+    const note = (text)=>{ if(!Array.isArray(t.history)) t.history = []; t.history.unshift({date:todayISO(), event:'DUE DATE MOVED', detail:text}); };
+    if(eff===baseKey){
+      if(t.dueDateOrig){                       // no longer needs moving → restore the original date
+        t.dueDate = baseKey; delete t.dueDateOrig; changed++;
+        if(curKey!==baseKey) note(`Due date restored to ${fmtDate(baseKey)}`);
+      }
+    } else if(curKey!==eff || !t.dueDateOrig){
+      t.dueDateOrig = baseKey; t.dueDate = eff; changed++;
+      note(`Due date moved from ${fmtDate(baseKey)} to ${fmtDate(eff)} — ${dueShiftReason(baseKey)}`);
+    }
+  });
+  if(changed){ try{ Promise.resolve(storeSet(STORAGE_KEY, JSON.stringify(DB))).catch(()=>{}); }catch(e){} }
+  return changed;
+}
+function setRollDueDates(on){
+  if(!isAdmin()) return requireAdmin('change due-date rules');
+  DB.setup.rollDueDates = !!on;
+  logActivity('setup','edit',`Moving due dates to the next operational day turned ${on?'on':'off'}`);
+  saveDB('Due-date rule updated'); render();
+  toast(on ? 'Due dates on weekends and holidays now move to the next operational day' : 'Due dates are back to their original dates');
 }
 function ensureSkipStore(){
   if(!DB.skipLedger || typeof DB.skipLedger!=='object' || Array.isArray(DB.skipLedger)) DB.skipLedger = {};
@@ -21044,12 +21111,30 @@ function studentCheckedInForPeriod(userId, dateKey, day, period, startOverride, 
   const {start, end} = periodWindowMinutes(day, period, startOverride, cls);
   if(start==null) return false;
   const periodEnd = end!=null ? end : Infinity;
+  // Time actually spent inside the period must reach a minimum, so someone who merely lingers a few
+  // minutes into the next period before checking out (or wanders in just before it ends) is not
+  // counted as attending it. Capped at half the period's length so short periods still work, and 0
+  // turns the rule off. Entries tagged with this period, and entries still open, are unaffected.
+  const len = isFinite(periodEnd) ? periodEnd - start : Infinity;
+  const need = Math.min(minPeriodOverlap(), isFinite(len) ? Math.floor(len/2) : Infinity);
   return entries.some(r=>{
     const inMin = timeToMinutes(r.timeIn);
     if(inMin==null) return false;
     const outMin = r.timeOut ? timeToMinutes(r.timeOut) : Infinity;
-    return inMin <= periodEnd && outMin >= start;
+    return Math.min(outMin, periodEnd) - Math.max(inMin, start) >= need;
   });
+}
+function minPeriodOverlap(){
+  const v = DB && DB.setup ? DB.setup.minPeriodOverlap : undefined;
+  return (typeof v==='number' && v>=0) ? v : 10;   // default: 10 minutes
+}
+function setMinPeriodOverlap(v){
+  if(!isAdmin()) return requireAdmin('change attendance rules');
+  const n = Math.max(0, Math.min(60, Math.round(+v || 0)));
+  DB.setup.minPeriodOverlap = n;
+  logActivity('setup','edit',`Minimum time in a period to count as attending set to ${n} minute(s)`);
+  saveDB('Attendance rule updated'); render();
+  toast(n ? `Staying ${n}+ minutes into a period now counts as attending it` : 'Any overlap with a period now counts as attending it');
 }
 
 function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
@@ -22491,6 +22576,12 @@ function pageSetup(){
     <button class="btn secondary" onclick="saveAcademicPeriod()">Save term &amp; session</button>
   </div>
   <div class="card panel" id="closedDaysPanel">${renderClosedDaysPanel()}</div>
+  <div class="card panel">
+    <div class="panel-head"><h3>Period attendance</h3></div>
+    <div class="field" style="max-width:360px"><label>Minimum minutes in a period to count as attending it</label>
+      <input type="number" min="0" max="60" step="1" value="${minPeriodOverlap()}" onchange="setMinPeriodOverlap(this.value)"></div>
+    <p class="field-hint">A student who stays on after one period and checks out a few minutes into the next is <strong>not</strong> counted for the next one, unless they were there at least this long (never more than half the period). Set 0 to count any overlap. Entries checked in with a period selected always count for that period.</p>
+  </div>
   <div class="grid two-col">
     <div class="card panel">
       <div class="panel-head"><h3>Student classes &amp; class teachers</h3><div class="hint">Every class starts with "YEAR" · teacher is picked from registered staff</div></div>
@@ -25635,6 +25726,7 @@ function toggleAllSections(collapse){
   });
 }
 function render(){
+  try{ syncDueDates(); }catch(e){ console.warn('Due-date sync failed', e); }
   hideAnalyticsHoverTip();
   if(appearancePreviewDirty && route!=='settings'){
     applyTheme(); applyPalette(PREFS.palette); applyTypography(); applyIconPack(); appearancePreviewDirty = false;
