@@ -7751,6 +7751,7 @@ function openTimedAlert({title, bodyHtml, actions}){
 let scheduleAlertDayKey = null, scheduleAlertedSlots = new Set();
 function checkScheduleAlerts(){
   if(!SESSION || !DB || !Array.isArray(DB.scheduleDays) || $('#timedAlertBackdrop')) return;
+  if(isSchoolClosed(todayISO())) return;   // public holiday / no academic activities today
   if(!DB.setup.notifTypes.schedule) return;
   const now = new Date();
   const dayKey = now.toDateString();
@@ -7882,6 +7883,7 @@ function checkOutstandingSummaryAlert(){
    period times are set. Fires once per period end per day; skipped if nobody is in the library. */
 let checkoutRemDayKey = null, checkoutRemFired = new Set();
 function checkCheckoutReminderAlerts(){
+  if(DB && isSchoolClosed(todayISO())) return;   // no periods are running today
   if(!SESSION || !DB || !Array.isArray(DB.scheduleDays) || $('#timedAlertBackdrop') || $('#checkoutRemBackdrop')) return;
   if(!DB.setup.notifTypes || !DB.setup.notifTypes.checkout || !isStaff()) return;
   const now = new Date();
@@ -11895,6 +11897,8 @@ function todaysBellBreakRows(weekday){
    source keeps its own row style (class rows show attendance detail; staff rows show a PASSED
    badge; break rows show NOW / IN n MIN); only the ordering merges. */
 function renderTodaysScheduleMergedHtml(dateKey, weekday){
+  const closed = closedDayFor(dateKey);
+  if(closed) return `<div class="empty"><div class="big">🚫</div><strong>No academic activities today</strong><br>${esc(closedDayLabel(closed))} · ${esc(closedDayRangeText(closed))}</div>`;
   const rows = [...todaysClassScheduleRows(dateKey, weekday), ...todaysStaffScheduleRows(weekday), ...todaysBellBreakRows(weekday)];
   if(!rows.length) return '<div class="empty">Nothing scheduled today</div>';
   rows.sort((a,b)=> a.sortKey - b.sortKey);
@@ -17761,10 +17765,11 @@ function pageRegister(){
       {label:'Offense', get:r=>r.offense||'—'}, {label:'Note', get:r=>r.note},
     ],
     rowActionsAllRoles:true,   // staff can undo a check-out; Edit stays admin-only
-    rowActions:r=>`${isAdmin()?`<button class="btn secondary small" onclick="openRegisterEdit('${esc(r.entryId)}')">Edit</button>`:''}${isUndoableCheckout(r)&&isStaff()?` <button class="btn secondary small" onclick="undoCheckouts(['${esc(r.entryId)}'])" title="Reopen this entry — puts them back in the library">Undo check-out</button>`:''}`,
+    rowActions:r=>`${isAdmin()?`<button class="btn secondary small" onclick="openRegisterEdit('${esc(r.entryId)}')">Edit</button>`:''}${isUndoableCheckout(r)&&isStaff()?` <button class="btn secondary small" onclick="undoCheckouts(['${esc(r.entryId)}'])" title="Reopen this entry — puts them back in the library">Undo check-out</button>`:''}${isUndoableCheckin(r)&&isStaff()?` <button class="btn danger small" onclick="undoCheckins(['${esc(r.entryId)}'])" title="Remove this check-in — it was a mistake">Undo check-in</button>`:''}`,
     onRowDblClick:r=>`openRegisterEdit('${esc(r.entryId)}')`,
     hidePrint:true,
     extraActions:[
+      {label:'↶ Undo check-in (selected)', onClick:()=>undoCheckins([...registerModuleState.selected])},
       {label:'↶ Undo check-out (selected)', onClick:()=>undoCheckouts([...registerModuleState.selected])},
       {label:'🖨 Print register', onClick:openRegisterPrintModal, alwaysShow:true, primary:true},
       {label:'✎ Batch edit selected', onClick:()=>bulkEditRegister()},
@@ -17912,7 +17917,7 @@ let batchPicker;
 function libraryBannerHtml(){
   if(!isStaff()) return '';
   const currentUsers = getCurrentUsersInLibrary();
-  return `
+  return closedDayNoticeHtml() + `
   <div class="card" style="display:flex;align-items:center;gap:12px;padding:12px;position:sticky;top:0;z-index:20;margin-bottom:16px">
     <div style="font-size:24px">${navIcon('users','👥')}</div>
     <div>
@@ -17971,6 +17976,7 @@ function renderBatchStagingHtml(){
     <span class="stage-badge">${batchStaging.length} staged</span>
   </div>
   ` : `<div class="stage-empty">No students staged yet — add one by ID, or add a whole class above.</div>`}
+  ${renderRecentCheckinsHtml()}
   `;
 }
 function addClassToBatch(clsOverride){
@@ -18026,6 +18032,11 @@ function submitBatch(){
   });
   batchStaging = batchStaging.filter(s=>!batchChecked[s.id] || blockedIds.has(s.id));
   batchChecked = {};
+  // The new entries are the first eligible.length rows (each was unshifted). Stamp who/when/how so
+  // a mistaken check-in can be reversed for one person or the whole batch.
+  const newRows = DB.registerLog.slice(0, eligible.length);
+  newRows.forEach(r=>{ r.inAt = new Date().toISOString(); r.inBy = actorName()||''; r.inVia = 'batch check-in'; });
+  const undoInIds = newRows.map(r=>r.entryId);
   saveDB(`${eligible.length} student(s) checked in`); render();
   // QUICK ACTION MODAL FIX: Refresh the modal UI and banner count after action completes
   setTimeout(()=>{ 
@@ -18034,7 +18045,69 @@ function submitBatch(){
     updateLibraryBannerInModal();
   }, 0);
   if(blockedNames.length) toast(`⛔ ${blockedNames.length} member(s) skipped (inactive or absent from school): ${blockedNames.join(', ')}. ${eligible.length} checked in.`);
-  else toast(`${eligible.length} student(s) checked in`);
+  else if(eligible.length) toast(`${eligible.length} student(s) checked in`, {action:{label:'Undo', onClick:()=>undoCheckins(undoInIds)}});
+  else toast('Nobody was checked in');
+}
+/* ---- undo check-in ----
+   A mistaken check-in never happened, so undoing it REMOVES the open desk entry (the person drops
+   out of "currently in the library"). Only today's still-open desk entries qualify — once someone
+   is checked out the visit is real history (use Undo check-out, or an admin can clear the entry).
+   A "Redo" button on the confirmation puts the removed entries back. */
+let undoCheckinChecked = {};
+function isUndoableCheckin(r){
+  return !!(r && r.source==='DESK' && r.timeIn && !r.timeOut && (r.date||'').slice(0,10)===todayISO());
+}
+function undoCheckins(entryIds){
+  if(!isStaff()) return requireStaff('undo a check-in');
+  const ids = new Set(entryIds||[]);
+  const rows = DB.registerLog.filter(r=> ids.has(r.entryId) && isUndoableCheckin(r));
+  if(!rows.length){ toast('Nothing to undo — only people still checked in today can be removed here'); return; }
+  const gone = new Set(rows.map(r=>r.entryId));
+  DB.registerLog = DB.registerLog.filter(r=>!gone.has(r.entryId));
+  // If this was the only thing marking a period as "checked in" today, clear that period status too.
+  const today = todayISO();
+  new Set(rows.map(r=>(r.period||'').trim().toLowerCase()).filter(Boolean)).forEach(p=>{
+    const stillThere = DB.registerLog.some(r=> (r.date||'').slice(0,10)===today && (r.period||'').trim().toLowerCase()===p);
+    if(!stillThere && Array.isArray(DB.weeklyAttendanceLog)){
+      DB.weeklyAttendanceLog = DB.weeklyAttendanceLog.filter(x=> !(x.date===today && (x.period||'').toLowerCase()===p && x.status==='checked_in'));
+    }
+  });
+  rows.forEach(r=>{ delete undoCheckinChecked[r.entryId]; if(typeof registerModuleState!=='undefined' && registerModuleState.selected) registerModuleState.selected.delete(r.entryId); });
+  const names = rows.slice(0,3).map(r=>r.name||r.id).join(', ') + (rows.length>3 ? ` +${rows.length-3} more` : '');
+  logActivity('register','delete',`Undid check-in for ${rows.length} ${rows.length===1?'person':'people'}: ${names}`);
+  saveDB(`Check-in undone for ${rows.length}`); render();
+  setTimeout(()=>{ mountBatchStaging(); mountCheckoutStaging(); if(typeof updateLibraryBannerInModal==='function') updateLibraryBannerInModal(); }, 0);
+  toast(rows.length===1 ? `${rows[0].name||rows[0].id} removed from the library` : `${rows.length} check-ins removed`,
+        {action:{label:'Redo', onClick:()=>redoCheckins(rows)}});
+}
+function redoCheckins(rows){
+  if(!isStaff()) return requireStaff('restore a check-in');
+  const inNow = new Set(currentlyInLibrary().map(r=>r.id));
+  const back = (rows||[]).filter(r=> !inNow.has(r.id) && !DB.registerLog.some(x=>x.entryId===r.entryId));
+  back.forEach(r=>{ DB.registerLog.unshift(r); if(r.period) recordAttendanceStatusForPeriod(todayISO(), r.period, 'checked_in'); });
+  logActivity('register','create',`Restored ${back.length} check-in(s) after undo`);
+  saveDB(`${back.length} check-in(s) restored`); render();
+  setTimeout(()=>{ mountBatchStaging(); mountCheckoutStaging(); if(typeof updateLibraryBannerInModal==='function') updateLibraryBannerInModal(); }, 0);
+  toast(back.length ? `${back.length} check-in(s) restored` : 'Nothing restored — they are already checked in');
+}
+function renderRecentCheckinsHtml(){
+  const open = currentlyInLibrary().slice().sort((a,b)=> String(b.inAt||b.timeIn).localeCompare(String(a.inAt||a.timeIn)));
+  if(!open.length) return '';
+  const nSel = open.filter(r=>undoCheckinChecked[r.entryId]).length;
+  return `<details class="recent-checkins" style="margin-top:14px" ${nSel?'open':''}>
+    <summary style="cursor:pointer;font-weight:600">Checked in now (${open.length}) — remove a mistaken check-in</summary>
+    <table class="stage-table" style="margin-top:8px">
+      <thead><tr><th><input type="checkbox" id="undoCiSelectAll" ${open.every(r=>undoCheckinChecked[r.entryId])?'checked':''}></th><th>Name</th><th>Class</th><th>In</th><th>Purpose</th><th></th></tr></thead>
+      <tbody>${open.map(r=>`<tr>
+        <td><input type="checkbox" class="undoCiRowCheck" data-id="${esc(r.entryId)}" ${undoCheckinChecked[r.entryId]?'checked':''}></td>
+        <td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls||'')}</td>
+        <td>${fmtTime(r.timeIn)}${(r.inBy||r.verifiedBy)?`<div style="font-size:11px;color:var(--muted)">by ${esc(r.inBy||r.verifiedBy)}</div>`:''}</td>
+        <td>${esc(r.purpose||'')}</td>
+        <td><button class="btn danger small" onclick="undoCheckins(['${esc(r.entryId)}'])">Remove</button></td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <button class="btn secondary" style="margin-top:8px" onclick="undoCheckins(currentlyInLibrary().filter(r=>undoCheckinChecked[r.entryId]).map(r=>r.entryId))">Remove check-in for selected (<span id="undoCiSelectedCount">${nSel}</span>)</button>
+  </details>`;
 }
 
 /* ---- batch check-out (from Register page) ---- */
@@ -18154,7 +18227,16 @@ function mountBatchStaging(){
   focusKeyOperationalBox();   // back to "Add one student" so the next ID can be typed straight away
 }
 function bindBatchStagingEvents(){
-  if(!isAdmin()) return;
+  if(!isStaff()) return;
+  const uAll = document.getElementById('undoCiSelectAll');
+  if(uAll) uAll.onchange = e=>{ currentlyInLibrary().forEach(r=>undoCheckinChecked[r.entryId]=e.target.checked); mountBatchStaging(); };
+  document.querySelectorAll('.undoCiRowCheck').forEach(cb=>{
+    cb.onchange = e=>{
+      undoCheckinChecked[e.target.dataset.id]=e.target.checked;
+      const c=document.getElementById('undoCiSelectedCount');
+      if(c) c.textContent = currentlyInLibrary().filter(r=>undoCheckinChecked[r.entryId]).length;
+    };
+  });
   // Same rule as addClassToBatch(): anyone already signed in at the desk today (checked in, no
   // timeOut yet) is left out of the picker entirely, so they can't be "called up" into a second
   // check-in until they're checked out.
@@ -18197,12 +18279,179 @@ function dateToKey(d){
   const x = new Date(d);
   return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
 }
+/* ================= NON-OPERATIONAL DAYS =================
+   Public holidays, term breaks and any other day academic activities did not run. Each record is
+   {id, type, name, from, to} (inclusive 'YYYY-MM-DD' dates; a single day has to === from). Managed
+   in Setup. A closed day is never counted as a skip, shows "No academic activities" instead of the
+   schedule, and silences the period / check-out alerts. Check-ins at the desk are still allowed —
+   the library itself may be open. Adding a date retroactively removes skips already frozen for it. */
+const CLOSED_DAY_TYPES = ['PUBLIC HOLIDAY','TERM BREAK','SCHOOL CLOSED','NO ACADEMIC ACTIVITIES','OTHER'];
+function ensureClosedDays(){
+  if(!DB) return [];
+  if(!Array.isArray(DB.closedDays)) DB.closedDays = [];
+  return DB.closedDays;
+}
+/* Fixed-date Nigerian public holidays, applied automatically every year. Moveable ones (Good Friday,
+   Easter Monday, Eid-el-Fitr, Eid-el-Kabir, Mawlid) change each year and are announced by the
+   government, so add those yourself as non-operational days. When a holiday falls on a Saturday or
+   Sunday it is observed on the next free weekday (switchable). Any holiday can be switched off for
+   every year, or for a single year. */
+const NG_FIXED_HOLIDAYS = [
+  {key:'NG-NEWYEAR',      name:"New Year's Day",   md:'01-01'},
+  {key:'NG-WORKERS',      name:"Workers' Day",     md:'05-01'},
+  {key:'NG-DEMOCRACY',    name:'Democracy Day',    md:'06-12'},
+  {key:'NG-INDEPENDENCE', name:'Independence Day', md:'10-01'},
+  {key:'NG-CHRISTMAS',    name:'Christmas Day',    md:'12-25'},
+  {key:'NG-BOXING',       name:'Boxing Day',       md:'12-26'},
+];
+function autoHolidaySettings(){
+  if(!DB.setup) DB.setup = {};
+  if(!DB.setup.autoHolidays || typeof DB.setup.autoHolidays!=='object') DB.setup.autoHolidays = {};
+  const st = DB.setup.autoHolidays;
+  if(typeof st.enabled!=='boolean') st.enabled = true;
+  if(typeof st.shiftWeekend!=='boolean') st.shiftWeekend = true;
+  if(!st.disabled || typeof st.disabled!=='object') st.disabled = {};
+  return st;
+}
+function autoHolidaysForYear(y){
+  const st = autoHolidaySettings();
+  const dow = key=> new Date(key+'T00:00:00Z').getUTCDay();
+  const taken = new Set(), out = [];
+  NG_FIXED_HOLIDAYS.forEach(h=>{
+    const base = y+'-'+h.md;
+    let obs = base;
+    if(st.shiftWeekend){
+      let guard = 0;
+      while((dow(obs)===0 || dow(obs)===6 || taken.has(obs)) && guard++<10) obs = isoAddDays(obs,1);
+    }
+    taken.add(obs);
+    out.push({key:h.key, name:h.name, year:y, base, observed:obs,
+      enabled: !st.disabled[h.key] && !st.disabled[h.key+'|'+y]});
+  });
+  return out;
+}
+function autoHolidayFor(k){
+  if(!DB || !autoHolidaySettings().enabled) return null;
+  const h = autoHolidaysForYear(+k.slice(0,4)).find(x=>x.enabled && x.observed===k);
+  return h ? {id:'AUTO-'+h.key+'-'+h.year, type:'PUBLIC HOLIDAY', name:h.name, from:k, to:k, auto:true} : null;
+}
+function closedDayFor(dateKey){
+  if(!dateKey || !DB) return null;
+  const k = String(dateKey).slice(0,10);
+  return ensureClosedDays().find(c=> c.from && c.from<=k && k<=(c.to||c.from)) || autoHolidayFor(k) || null;
+}
+function isSchoolClosed(dateKey){ return !!closedDayFor(dateKey); }
+function closedDayLabel(c){ return c ? (c.name ? c.name : c.type.charAt(0)+c.type.slice(1).toLowerCase()) : ''; }
+function closedDayRangeText(c){ return c.to && c.to!==c.from ? fmtDate(c.from)+' – '+fmtDate(c.to) : fmtDate(c.from); }
+/* Banner text for the Quick Action / Register / Schedule: today's closure, plus any starting in
+   the next 7 days. Returns '' when there is nothing to say. */
+function closedDayNoticeHtml(){
+  if(!DB) return '';
+  const today = todayISO();
+  const now = closedDayFor(today);
+  const soon = []; const seenIds = new Set();
+  for(let i=1;i<=7;i++){
+    const c = closedDayFor(isoAddDays(today,i));
+    if(c && c.from>today && !seenIds.has(c.id)){ seenIds.add(c.id); soon.push(c); }
+  }
+  if(!now && !soon.length) return '';
+  const nowHtml = now ? `<div style="font-weight:600">🚫 No academic activities today — ${esc(closedDayLabel(now))}</div><div style="font-size:12px;color:var(--muted)">${esc(now.type.charAt(0)+now.type.slice(1).toLowerCase())} · ${esc(closedDayRangeText(now))}. Schedule alerts and skip tracking are paused.</div>` : '';
+  const soonHtml = soon.length ? `<div style="font-size:12.5px;margin-top:${now?6:0}px">Coming up: ${soon.map(c=>`<strong>${esc(closedDayLabel(c))}</strong> (${esc(closedDayRangeText(c))})`).join(' · ')}</div>` : '';
+  return `<div class="card" style="padding:10px 14px;margin-bottom:12px;border-left:4px solid ${now?'#B8863E':'#3B6EA5'}">${nowHtml}${soonHtml}</div>`;
+}
+function renderAutoHolidaysHtml(){
+  const st = autoHolidaySettings();
+  const y0 = +todayISO().slice(0,4), years = [y0, y0+1];
+  const tables = years.map(y=>autoHolidaysForYear(y));
+  const fmtObs = h=>{
+    const d = new Date(h.observed+'T00:00:00');
+    const txt = d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'});
+    return esc(txt) + (h.observed!==h.base ? ` <span class="badge gold" title="${esc(h.name)} falls on a weekend, so it is observed on the next weekday">observed</span>` : '');
+  };
+  const rows = tables[0].map((h,i)=>{
+    const allOn = !st.disabled[h.key];
+    const cell = (hh)=>`<td><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" ${hh.enabled?'checked':''} ${allOn?'':'disabled'} onchange="toggleAutoHoliday('${h.key}',${hh.year},this.checked)"> ${fmtObs(hh)}</label></td>`;
+    return `<tr><td><strong>${esc(h.name)}</strong></td>${cell(tables[0][i])}${cell(tables[1][i])}
+      <td><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" ${allOn?'checked':''} onchange="toggleAutoHoliday('${h.key}','ALL',this.checked)"> Every year</label></td></tr>`;
+  }).join('');
+  return `<h4 style="margin:12px 0 4px">Nigerian public holidays (automatic)</h4>
+    <p class="field-hint" style="margin:0 0 8px">Fixed-date holidays are added every year. Untick one to treat that day as a normal school day. Moveable holidays (Good Friday, Easter Monday, Eid-el-Fitr, Eid-el-Kabir, Mawlid) change yearly — add them below once announced.</p>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px">
+      <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" ${st.enabled?'checked':''} onchange="setAutoHolidayOption('enabled',this.checked)"> Include Nigerian public holidays</label>
+      <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" ${st.shiftWeekend?'checked':''} onchange="setAutoHolidayOption('shiftWeekend',this.checked)"> Observe on the next weekday when a holiday falls on a weekend</label>
+    </div>
+    <div style="${st.enabled?'':'opacity:.5'};overflow-x:auto"><table class="stage-table"><thead><tr><th>Holiday</th><th>${years[0]}</th><th>${years[1]}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function setAutoHolidayOption(opt, on){
+  if(!isAdmin()) return requireAdmin('change public holiday settings');
+  autoHolidaySettings()[opt] = !!on;
+  logActivity('setup','edit',`${opt==='enabled'?'Nigerian public holidays':'Weekend observance'} turned ${on?'on':'off'}`);
+  saveDB('Public holiday setting updated'); render();
+}
+function toggleAutoHoliday(key, year, on){
+  if(!isAdmin()) return requireAdmin('change public holiday settings');
+  const st = autoHolidaySettings();
+  const k = year==='ALL' ? key : key+'|'+year;
+  if(on) delete st.disabled[k]; else st.disabled[k] = true;
+  const h = NG_FIXED_HOLIDAYS.find(x=>x.key===key);
+  logActivity('setup','edit',`${h?h.name:key} ${on?'enabled':'disabled'} for ${year==='ALL'?'every year':year}`);
+  saveDB('Public holiday setting updated'); render();
+}
+function renderClosedDaysPanel(){
+  const list = ensureClosedDays().slice().sort((a,b)=>a.from.localeCompare(b.from));
+  const today = todayISO();
+  const upcoming = list.filter(c=>(c.to||c.from)>=today), past = list.filter(c=>(c.to||c.from)<today).reverse();
+  const row = c=>`<tr><td>${esc(closedDayRangeText(c))}</td><td>${esc(closedDayLabel(c))}</td><td><span class="badge grey">${esc(c.type)}</span></td>
+    <td style="white-space:nowrap"><button class="btn secondary small" onclick="openClosedDayForm('${esc(c.id)}')">Edit</button> <button class="btn danger small" onclick="removeClosedDay('${esc(c.id)}')">Remove</button></td></tr>`;
+  const table = (rows)=> `<table class="stage-table"><thead><tr><th>Date(s)</th><th>Name</th><th>Type</th><th></th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table>`;
+  return `<div class="panel-head"><div><h3>Public holidays &amp; non-operational days</h3>
+      <p class="field-hint" style="margin:2px 0 0">Days academic activities did not run. They are not counted as skipped library periods, and schedule alerts are silenced on them.</p></div>
+      <button class="btn" onclick="openClosedDayForm()">+ Add day(s)</button></div>
+    ${renderAutoHolidaysHtml()}
+    <h4 style="margin:16px 0 4px">Your own days (term breaks, closures, moveable holidays)</h4>
+    ${list.length ? `${upcoming.length?`<h4 style="margin:10px 0 4px">Upcoming &amp; current</h4>${table(upcoming)}`:''}
+      ${past.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Past (${past.length})</summary>${table(past)}</details>`:''}`
+      : `<div class="stage-empty">No holidays or closed days added yet.</div>`}`;
+}
+function openClosedDayForm(id){
+  if(!isAdmin()) return requireAdmin('manage non-operational days');
+  const ex = id ? ensureClosedDays().find(c=>c.id===id) : null;
+  openModal({
+    title: ex ? 'Edit non-operational day(s)' : 'Add non-operational day(s)',
+    fields:[
+      {key:'type', label:'Type', type:'select', placeholder:false, options:CLOSED_DAY_TYPES, default:ex?ex.type:'PUBLIC HOLIDAY'},
+      {key:'name', label:'Name / reason', default:ex?ex.name||'':'', placeholder:'e.g. Independence Day, Mid-term break, Staff training'},
+      {row:[{key:'from', label:'From', type:'date', required:true, default:ex?ex.from:todayISO()},{key:'to', label:'To (leave blank for one day)', type:'date', default:ex&&ex.to&&ex.to!==ex.from?ex.to:''}]},
+    ],
+    validate:(vals)=>{
+      if(vals.to && vals.to < vals.from) return '"To" date cannot be before the "From" date';
+      return null;
+    },
+    onSave:(vals)=>{
+      const rec = {id: ex?ex.id:uid('CLS'), type:vals.type||'OTHER', name:(vals.name||'').trim(), from:vals.from, to:(vals.to && vals.to!==vals.from) ? vals.to : vals.from};
+      const list = ensureClosedDays();
+      if(ex) Object.assign(ex, rec); else list.push(rec);
+      logActivity('setup', ex?'edit':'create', `${ex?'Updated':'Added'} non-operational day(s): ${closedDayLabel(rec)} (${closedDayRangeText(rec)})`);
+      saveDB('Non-operational days updated'); render(); toast(ex?'Updated':'Added — skips on those dates no longer count');
+    }
+  });
+}
+function removeClosedDay(id){
+  if(!isAdmin()) return requireAdmin('manage non-operational days');
+  const c = ensureClosedDays().find(x=>x.id===id); if(!c) return;
+  confirmDelete(`Remove "${closedDayLabel(c)}" (${closedDayRangeText(c)})? Skips on those dates will count again.`, ()=>{
+    DB.closedDays = DB.closedDays.filter(x=>x.id!==id);
+    logActivity('setup','delete',`Removed non-operational day(s): ${closedDayLabel(c)} (${closedDayRangeText(c)})`);
+    saveDB('Non-operational day removed'); render(); toast('Removed');
+  });
+}
 function ensureSkipStore(){
   if(!DB.skipLedger || typeof DB.skipLedger!=='object' || Array.isArray(DB.skipLedger)) DB.skipLedger = {};
   if(typeof DB.skipTrackingStart!=='string') DB.skipTrackingStart = '';
 }
 function skipTrackingStart(){ ensureSkipStore(); return DB.skipTrackingStart||''; }
 function computeRawSkipsForDate(dateKey, onlyId){
+  if(isSchoolClosed(dateKey)) return [];   // no academic activities that day — nothing can be skipped
   const day = weekdayForDateKey(dateKey);
   const rows = (DB.scheduleDays||[]).filter(r=> r[0]===day && r[1]);
   if(!rows.length) return [];
@@ -18275,6 +18524,7 @@ function getSkipRecords(opts){
   const out = [];
   let guard = 0;
   for(let k=from; k<=to && guard++<800; k=isoAddDays(k,1)){
+    if(isSchoolClosed(k)) continue;   // also hides skips frozen before the day was marked closed
     const raw = k===today ? computeRawSkipsForDate(k, opts.userId) : (DB.skipLedger[k]||[]);
     raw.forEach(rec=>{
       if(opts.userId && rec.id!==opts.userId) return;
@@ -18935,7 +19185,7 @@ function pageSchedule(){
   
   const weekStart = getWeekStartISO();
   
-  return tabsHtml + `
+  return tabsHtml + closedDayNoticeHtml() + `
   <div class="card panel">
     <div class="panel-head">
       <div><h3>Weekly library schedule</h3></div>
@@ -22240,6 +22490,7 @@ function pageSetup(){
     </div>
     <button class="btn secondary" onclick="saveAcademicPeriod()">Save term &amp; session</button>
   </div>
+  <div class="card panel" id="closedDaysPanel">${renderClosedDaysPanel()}</div>
   <div class="grid two-col">
     <div class="card panel">
       <div class="panel-head"><h3>Student classes &amp; class teachers</h3><div class="hint">Every class starts with "YEAR" · teacher is picked from registered staff</div></div>
