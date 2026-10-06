@@ -11164,7 +11164,7 @@ function weatherSceneKey(){ return WEATHER_SETS[PREFS.weatherAmbienceSet] ? PREF
 /* ===== Sky geometry (shared by the full render and the once-a-minute in-place update) ===== */
 const WX_H = 150, WX_W = 1920;   /* one canvas, drawn once — no repeating tiles */
 /* Where each scene's "ground line" sits, so the sun/moon can rise from and sink behind it. */
-const WX_HORIZON = {ocean:110, beach:106, lagoon:104, plains:112, desert:108, minimal:136};
+const WX_HORIZON = {ocean:110, beach:106, lagoon:104, plains:119, desert:132, minimal:136};
 
 /* Sun path, as keyframes: [hour, x (0 = left end of the arc, 1 = right end), elevation (0 = on the
    horizon, 1 = highest point, negative = below it), core radius, halo radius, halo strength].
@@ -11349,8 +11349,10 @@ function ensureWeatherTick(){
     });
   }
 }
+let wxSceneUid = 0;
 function renderWeatherAmbience(){
   if(!PREFS.weatherAmbience) return '';
+  const uid = ++wxSceneUid;
   ensureSkyActivityLoop();
   ensureWeatherTick();
   setTimeout(weatherTick, 0);   /* once the hero is in the page: measure it and fit the sun's path */
@@ -11394,15 +11396,17 @@ function renderWeatherAmbience(){
       </linearGradient>
       <linearGradient id="wxTrail-${key}" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#fff" stop-opacity="0"/><stop offset="100%" stop-color="#fff" stop-opacity=".8"/></linearGradient>
       <linearGradient id="wxSmoke-${key}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fff" stop-opacity=".85"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <filter id="wxSil-${uid}" filterUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 255 0"/></filter>
+      <mask id="wxHide-${uid}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" fill="#fff"/><use href="#wxSc-${uid}" filter="url(#wxSil-${uid})"/></mask>
       <radialGradient id="wxLantern-${key}"><stop offset="0%" stop-color="#FFB347" stop-opacity=".9"/><stop offset="100%" stop-color="#FFB347" stop-opacity="0"/></radialGradient>
     </defs>
     <rect x="0" y="0" width="${w}" height="${h}" fill="url(#wxSky-${key})" opacity="${op*0.9}"/>
     ${stars}
     ${shooting}
-    <g class="wx-celestial">${weatherCelestialMarkup(key, null)}</g>
+    <g class="wx-celestial" mask="url(#wxHide-${uid})">${weatherCelestialMarkup(key, null)}</g>
     ${clouds}
     <g class="wx-sky-layer"></g>
-    ${scene}
+    <g id="wxSc-${uid}">${scene}</g>
     <g class="wx-front-layer"></g>
   `;
   return `<svg class="weather-ambience" data-dim="${p.stars?1:0}" data-key="${key}" data-op="${op}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMaxYMax slice" aria-hidden="true" onclick="cycleWeatherAmbienceSet()"><title>Click to change the weather scene</title>${inner}</svg>`;
