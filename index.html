@@ -5176,7 +5176,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'hills', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'boltEmoji',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'boltEmoji',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -11101,34 +11101,6 @@ function wxWaveLine(w, y, s, amp){
   return d;
 }
 const WEATHER_SETS = {
-  hills:   {label:'Rolling hills (default)', render:(p,w,h,op)=>{
-    const hz = WX_HORIZON.hills;
-    const fa = wxNoise(11,[[560,1],[250,.5],[120,.2]]), fb = wxNoise(23,[[420,1],[190,.5],[90,.2]]),
-          fc = wxNoise(37,[[330,1],[150,.45]]),         fd = wxNoise(41,[[260,1],[120,.4]]);
-    return `<path d="${wxRidge(fa,w,h,hz-4,9)}" fill="${p.hillBack}" opacity="${op*0.85}"/>
-      <path d="${wxRidge(fb,w,h,hz+18,9)}" fill="${p.hillBack}" opacity="${op*0.6}"/>
-      <path d="${wxRidge(fc,w,h,h-40,30)}" fill="${p.hillFront}" opacity="${op}"/>
-      <path d="${wxRidge(fd,w,h,h-12,10)}" fill="${p.hillFrontDark}" opacity="${op*0.95}"/>`;
-  }},
-  mountains:{label:'Mountains', render:(p,w,h,op)=>{
-    const r = wxRandom(5);
-    const ridge = (pk0,pk1,vl0,vl1,d0,d1)=>{
-      const pts = []; let x = -30;
-      while(x < w+60){ const dx = d0+r()*(d1-d0);
-        pts.push({x, y:pk0+r()*(pk1-pk0), peak:true});
-        pts.push({x:x+dx*(.4+.2*r()), y:vl0+r()*(vl1-vl0)});
-        x += dx; }
-      return {pts, path:`M-30,${h}`+pts.map(q=>` L${q.x.toFixed(1)},${q.y.toFixed(1)}`).join('')+` L${w+60},${h} Z`};
-    };
-    const back = ridge(38,78,92,108,70,125), front = ridge(80,102,108,124,50,95);
-    let caps = '';
-    back.pts.forEach((q,i)=>{
-      if(!q.peak || i<1 || i>=back.pts.length-1 || q.y>62) return;
-      const L = back.pts[i-1], R = back.pts[i+1], lx = q.x+(L.x-q.x)*.24, ly = q.y+(L.y-q.y)*.24, rx = q.x+(R.x-q.x)*.24, ry = q.y+(R.y-q.y)*.24;
-      caps += `<polygon points="${lx.toFixed(1)},${ly.toFixed(1)} ${q.x.toFixed(1)},${q.y.toFixed(1)} ${rx.toFixed(1)},${ry.toFixed(1)} ${(q.x+(rx-q.x)*.55).toFixed(1)},${(ry+5).toFixed(1)} ${q.x.toFixed(1)},${(q.y+(ry-q.y)*.6).toFixed(1)} ${(q.x+(lx-q.x)*.55).toFixed(1)},${(ly+5).toFixed(1)}" fill="#fff" opacity="${op*0.55}"/>`;
-    });
-    return `<path d="${back.path}" fill="${p.hillBack}" opacity="${op*0.8}"/>${caps}<path d="${front.path}" fill="${p.hillFront}" opacity="${op}"/>`;
-  }},
   ocean:   {label:'Ocean waves', render:(p,w,h,op)=>{
     const top = h-40, fi = wxNoise(61,[[300,1],[130,.5]]);
     let waves = '';
@@ -11137,16 +11109,45 @@ const WEATHER_SETS = {
     return `<path d="${wxRidge(fi,w,h,top-1,3.5,top+2)}" fill="${p.hillBack}" opacity="${op*0.45}"/>
       <rect x="0" y="${top}" width="${w}" height="40" fill="${p.hillBack}" opacity="${op*0.55}"/>${waves}`;
   }},
-  city:    {label:'City skyline', render:(p,w,h,op)=>{
-    const r = wxRandom(9), lit = p.sun||p.moon; let back = '', front = '';
-    for(let x=-10; x<w; ){ const bw = 34+r()*28, bh = 52+r()*50;
-      back += `<rect x="${x.toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${p.hillBack}" opacity="${op*0.6}"/>`;
-      x += bw+2+r()*8; }
-    for(let x=0, i=0; x<w; i++){ const bw = 24+r()*24, bh = 28+r()*48, y = h-bh; let win = '';
-      for(let wy=y+8; wy<h-6; wy+=13) for(let wx=x+6; wx<x+bw-6; wx+=12) win += `<rect x="${(wx).toFixed(1)}" y="${wy.toFixed(1)}" width="4" height="5" fill="${lit}" opacity="${op*0.55}"/>`;
-      front += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${i%2?p.hillFront:p.hillBack}" opacity="${op*0.9}"/>${win}`;
-      x += bw+3+r()*10; }
-    return back+front;
+  beach:   {label:'Palm beach', render:(p,w,h,op)=>{
+    const sea = WX_HORIZON.beach, sandTop = h-22, r = wxRandom(31), fs = wxNoise(131,[[420,1],[180,.3]]);
+    let waves = '', palms = '';
+    for(let i=0;i<3;i++){ const yy = sea+6+i*8;
+      waves += `<path class="wx-wave" style="animation-delay:-${(i*1.1).toFixed(2)}s" d="${wxWaveLine(w,yy,48+i*12,5)}" stroke="${i%2?p.hillFront:p.hillBack}" stroke-width="2" fill="none" opacity="${op*(0.5-i*0.08)}"/>`; }
+    for(let i=0;i<6;i++){
+      const x = (i+.3+r()*.4)*w/6, gy = sandTop+2-3*fs(x), th = 28+r()*12, lean = (r()-.5)*16, tx = x+lean, ty = gy-th;
+      let fr = '';
+      [-170,-135,-95,-50,-12].forEach(deg=>{ const a = deg*Math.PI/180, L = 15+r()*5, ex = tx+Math.cos(a)*L, ey = ty+Math.sin(a)*L*.55+7;
+        fr += `M${tx.toFixed(1)},${ty.toFixed(1)} Q${(tx+Math.cos(a)*L*.5).toFixed(1)},${(ty+Math.sin(a)*L*.7-5).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)} `; });
+      palms += `<path d="M${x.toFixed(1)},${(gy+2).toFixed(1)} Q${(x+lean*.2).toFixed(1)},${(gy-th*.5).toFixed(1)} ${tx.toFixed(1)},${ty.toFixed(1)}" stroke="${p.hillFrontDark}" stroke-width="3" stroke-linecap="round" fill="none" opacity="${op*0.9}"/>
+        <path d="${fr}" stroke="${p.hillFrontDark}" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="${op*0.9}"/>`; }
+    return `<rect x="0" y="${sea}" width="${w}" height="${sandTop-sea+4}" fill="${p.hillBack}" opacity="${op*0.5}"/>${waves}
+      <path d="${wxRidge(fs,w,h,sandTop+2,3)}" fill="${p.hillFront}" opacity="${op*0.9}"/>
+      <path class="wx-wave" d="${wxWaveLine(w,sandTop-2,70,3)}" stroke="#fff" stroke-width="2" fill="none" opacity="${op*0.5}"/>${palms}`;
+  }},
+  plains:  {label:'Gentle plains', render:(p,w,h,op)=>{
+    const fa = wxNoise(141,[[640,1],[280,.4]]), fb = wxNoise(149,[[460,1],[200,.35]]), fc = wxNoise(157,[[340,1],[150,.3]]), r = wxRandom(13);
+    let far = '', near = '';
+    for(let i=0;i<16;i++){ const x = (i+.2+r()*.6)*w/16, gy = h-36-5*fa(x), cr = 4+r()*4;
+      far += `<path d="M${x.toFixed(1)},${(gy+1).toFixed(1)} L${x.toFixed(1)},${(gy-cr).toFixed(1)}" stroke="${p.hillBack}" stroke-width="1.6" opacity="${op*0.7}"/><circle cx="${x.toFixed(1)}" cy="${(gy-cr-3).toFixed(1)}" r="${cr.toFixed(1)}" fill="${p.hillBack}" opacity="${op*0.8}"/>`; }
+    for(let i=0;i<4;i++){ const x = (i+.3+r()*.4)*w/4, gy = h-26-6*fb(x), cr = 8+r()*4;
+      near += `<path d="M${x.toFixed(1)},${(gy+2).toFixed(1)} L${x.toFixed(1)},${(gy-cr).toFixed(1)}" stroke="${p.hillFrontDark}" stroke-width="2.4" opacity="${op*0.9}"/><circle cx="${x.toFixed(1)}" cy="${(gy-cr-5).toFixed(1)}" r="${cr.toFixed(1)}" fill="${p.hillFrontDark}" opacity="${op*0.9}"/>`; }
+    return `<path d="${wxRidge(fa,w,h,h-36,5)}" fill="${p.hillBack}" opacity="${op*0.5}"/>${far}
+      <path d="${wxRidge(fb,w,h,h-26,6)}" fill="${p.hillBack}" opacity="${op*0.8}"/>${near}
+      <path d="${wxRidge(fc,w,h,h-13,4)}" fill="${p.hillFront}" opacity="${op}"/>`;
+  }},
+  lagoon:  {label:'Lagoon & boats', render:(p,w,h,op)=>{
+    const wl = WX_HORIZON.lagoon, r = wxRandom(47); let isl = '', waves = '', boats = '';
+    for(let i=0;i<7;i++){ const x = (i+.2+r()*.6)*w/7, rx = 40+r()*60, ry = 6+r()*7;
+      isl += `<ellipse cx="${x.toFixed(1)}" cy="${wl+2}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="${p.hillBack}" opacity="${op*0.7}"/>`; }
+    for(let i=0;i<3;i++){ const yy = wl+10+i*10;
+      waves += `<path class="wx-wave" style="animation-delay:-${(i*1.3).toFixed(2)}s" d="${wxWaveLine(w,yy,52+i*12,5)}" stroke="${i%2?p.hillFront:p.hillBack}" stroke-width="2" fill="none" opacity="${op*(0.5-i*0.08)}"/>`; }
+    for(let i=0;i<6;i++){ const x = (i+.25+r()*.5)*w/6, y = wl+14+r()*20, sc = 0.8+r()*0.5;
+      boats += `<g class="wx-wave" style="animation-delay:-${(r()*3).toFixed(2)}s"><g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc.toFixed(2)})" opacity="${op*0.9}">
+        <path d="M-11,0 L11,0 L7,5 L-7,5 Z" fill="${p.hillFrontDark}"/>
+        <path d="M0,-2 L0,-20 L9,-4 Z" fill="#fff" opacity=".75"/><path d="M-1.5,-3 L-1.5,-15 L-8,-3 Z" fill="#fff" opacity=".55"/></g></g>`; }
+    return `${isl}<rect x="0" y="${wl}" width="${w}" height="${h-wl}" fill="${p.hillBack}" opacity="${op*0.5}"/>
+      <rect x="0" y="${h-30}" width="${w}" height="30" fill="${p.hillFront}" opacity="${op*0.35}"/>${waves}${boats}`;
   }},
   desert:  {label:'Desert dunes', render:(p,w,h,op)=>{
     const fa = wxNoise(71,[[520,1],[240,.35]]), fb = wxNoise(83,[[380,1],[170,.3]]), r = wxRandom(3);
@@ -11155,45 +11156,15 @@ const WEATHER_SETS = {
       cacti += `<path d="M${x.toFixed(1)},${yb.toFixed(1)} L${x.toFixed(1)},${(yb-28).toFixed(1)} M${(x-6).toFixed(1)},${(yb-20).toFixed(1)} L${(x-12).toFixed(1)},${(yb-14).toFixed(1)} M${(x+6).toFixed(1)},${(yb-22).toFixed(1)} L${(x+12).toFixed(1)},${(yb-16).toFixed(1)}" stroke="${p.hillFrontDark}" stroke-width="4" stroke-linecap="round" fill="none" opacity="${op*0.85}"/>`; }
     return `<path d="${wxRidge(fa,w,h,h-34,16)}" fill="${p.hillBack}" opacity="${op*0.8}"/><path d="${wxRidge(fb,w,h,h-16,10)}" fill="${p.hillFront}" opacity="${op}"/>${cacti}`;
   }},
-  forest:  {label:'Forest', render:(p,w,h,op)=>{
-    const r = wxRandom(17); let back = '', front = '';
-    for(let x=0; x<w; x+=22+r()*18){ const th = 44+r()*26;
-      back += `<polygon points="${x.toFixed(1)},${(h-14-th).toFixed(1)} ${(x-13).toFixed(1)},${h-14} ${(x+13).toFixed(1)},${h-14}" fill="${p.hillBack}" opacity="${op*0.55}"/>`; }
-    for(let x=10, i=0; x<w; x+=26+r()*16, i++){ const th = 54+r()*34;
-      front += `<polygon points="${x.toFixed(1)},${(h-th).toFixed(1)} ${(x-15).toFixed(1)},${h-9} ${(x+15).toFixed(1)},${h-9}" fill="${i%2?p.hillFront:p.hillBack}" opacity="${op*(i%2?1:0.75)}"/>`; }
-    return `${back}${front}<rect x="0" y="${h-9}" width="${w}" height="9" fill="${p.hillFrontDark}" opacity="${op*0.8}"/>`;
-  }},
-  lake:    {label:'Lake reflection', render:(p,w,h,op)=>{
-    const fa = wxNoise(91,[[500,1],[220,.45]]), fb = wxNoise(97,[[360,1],[160,.4]]), lakeTop = h-18;
-    return `<path d="${wxRidge(fa,w,h,80,11,lakeTop)}" fill="${p.hillBack}" opacity="${op*0.85}"/>
-      <path d="${wxRidge(fb,w,h,h-58,24,lakeTop)}" fill="${p.hillFront}" opacity="${op}"/>
-      <rect x="0" y="${lakeTop}" width="${w}" height="18" fill="${p.hillBack}" opacity="${op*0.3}"/>
-      <path class="wx-wave" d="${wxWaveLine(w,h-10,60,4)}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.4}"/>
-      <path class="wx-wave" style="animation-delay:-1.6s" d="${wxWaveLine(w,h-4,76,3)}" stroke="${p.hillFront}" stroke-width="1.5" fill="none" opacity="${op*0.3}"/>`;
-  }},
-  meadow:  {label:'Meadow', render:(p,w,h,op)=>{
-    const fa = wxNoise(101,[[480,1],[210,.4]]), fg = wxNoise(107,[[300,1],[130,.35]]), r = wxRandom(21);
-    let flowers = '';
-    for(let i=0;i<70;i++){ const x = r()*w, gy = h-24-7*fg(x), y = gy+4+r()*(h-gy-8);
-      flowers += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2" fill="${p.sun||p.moon}" opacity="${op*0.6}"/>`; }
-    return `<path d="${wxRidge(fa,w,h,h-46,10)}" fill="${p.hillBack}" opacity="${op*0.5}"/><path d="${wxRidge(fg,w,h,h-24,7)}" fill="${p.hillFront}" opacity="${op*0.9}"/>${flowers}`;
-  }},
-  savanna: {label:'Savanna', render:(p,w,h,op)=>{
-    const fa = wxNoise(111,[[440,1],[200,.3]]), fg = wxNoise(113,[[360,1],[150,.3]]), r = wxRandom(8);
-    let trees = '';
-    for(let i=0;i<7;i++){ const x = (i+.25+r()*.5)*w/7, gy = h-14-5*fg(x), th = 28+r()*22, rx = 24+r()*14;
-      trees += `<path d="M${x.toFixed(1)},${(gy+2).toFixed(1)} L${x.toFixed(1)},${(gy-th).toFixed(1)}" stroke="${p.hillFrontDark}" stroke-width="4" opacity="${op}"/>
-        <ellipse cx="${x.toFixed(1)}" cy="${(gy-th-3).toFixed(1)}" rx="${rx.toFixed(1)}" ry="${(7+r()*3).toFixed(1)}" fill="${p.hillFrontDark}" opacity="${op*0.9}"/>`; }
-    return `<path d="${wxRidge(fa,w,h,h-30,6)}" fill="${p.hillBack}" opacity="${op*0.4}"/><path d="${wxRidge(fg,w,h,h-14,5)}" fill="${p.hillFront}" opacity="${op*0.85}"/>${trees}`;
-  }},
   minimal: {label:'Minimal', render:(p,w,h,op)=>`
     <rect x="0" y="${h-14}" width="${w}" height="14" fill="${p.hillFront}" opacity="${op*0.7}"/>`},
 };
-
+/* The saved scene, or the default if it names one that no longer exists (older versions had more). */
+function weatherSceneKey(){ return WEATHER_SETS[PREFS.weatherAmbienceSet] ? PREFS.weatherAmbienceSet : 'ocean'; }
 /* ===== Sky geometry (shared by the full render and the once-a-minute in-place update) ===== */
 const WX_H = 150, WX_W = 1920;   /* one canvas, drawn once — no repeating tiles */
 /* Where each scene's "ground line" sits, so the sun/moon can rise from and sink behind it. */
-const WX_HORIZON = {hills:92, mountains:102, ocean:110, city:118, desert:108, forest:124, lake:82, meadow:120, savanna:134, minimal:136};
+const WX_HORIZON = {ocean:110, beach:106, lagoon:104, plains:112, desert:108, minimal:136};
 
 /* Sun path, as keyframes: [hour, x (0 = left end of the arc, 1 = right end), elevation (0 = on the
    horizon, 1 = highest point, negative = below it), core radius, halo radius, halo strength].
@@ -11298,7 +11269,7 @@ function weatherCelestialMarkup(key, svg){
   const p = WEATHER_PERIODS[key], cc = WX_CLOUDS[key] || WX_CLOUDS.noon;
   const op = PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4;
   const hf = weatherHourNow();
-  const setKey = WEATHER_SETS[PREFS.weatherAmbienceSet] ? PREFS.weatherAmbienceSet : 'hills';
+  const setKey = weatherSceneKey();
   const hz = WX_HORIZON[setKey] || 92;
   /* The sun/moon crosses the whole visible hero: rising at the left (east) edge and setting at the
      right (west) edge. The visible strip is measured from the real hero, so it also fits phones. */
@@ -11414,7 +11385,7 @@ function renderWeatherAmbience(){
   // Scattered across the whole sky at seeded, uneven spacing and sizes (no repeating pattern).
   const cr = wxRandom(401), clouds = Array.from({length:15},(_,i)=>
     cloudFn(((i+.15+cr()*.7)*w/15).toFixed(0), (10+cr()*44).toFixed(0), (0.5+cr()*0.5).toFixed(2), 0.3+cr()*0.25, i)).join('');
-  const sceneFn = (WEATHER_SETS[PREFS.weatherAmbienceSet]||WEATHER_SETS.hills).render;
+  const sceneFn = WEATHER_SETS[weatherSceneKey()].render;
   const scene = sceneFn(p,w,h,op);   // one continuous scene across the full width
   const inner = `
     <defs>
@@ -11437,10 +11408,10 @@ function renderWeatherAmbience(){
   return `<svg class="weather-ambience" data-dim="${p.stars?1:0}" data-key="${key}" data-op="${op}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMaxYMax slice" aria-hidden="true" onclick="cycleWeatherAmbienceSet()"><title>Click to change the weather scene</title>${inner}</svg>`;
 }
 /* Clicking the weather illustration (or its "It's Night" label) on the Home hero cycles
-   through the 10 scene sets, live — same click-to-cycle pattern as the lockscreen clock/decor. */
+   through the scene sets, live — same click-to-cycle pattern as the lockscreen clock/decor. */
 function cycleWeatherAmbienceSet(){
   const keys = Object.keys(WEATHER_SETS);
-  const cur = PREFS.weatherAmbienceSet || 'hills';
+  const cur = weatherSceneKey();
   const next = keys[(keys.indexOf(cur)+1) % keys.length];
   PREFS.weatherAmbienceSet = next;
   savePrefs();
@@ -11877,10 +11848,8 @@ function skyPrecip(c, o){
   const nodes = [], H = c.H, T = o.T, x0 = c.x0-40, span = c.vis+80, rain = o.kind==='rain';
   const shade = skyEl(c.sky, `<rect x="${c.x0}" y="0" width="${c.vis}" height="${H}" fill="${o.storm?'#141B2B':'#1B2536'}"/>`, 'opacity:0');
   skyGo(shade, [{opacity:0, offset:0},{opacity:o.storm?.32:.16, offset:.12},{opacity:o.storm?.32:.16, offset:.88},{opacity:0, offset:1}], {duration:T, easing:'linear'}); nodes.push(shade);
-  if(o.storm){
-    let clouds = ''; for(let i=0;i<6;i++){ const x = c.x0 + (i+.5)*c.vis/6, r = skyRnd(38,58); clouds += `<ellipse cx="${x.toFixed(0)}" cy="${skyRnd(-4,8).toFixed(0)}" rx="${r.toFixed(0)}" ry="${skyRnd(16,24).toFixed(0)}" fill="#2B3345"/>`; }
-    const cl = skyEl(c.sky, clouds, 'opacity:0'); skyFade(cl, T, 1800, 2000); nodes.push(cl);
-  }
+  /* (A dark cloud-bank of ovals used to be drawn along the top edge for storms; removed — the darkened
+     sky, rain and lightning carry the effect on their own.) */
   const col = rain ? (c.dim ? '#BFD0F0' : '#DDEBFF') : '#FFFFFF';
   const front = c.front || c.sky;
   const build = (n, mk)=>{ let s = ''; for(let i=0;i<n;i++) s += mk(i, 0) + mk(i, -H); return s; };
@@ -23486,7 +23455,7 @@ function pageSettings(){
     <div class="field"><label><input type="checkbox" id="setWeatherAmbience" ${PREFS.weatherAmbience?'checked':''} onchange="previewWeatherAmbiencePrefs()"> Show weather ambience on the Home greeting</label></div>
     <div class="field"><label><input type="checkbox" id="setWeatherActivities" ${PREFS.weatherActivities!==false?'checked':''} onchange="previewWeatherAmbiencePrefs()"> Sky activities — planes, balloons, rockets, rain, snow and more, now and then</label></div>
     <div class="field-row">
-      <div class="field"><label>Scene</label><select id="setWeatherSet" onchange="previewWeatherAmbiencePrefs()">${Object.entries(WEATHER_SETS).map(([k,v])=>`<option value="${k}" ${(PREFS.weatherAmbienceSet||'hills')===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
+      <div class="field"><label>Scene</label><select id="setWeatherSet" onchange="previewWeatherAmbiencePrefs()">${Object.entries(WEATHER_SETS).map(([k,v])=>`<option value="${k}" ${weatherSceneKey()===k?'selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
       <div class="field"><label>Intensity</label><select id="setWeatherStyle" onchange="previewWeatherAmbiencePrefs()"><option value="soft" ${PREFS.weatherAmbienceStyle==='soft'?'selected':''}>Soft (subtle)</option><option value="vivid" ${PREFS.weatherAmbienceStyle==='vivid'?'selected':''}>Vivid (more visible)</option></select></div>
     </div>
     <p class="field-hint">Pick the scene that's drawn behind the greeting — the colours still change automatically with the time of day.</p>
@@ -23588,7 +23557,7 @@ const THEME_SETS = {
   midnight: {label:'Midnight Study', theme:'dark', palette:'slate', appFont:'system', headingFont:'system', headingWeight:'bold', clockFont:'digital', dateFont:'default', iconPack:'outline', transitionStyle:'fade', sectionStyle:'glassy', sectionOpacity:60, topbarStyle:'glassy'},
   vintageReadingRoom: {label:'Vintage Reading Room', theme:'light', palette:'crimson', appFont:'garamond', headingFont:'playfair', headingWeight:'default', clockFont:'elegant', dateFont:'elegant', iconPack:'vintage', transitionStyle:'flip', sectionStyle:'solid', topbarStyle:'solid'},
   modernMinimal: {label:'Modern Minimal', theme:'light', palette:'ocean', appFont:'montserrat', headingFont:'montserrat', headingWeight:'bold', clockFont:'modern', dateFont:'default', iconPack:'minimal', transitionStyle:'slide', sectionStyle:'blank', topbarStyle:'blank'},
-  natureRetreat: {label:'Nature Retreat', theme:'light', palette:'forest', appFont:'nunito', headingFont:'nunito', headingWeight:'default', clockFont:'rounded', dateFont:'default', iconPack:'nature', transitionStyle:'bounce', sectionStyle:'solid', topbarStyle:'solid', weatherAmbienceStyle:'vivid', weatherAmbienceSet:'hills'},
+  natureRetreat: {label:'Nature Retreat', theme:'light', palette:'forest', appFont:'nunito', headingFont:'nunito', headingWeight:'default', clockFont:'rounded', dateFont:'default', iconPack:'nature', transitionStyle:'bounce', sectionStyle:'solid', topbarStyle:'solid', weatherAmbienceStyle:'vivid', weatherAmbienceSet:'plains'},
   royalBold: {label:'Royal & Bold', theme:'dark', palette:'royal', appFont:'poppins', headingFont:'poppins', headingWeight:'black', clockFont:'modern', dateFont:'default', iconPack:'bold', transitionStyle:'bounce', sectionStyle:'glassy', sectionOpacity:70, topbarStyle:'glassy'},
 };
 function allThemeSets(){
