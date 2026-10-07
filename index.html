@@ -5176,7 +5176,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'boltEmoji',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'starburst',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -5405,12 +5405,12 @@ const QUICK_ACTION_ICONS = {
 };
 function applyQuickActionIcon(id){
   const btn = document.getElementById('quickActionBtn'); if(!btn) return;
-  const icon = QUICK_ACTION_ICONS[id || PREFS.quickActionIcon] || QUICK_ACTION_ICONS.boltEmoji;
+  const icon = QUICK_ACTION_ICONS[id || PREFS.quickActionIcon] || QUICK_ACTION_ICONS.starburst;
   btn.innerHTML = `<svg viewBox="0 0 22 22" width="24" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${icon.svg}</svg>`;
 }
 let pendingQuickActionIcon = null;
 function quickActionIconPickerHtml(){
-  const current = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
+  const current = pendingQuickActionIcon || PREFS.quickActionIcon || 'starburst';
   return `<div class="sound-chip-grid">
     ${Object.entries(QUICK_ACTION_ICONS).map(([id,ic])=>`
       <div class="sound-chip ${current===id?'selected':''}" data-qa-icon-id="${id}" onclick="previewQuickActionIcon('${id}')" title="${esc(ic.desc)}">
@@ -5430,7 +5430,7 @@ function previewQuickActionIcon(id){
   });
 }
 async function saveQuickActionIconPrefs(silent){
-  PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'boltEmoji';
+  PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'starburst';
   pendingQuickActionIcon = null;
   console.log('DEBUG: Saving quickActionIcon =', PREFS.quickActionIcon);
   applyQuickActionIcon();
