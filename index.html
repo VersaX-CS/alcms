@@ -18991,20 +18991,20 @@ function skipTypeBadge(t){
   return t==='CLASS' ? '<span class="badge" style="font-size:10.5px;background:rgba(74,144,226,.13);color:#4a90e2">Class period</span>'
                      : '<span class="badge" style="font-size:10.5px;background:rgba(155,89,182,.14);color:#9b59b6">Individual free</span>';
 }
-function skipStatusCell(r){
+function skipStatusCell(r, selectable){
   const staff = isStaff();
   if(r.status==='EXCUSED'){
     const t = `Excused${r.by?' by '+r.by:''}${r.reason?' — '+r.reason:''}`;
     return `<span class="badge" title="${esc(t)}" style="background:rgba(74,144,226,.15);color:#4a90e2">⚑ Excused</span>${r.reason?` <span style="font-size:11px;color:var(--muted)">${esc(r.reason)}</span>`:''}${staff?` <a href="#" onclick="unmarkStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none">✕</a>`:''}`;
   }
-  return `<span class="badge gold">Skipped</span>${staff?` <a href="#" onclick="markStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}','${esc(r.cls)}');return false;" style="color:var(--muted-label);text-decoration:underline;font-size:11px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(r.id)}','${esc(r.dateKey)}');return false;" title="Absent from school that day — exempts them from every period" style="color:var(--muted-label);text-decoration:underline;font-size:11px">absent</a>`:''}`;
+  return `${(staff && selectable)? excuseCb(r.id, r.dateKey, r.period, r.cls) : ''}<span class="badge gold">Skipped</span>${staff?` <a href="#" onclick="markStudentExcused('${esc(r.id)}','${esc(r.dateKey)}','${esc(r.period)}','${esc(r.cls)}');return false;" style="color:var(--muted-label);text-decoration:underline;font-size:11px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(r.id)}','${esc(r.dateKey)}');return false;" title="Absent from school that day — exempts them from every period" style="color:var(--muted-label);text-decoration:underline;font-size:11px">absent</a>`:''}`;
 }
-function skipRecordsTableHtml(recs, withStudent){
+function skipRecordsTableHtml(recs, withStudent, selectable){
   return `<div class="table-wrap"><table class="datatable"><thead><tr><th>Date</th><th>Period</th>${withStudent?'<th>Student</th><th>Class</th>':''}<th>Type</th><th>Status</th></tr></thead><tbody>
     ${recs.map(r=>`<tr><td>${esc(fmtDate(r.dateKey))} <span style="color:var(--muted);font-size:11px">${esc(r.day.slice(0,3))}</span></td>
       <td>${esc(r.period)}${r.time?` <span style="color:var(--muted);font-size:11px">${esc(r.time)}</span>`:''}</td>
       ${withStudent?`<td>${esc(r.name)}</td><td>${esc(r.cls)}</td>`:''}
-      <td>${skipTypeBadge(r.type)}<div style="font-size:11px;color:var(--muted)">${esc(r.detail)}</div></td><td>${skipStatusCell(r)}</td></tr>`).join('')}
+      <td>${skipTypeBadge(r.type)}<div style="font-size:11px;color:var(--muted)">${esc(r.detail)}</div></td><td>${skipStatusCell(r, selectable)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function refreshSkipModalBody(){
@@ -19031,7 +19031,7 @@ function refreshSkipModalBody(){
           ${s.unexplained?`<span class="badge gold">${s.unexplained} skipped</span>`:''}${s.excused?`<span class="badge" style="background:rgba(74,144,226,.15);color:#4a90e2">${s.excused} excused</span>`:''}
           <span style="font-size:11px;color:var(--muted)">${s.classCount} class · ${s.indivCount} individual · last ${esc(fmtDate(s.last))}</span>
         </summary>
-        <div style="margin-top:8px">${skipRecordsTableHtml(s.records,false)}
+        <div style="margin-top:8px">${skipRecordsTableHtml(s.records,false,true)}
           <div style="margin-top:6px"><button class="btn secondary small" onclick="closeSkippedStudentsModal(true);openMemberProfile('${esc(s.id)}');memberProfileTab='skips';render();">Open profile</button></div></div>
       </details>`).join('');
   } else {
@@ -19041,14 +19041,16 @@ function refreshSkipModalBody(){
       <h4 style="margin:12px 0 6px;font-size:13px">${esc(fmtDate(d))} <span style="color:var(--muted);font-weight:400">${esc(weekdayForDateKey(d).charAt(0)+weekdayForDateKey(d).slice(1).toLowerCase())}</span></h4>
       <div class="table-wrap"><table class="datatable"><thead><tr><th style="width:130px">Period</th><th>Students who skipped</th></tr></thead><tbody>
       ${Object.keys(byDate[d]).sort((a,b)=>periodSortKey(a)-periodSortKey(b)).map(p=>`<tr><td>${esc(p)} <span style="color:var(--muted);font-size:11px">${esc(byDate[d][p][0].time||'')}</span></td>
-        <td style="display:flex;flex-wrap:wrap;gap:4px 12px">${byDate[d][p].map(r=>`<span style="white-space:nowrap">${esc(r.name)} <span style="color:var(--muted);font-size:11px">${esc(r.cls)}</span> ${skipTypeBadge(r.type)} ${skipStatusCell(r)}</span>`).join('')}</td></tr>`).join('')}
+        <td style="display:flex;flex-wrap:wrap;gap:4px 12px">${byDate[d][p].map(r=>`<span style="white-space:nowrap">${esc(r.name)} <span style="color:var(--muted);font-size:11px">${esc(r.cls)}</span> ${skipTypeBadge(r.type)} ${skipStatusCell(r,true)}</span>`).join('')}</td></tr>`).join('')}
       </tbody></table></div>`).join('');
   }
   host.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
       ${chip(new Set(un.map(r=>r.id)).size,'Students who skipped','#e67e22')}${chip(un.length,'Unexplained skips','#e74c3c')}${chip(ex.length,'Excused','#4a90e2')}
       ${chip(all.filter(r=>r.type==='CLASS').length,'Class-period','#27ae60')}${chip(all.filter(r=>r.type==='INDIVIDUAL').length,'Individual free','#9b59b6')}${chip(absentOut.length,'Periods exempt (absent)','#7f8c8d')}
-    </div>${note?`<p class="field-hint" style="margin:-4px 0 10px">Records for this range only go back to ${esc(fmtDate(skipTrackingStart()))}, when skip tracking began.</p>`:''}${body}`;
+    </div>${note?`<p class="field-hint" style="margin:-4px 0 10px">Records for this range only go back to ${esc(fmtDate(skipTrackingStart()))}, when skip tracking began.</p>`:''}
+    <div data-exc-group>${(isStaff() && recs.filter(r=>r.status==='UNEXPLAINED').length>1) ? excuseToolbar('Select all unexplained shown') : ''}${body}</div>`;
+  syncAllExcuseGroups(host);
 }
 function printSkippedStudents(){
   const {recs, bounds} = currentSkipFilterRecords(false);
@@ -19402,6 +19404,73 @@ function unmarkStudentExcused(userId, dateKey, period){
   refreshOpenScheduleModal();
   toast('Excuse removed — back to unexplained');
 }
+/* ---------- Batch excuse ----------
+   Tick several unexplained skips (in Today's Schedule or the Skipped Library Schedule report) and excuse
+   them all in one go with a single reason. Ticks are kept in excuseSel so they survive a re-render;
+   each [data-exc-group] area (one class's list, one period, or the whole report) acts on its own ticks. */
+const excuseSel = new Set();
+function excuseKey(id, dateKey, period){ return id+'|'+dateKey+'|'+String(period||'').toLowerCase(); }
+function excuseCb(id, dateKey, period, cls){
+  return `<input type="checkbox" class="exc-cb" data-id="${esc(id)}" data-date="${esc(dateKey)}" data-period="${esc(period)}" data-cls="${esc(cls||'')}" ${excuseSel.has(excuseKey(id,dateKey,period))?'checked':''} onchange="toggleExcuseSel(this)" title="Tick to excuse several students at once" style="margin:0 4px 0 0;vertical-align:middle;cursor:pointer">`;
+}
+function excuseToolbar(label){
+  return `<div class="exc-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 6px;font-size:11.5px">
+    <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:var(--muted-label)"><input type="checkbox" class="exc-all" onchange="toggleExcuseGroup(this)" style="margin:0"> ${esc(label||'Select all unexplained')}</label>
+    <button type="button" class="btn small exc-go" disabled onclick="excuseSelected(this)">Excuse selected (<span class="exc-count">0</span>)</button>
+  </div>`;
+}
+function syncExcuseGroup(g){
+  if(!g) return;
+  const cbs = [...g.querySelectorAll('.exc-cb')], n = cbs.filter(c=>c.checked).length;
+  g.querySelectorAll('.exc-count').forEach(el=> el.textContent = n);
+  g.querySelectorAll('.exc-go').forEach(b=> b.disabled = n===0);
+  g.querySelectorAll('.exc-all').forEach(a=>{ a.checked = cbs.length>0 && n===cbs.length; a.indeterminate = n>0 && n<cbs.length; });
+}
+function toggleExcuseSel(cb){
+  const k = excuseKey(cb.dataset.id, cb.dataset.date, cb.dataset.period);
+  if(cb.checked) excuseSel.add(k); else excuseSel.delete(k);
+  syncExcuseGroup(cb.closest('[data-exc-group]'));
+}
+function toggleExcuseGroup(allCb){
+  const g = allCb.closest('[data-exc-group]'); if(!g) return;
+  g.querySelectorAll('.exc-cb').forEach(c=>{ c.checked = allCb.checked; toggleExcuseSelQuiet(c); });
+  syncExcuseGroup(g);
+}
+function toggleExcuseSelQuiet(cb){
+  const k = excuseKey(cb.dataset.id, cb.dataset.date, cb.dataset.period);
+  if(cb.checked) excuseSel.add(k); else excuseSel.delete(k);
+}
+/* Runs after the schedule/report HTML is (re)built, so counts and "select all" reflect restored ticks. */
+function syncAllExcuseGroups(root){ (root||document).querySelectorAll('[data-exc-group]').forEach(syncExcuseGroup); }
+function excuseSelected(btn){
+  if(!isStaff()) return requireStaff('mark students excused');
+  const g = btn.closest('[data-exc-group]'); if(!g) return;
+  const items = [...g.querySelectorAll('.exc-cb:checked')].map(c=>({id:c.dataset.id, dateKey:c.dataset.date, period:c.dataset.period, cls:c.dataset.cls}));
+  if(!items.length) return toast('Tick at least one student first');
+  const n = items.length;
+  promptModal(`One reason will be recorded for all ${n} selected student${n===1?'':'s'}.\nWhy ${n===1?'was this student':'were they'} permitted to skip?`, (reason)=>{
+    if(!Array.isArray(DB.excusedSkips)) DB.excusedSkips = [];
+    const by = (SESSION&&SESSION.fullName)||(SESSION&&SESSION.username)||'Staff', at = new Date().toISOString(), why = reason.trim();
+    const keys = new Set(items.map(i=>excuseKey(i.id,i.dateKey,i.period)));
+    // Replace any existing excuse for the same student/date/period rather than stacking duplicates.
+    DB.excusedSkips = DB.excusedSkips.filter(x=> !keys.has(excuseKey(x.id,x.dateKey,x.period)));
+    items.slice().reverse().forEach(i=> DB.excusedSkips.unshift({id:i.id, cls:i.cls||'', dateKey:i.dateKey, period:i.period, reason:why, by, at}));
+    keys.forEach(k=> excuseSel.delete(k));
+    saveDB(`Excused ${n} student${n===1?'':'s'} in a batch`);
+    render();
+    refreshOpenScheduleModal();
+    if(document.getElementById('skBody')) refreshSkipModalBody();
+    toast(`${n} student${n===1?'':'s'} marked excused`);
+  }, {title:`Excuse ${n} student${n===1?'':'s'}`, placeholder:'e.g. Sent to sick bay, approved by Mrs Adeyemi', confirmLabel:`Excuse ${n}`});
+}
+/* Whenever a schedule/report area appears (or is rebuilt), restore its ticks and counts. */
+(function(){
+  const start = ()=>{ let t; new MutationObserver(ms=>{
+    if(ms.some(m=>[...m.addedNodes].some(n=>n.nodeType===1 && ((n.matches && n.matches('[data-exc-group]')) || (n.querySelector && n.querySelector('[data-exc-group]'))))))
+      { clearTimeout(t); t = setTimeout(()=>syncAllExcuseGroups(), 0); }
+  }).observe(document.body, {childList:true, subtree:true}); };
+  if(document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
 // The Quick Action "Today's Schedule" panel builds its own detached HTML rather than going
 // through the normal route render, so marking/unmarking an excuse from inside it needs its own
 // refresh call alongside the regular render().
@@ -19445,7 +19514,7 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses){
     }
     // Not checked in and not excused — a genuine no-show, distinct from a permitted skip.
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(243,156,18,0.08);border-radius:3px;border-left:3px solid #e67e22">
-      <span style="font-size:11px;color:#e67e22;font-weight:600">✗</span>
+      ${staff? excuseCb(s.id, dateKey, period, s.cls) : ''}<span style="font-size:11px;color:#e67e22;font-weight:600">✗</span>
       <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
       ${staff? `<a href="#" onclick="markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px;margin-left:2px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(s.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px">absent</a>`:''}
     </span>`;
@@ -19453,18 +19522,18 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses){
   // Each status gets its own row so the three groups never run together visually — a librarian
   // scanning for who still needs following up shouldn't have to pick unexplained names out of a
   // mixed list of checked-in and excused ones.
-  const group = (label, list)=> list.length ? `
+  const group = (label, list, extra='')=> list.length ? `
     <div style="margin-bottom:6px">
-      <div style="font-size:10.5px;color:var(--muted-label);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${esc(label)} (${list.length})</div>
+      <div style="font-size:10.5px;color:var(--muted-label);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${esc(label)} (${list.length})</div>${extra}
       <div style="display:flex;flex-wrap:wrap;gap:8px">${list.map(pill).join('')}</div>
     </div>` : '';
 
   return `
-    <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.05);border-radius:4px;font-size:12px">
+    <div data-exc-group style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.05);border-radius:4px;font-size:12px">
       <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedIn.length}/${total} checked in${excused.length? ` · ${excused.length} excused`:''}${unexplained.length? ` · ${unexplained.length} unexplained`:''}${absent.length? ` · ${absent.length} absent (exempt)`:''}</div>
       ${group('Checked in', checkedIn)}
       ${group('Excused', excused)}
-      ${group('Unexplained', unexplained)}
+      ${group('Unexplained', unexplained, staff && unexplained.length>1 ? excuseToolbar('Select all unexplained') : '')}
       ${group('Absent from school — exempt', absent)}
     </div>
   `;
@@ -21404,7 +21473,7 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
   return parts.map(([cls,info])=>{
     // Each class is judged against its OWN period time, not the whole-school earliest start.
     const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride, cls) : !!dateKey;
-    let checkedCount = 0, excusedCount = 0, absentCount = 0;
+    let checkedCount = 0, excusedCount = 0, absentCount = 0, skippedRows = 0;
     const rows = info.students.map(name=>{
       if(!dateKey) return esc(name);
       const u = classStudents(cls).find(s=>s.name===name);
@@ -21419,7 +21488,7 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
       // same lookup, same mark/unmark action, just a leaner inline badge to fit this compact list.
       const excuse = (u && started && !absent && !checkedIn && period) ? findExcuseForStudent(u.id, dateKey, period) : null;
       if(excuse) excusedCount++;
-      let badge = '';
+      let badge = '', pre = '';
       if(absent){
         badge = ' <span class="badge grey" title="Absent from school — exempt" style="font-size:9.5px;padding:1px 5px;margin-left:3px">absent</span>';
         if(staff) badge += ` <a href="#" onclick="unmarkAbsent('${esc(u.id)}','${esc(dateKey)}');return false;" title="Remove absence" style="color:#7f8c8d;text-decoration:none;font-size:9.5px">✕</a>`;
@@ -21432,14 +21501,15 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
           if(staff && period) badge += ` <a href="#" onclick="unmarkStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none;font-size:9.5px">✕</a>`;
         } else {
           badge = ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>';
+          if(staff && period){ pre = excuseCb(u.id, dateKey, period, cls); skippedRows++; }
           if(staff && period) badge += ` <a href="#" onclick="markStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}','${esc(cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(u.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">absent</a>`;
         }
       }
-      return `<span style="white-space:nowrap">${esc(name)}${badge}</span>`;
+      return `<span style="white-space:nowrap">${pre}${esc(name)}${badge}</span>`;
     });
     const unexplainedCount = info.students.length - checkedCount - excusedCount - absentCount;
     const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length-absentCount}</strong> checked in${excusedCount? ` · ${excusedCount} excused`:''}${unexplainedCount? ` · ${unexplainedCount} unexplained`:''}${absentCount? ` · ${absentCount} absent (exempt)`:''}` : '';
-    return `<details class="fp-details" style="margin-top:4px"><summary><span class="fp-chevron">▶</span>${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div style="font-size:12px;margin:4px 0 0 10px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></details>`;
+    return `<details class="fp-details" style="margin-top:4px"><summary><span class="fp-chevron">▶</span>${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div data-exc-group style="margin:4px 0 0 10px">${skippedRows>1 ? excuseToolbar('Select all unexplained') : ''}<div style="font-size:12px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></div></details>`;
   }).join('');
 }
 /* Shared by autoBuildLibrarySchedule (the explicit, confirm-then-apply admin action) and
