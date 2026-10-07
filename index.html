@@ -3693,7 +3693,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
    paint), offset with per-element delays so nothing pulses in unison, and switched off entirely
    for anyone whose system asks for reduced motion. */
 .weather-ambience .wx-twinkle{ animation:wxTwinkle 3.6s ease-in-out infinite;}
-.weather-ambience .wx-cloud{ animation:wxDrift 30s ease-in-out infinite alternate;}
+.weather-ambience .wx-cloud{ animation:wxDrift 90s ease-in-out infinite alternate;}
 .weather-ambience .wx-glow, .weather-ambience .wx-core{ transform-box:fill-box; transform-origin:center; animation:wxGlow 6s ease-in-out infinite;}
 .weather-ambience .wx-core{ animation-name:wxCore; animation-duration:7s;}
 .weather-ambience .wx-float{ animation:wxFloat 9s ease-in-out infinite;}
@@ -3701,14 +3701,15 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 .weather-ambience .wx-shoot{ opacity:0; animation:wxShoot 14s linear infinite;}
 .weather-label-dot{ animation:wxDot 2.8s ease-in-out infinite;}
 @keyframes wxTwinkle{ 0%,100%{ opacity:var(--o,.5);} 50%{ opacity:calc(var(--o,.5) * .2);} }
-@keyframes wxDrift{ from{ transform:translateX(-22px);} to{ transform:translateX(34px);} }
+/* Clouds sweep a long way each way (range set per cloud in --r) — far faster than the sun moves, so any cloud passes over it and moves on. */
+@keyframes wxDrift{ from{ transform:translateX(calc(var(--r,200px) * -1));} to{ transform:translateX(var(--r,200px));} }
 @keyframes wxGlow{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.13);} }
 @keyframes wxCore{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.05);} }
 @keyframes wxFloat{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-3px);} }
 @keyframes wxWave{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-2.5px);} }
 @keyframes wxShoot{ 0%{ opacity:0; transform:translate(0,0);} 2%{ opacity:1;} 9%{ opacity:0; transform:translate(-150px,53px);} 100%{ opacity:0; transform:translate(-150px,53px);} }
-.weather-ambience .wx-suncloud{ animation:wxSunDrift 30s ease-in-out infinite alternate;}
-@keyframes wxSunDrift{ from{ transform:translateX(-14px);} to{ transform:translateX(14px);} }
+.weather-ambience .wx-suncloud{ animation:wxSunDrift 70s ease-in-out infinite alternate;}
+@keyframes wxSunDrift{ from{ transform:translateX(calc(var(--r,200px) * -1));} to{ transform:translateX(var(--r,200px));} }
 @keyframes wxDot{ 0%,100%{ transform:scale(1); opacity:1;} 50%{ transform:scale(1.25); opacity:.7;} }
 @media (prefers-reduced-motion: reduce){
   .weather-ambience *, .weather-label-dot{ animation:none !important;}
@@ -11209,13 +11210,13 @@ const WX_MOON_FRAMES = [
 const WX_CLOUDS = {
   lateNight: {tint:'#8FA2CC', amb:.22, chance:.35, strength:.30, second:0},
   dawn:      {tint:'#B4C0E0', amb:.30, chance:.40, strength:.30, second:0},
-  sunrise:   {tint:'#E8FBF4', amb:.35, chance:.60, strength:.35, second:.10},
-  morning:   {tint:'#FFFFFF', amb:.55, chance:.75, strength:.45, second:.25},
+  sunrise:   {tint:'#E8FBF4', amb:.35, chance:.40, strength:.35, second:.10},
+  morning:   {tint:'#FFFFFF', amb:.55, chance:.50, strength:.45, second:.25},
   noon:      {tint:'#FFFFFF', amb:.25, chance:.25, strength:.30, second:0},
-  afternoon: {tint:'#FFE4D6', amb:.70, flat:true, chance:1.0, strength:.85, second:.70},
-  goldenHour:{tint:'#FFE8C2', amb:.65, flat:true, chance:.80, strength:.65, second:.30},
-  sunset:    {tint:'#FFC9AA', amb:.70, flat:true, chance:.85, strength:.60, second:.35},
-  evening:   {tint:'#DCCFEF', amb:.55, flat:true, chance:.80, strength:.55, second:.25},
+  afternoon: {tint:'#FFE4D6', amb:.70, flat:true, chance:.75, strength:.85, second:.70},
+  goldenHour:{tint:'#FFE8C2', amb:.65, flat:true, chance:.55, strength:.65, second:.30},
+  sunset:    {tint:'#FFC9AA', amb:.70, flat:true, chance:.55, strength:.60, second:.35},
+  evening:   {tint:'#DCCFEF', amb:.55, flat:true, chance:.50, strength:.55, second:.25},
   night:     {tint:'#8FA4CE', amb:.30, chance:.50, strength:.30, second:0}
 };
 /* Current time as a decimal hour. Add ?wxhour=15.5 to the page address to preview any time of day. */
@@ -11316,11 +11317,11 @@ function weatherCelestialMarkup(key, svg){
       const dx = (i ? 14 : -12) + (rnd(4+i)-.5)*14;
       const dy = (i ? -7 : 5) + (rnd(6+i)-.5)*8;
       const sc = ((i ? 0.8 : 1.15) + rnd(8+i)*0.3) * (0.85 + 0.35*cc.strength);   /* heavier cloud = bigger cloud */
-      const dur = 24 + rnd(10+i)*14;
+      const dur = 55 + rnd(10+i)*40, range = 190 + rnd(12+i)*60 + i*25;   /* a slow pass across and clear of the sun, not a hover on it */
       const phase = ((Date.now()/1000) % (2*dur)).toFixed(2);   /* keeps the drift continuous across updates */
       /* Solid (never see-through) so it really hides the sun/moon behind it; only its colour is toned to the sky. */
       const col = wxMix(cc.tint, p.skyBot, 0.55 + 0.4*op);
-      over += `<g class="wx-suncloud" style="animation-duration:${dur.toFixed(1)}s;animation-delay:-${phase}s;${i?'animation-direction:alternate-reverse;':''}">
+      over += `<g class="wx-suncloud" style="animation-duration:${dur.toFixed(1)}s;animation-delay:-${phase}s;--r:${range.toFixed(0)}px;${i?'animation-direction:alternate-reverse;':''}">
         <g transform="translate(${(cx+dx).toFixed(1)},${(cy+dy).toFixed(1)}) scale(${sc.toFixed(2)})">${wxCloudShape(cc.flat, col)}</g></g>`;
     }
   }
@@ -11395,11 +11396,11 @@ function renderWeatherAmbience(){
   const cloudFn = (x,y,scale,fade,idx)=>{
     const col = wxMix(cc.tint, p.skyBot, Math.min(0.92, 0.3 + 1.1*fade*ambScale*op));
     return `
-      <g class="wx-cloud" style="animation-duration:${22 + (idx*7)%17}s;animation-delay:-${(idx*5.3)%19}s"><g transform="translate(${x},${y}) scale(${scale})">${wxCloudShape(cc.flat, col)}</g></g>`;
+      <g class="wx-cloud" style="animation-duration:${70 + (idx*13)%60}s;animation-delay:-${((idx*17.3)%130).toFixed(1)}s;--r:${170 + (idx*37)%100}px"><g transform="translate(${x},${y}) scale(${scale})">${wxCloudShape(cc.flat, col)}</g></g>`;
   };
   // Scattered across the whole sky at seeded, uneven spacing and sizes (no repeating pattern).
-  const cr = wxRandom(401), clouds = Array.from({length:15},(_,i)=>
-    cloudFn(((i+.15+cr()*.7)*w/15).toFixed(0), (10+cr()*44).toFixed(0), (0.5+cr()*0.5).toFixed(2), 0.3+cr()*0.25, i)).join('');
+  const cr = wxRandom(401), clouds = Array.from({length:12},(_,i)=>
+    cloudFn(((i+.15+cr()*.7)*w/12).toFixed(0), (10+cr()*44).toFixed(0), (0.5+cr()*0.5).toFixed(2), 0.3+cr()*0.25, i)).join('');
   const sceneFn = WEATHER_SETS[weatherSceneKey()].render;
   const scene = sceneFn(p,w,h,op);   // one continuous scene across the full width
   const inner = `
