@@ -11456,9 +11456,15 @@ function weatherCelestialMarkup(key, svg){
   const r = f[2], halo = f[3], hop = f[4];
   let body;
   if(isMoon){
+    /* Same idea as the sun: ONE radial gradient with a smootherstep falloff instead of two stacked flat discs,
+       so the moonlight fades out smoothly with no visible edges or rings. */
+    const mOp = Math.min(0.95, op*hop*1.7), mR = (halo*2.5).toFixed(1);
+    const mEase = t => { const s = 1-t; return s*s*s*(s*(s*6-15)+10); };
+    const mStops = [0,.08,.16,.25,.35,.45,.55,.65,.75,.85,.93,1].map(t=>
+      `<stop offset="${t}" stop-color="${p.moon}" stop-opacity="${(mOp*mEase(t)).toFixed(3)}"/>`).join('');
     body = `<g class="wx-float">
-        <circle class="wx-glow" cx="${cx}" cy="${cy}" r="${halo}" fill="${p.moon}" opacity="${(op*hop*0.8).toFixed(3)}"/>
-        <circle class="wx-glow" style="animation-delay:-2s" cx="${cx}" cy="${cy}" r="${(halo*0.62).toFixed(1)}" fill="${p.moon}" opacity="${(op*hop*1.2).toFixed(3)}"/>
+        <radialGradient id="wxMoonGlow-${key}" cx="50%" cy="50%" r="50%">${mStops}</radialGradient>
+        <circle class="wx-glow" cx="${cx}" cy="${cy}" r="${mR}" fill="url(#wxMoonGlow-${key})"/>
         <mask id="wxMoonMask-${key}" maskUnits="userSpaceOnUse" x="${cx-60}" y="${cy-60}" width="120" height="120"><rect x="${cx-60}" y="${cy-60}" width="120" height="120" fill="#fff"/><circle cx="${(cx+r*0.42).toFixed(1)}" cy="${(cy-r*0.31).toFixed(1)}" r="${(r*0.88).toFixed(1)}" fill="#000"/></mask>
         <g clip-path="url(#wxHz-${key})"><g mask="url(#wxMoonMask-${key})">
           <circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.moon}" opacity="${op}"/>
