@@ -5359,6 +5359,14 @@ async function loadPrefs(){
       const loaded = JSON.parse(v);
       console.log('DEBUG: loadPrefs loaded quickActionIcon =', loaded.quickActionIcon);
       PREFS = Object.assign(PREFS, loaded); 
+      /* Every save used to write the whole PREFS object, so older saves carry the old default ('boltEmoji')
+         as if it had been chosen, and that kept overriding the new default. An icon only counts as the
+         person's own pick if they chose it (quickActionIconChosen) or it is something other than the old
+         default; otherwise they get the current default. */
+      if(!PREFS.quickActionIconChosen){
+        if(!loaded.quickActionIcon || loaded.quickActionIcon==='boltEmoji') PREFS.quickActionIcon = DEFAULT_PREFS.quickActionIcon;
+        else PREFS.quickActionIconChosen = true;
+      }
     }
   }catch(e){
     console.error('DEBUG: loadPrefs error:', e);
@@ -5406,7 +5414,9 @@ const QUICK_ACTION_ICONS = {
 function applyQuickActionIcon(id){
   const btn = document.getElementById('quickActionBtn'); if(!btn) return;
   const icon = QUICK_ACTION_ICONS[id || PREFS.quickActionIcon] || QUICK_ACTION_ICONS.starburst;
+  const badge = btn.querySelector('.quick-badge');   /* keep a pending-items badge if one is showing */
   btn.innerHTML = `<svg viewBox="0 0 22 22" width="24" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${icon.svg}</svg>`;
+  if(badge) btn.appendChild(badge);
 }
 let pendingQuickActionIcon = null;
 function quickActionIconPickerHtml(){
@@ -5423,11 +5433,16 @@ function quickActionIconPickerHtml(){
   </div>`;
 }
 function previewQuickActionIcon(id){
-  pendingQuickActionIcon = id;
+  /* Picking an icon now saves it immediately (no separate Save click needed), so it persists across reloads. */
+  if(!QUICK_ACTION_ICONS[id]) return;
+  pendingQuickActionIcon = null;
+  PREFS.quickActionIcon = id;
+  PREFS.quickActionIconChosen = true;
   applyQuickActionIcon(id);
   document.querySelectorAll('[data-qa-icon-id]').forEach(el=>{
     el.classList.toggle('selected', el.dataset.qaIconId === id);
   });
+  savePrefs();
 }
 async function saveQuickActionIconPrefs(silent){
   PREFS.quickActionIcon = pendingQuickActionIcon || PREFS.quickActionIcon || 'starburst';
@@ -26971,7 +26986,7 @@ window.addEventListener('quickActionSubmit', function(e) {
 </script>
 
 <!-- Floating Quick Actions Panel -->
-<button id="quickActionBtn" onclick="toggleQuickPanel()" title="Quick Actions" aria-label="Open quick actions">⚡</button>
+<button id="quickActionBtn" onclick="toggleQuickPanel()" title="Quick Actions" aria-label="Open quick actions"><svg viewBox="0 0 22 22" width="24" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 2 13 9 20 11 13 13 11 20 9 13 2 11 9 9Z" fill="currentColor"/></svg></button>
 <div id="quickPanelOverlay" onclick="closeQuickPanel()"></div>
 
 <div id="quickActionsPanel">
