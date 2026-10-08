@@ -5438,6 +5438,7 @@ function previewQuickActionIcon(id){
   pendingQuickActionIcon = null;
   PREFS.quickActionIcon = id;
   PREFS.quickActionIconChosen = true;
+  console.log('[quick action icon] set to', id, '(saved)');
   applyQuickActionIcon(id);
   document.querySelectorAll('[data-qa-icon-id]').forEach(el=>{
     el.classList.toggle('selected', el.dataset.qaIconId === id);
@@ -7799,6 +7800,34 @@ function checkScheduleAlerts(){
   pushNotification({type:'schedule', title:'Class period starting now', body:due.map(({r,g})=>r[1]+' — '+(g.classes.length? g.classes.join(', ') : scheduleRowClassSummary(r))).join(', '), route:'schedule'});
   openTimedAlert({title:'Class period starting now', bodyHtml, actions:[{label:'View schedule', primary:true, onClick:()=>{ route='schedule'; render(); }}]});
 }
+/* Overdue strikes & discipline — applied the moment a loan goes overdue, not when it is finally returned.
+   Each loan earns at most ONE strike (trx.strikeCounted), so the same loan is never counted again if it is
+   renewed, becomes overdue again, or is returned late. The member's strike count, any matching consequence
+   (suspension etc.) and the discipline entry in the Register all happen here; returning the book later only
+   adds a strike for old loans that predate this (they have no strikeCounted flag). Runs every 20s with the
+   other alert checks, and only for signed-in staff, since it edits member records. */
+function processOverdueStrikes(){
+  if(!SESSION || !DB || !Array.isArray(DB.circulation) || !Array.isArray(DB.users)) return;
+  if(typeof isStaff==='function' && !isStaff()) return;
+  let changed = 0;
+  DB.circulation.forEach(trx=>{
+    if(trx.strikeCounted || txnStatus(trx)!=='OVERDUE') return;
+    const user = DB.users.find(u=>u.id===trx.userId);
+    trx.strikeCounted = true; trx.strikeDate = todayISO();
+    if(!Array.isArray(trx.history)) trx.history = [];
+    if(!user){ return; }
+    user.strike = (user.strike||0) + 1;
+    trx.history.unshift({date:trx.strikeDate, event:'OVERDUE', detail:`Became overdue — strike ${user.strike} added to ${user.name}`});
+    logActivity('circulation', 'overdue', `Overdue: "${trx.title}" (${trx.acc}) by ${trx.name} — strike ${user.strike} added`);
+    applyReturnConsequences(user, trx, null, true);
+    changed++;
+  });
+  if(changed){
+    saveDB(`Overdue strikes applied: ${changed} loan${changed>1?'s':''}`);
+    try{ pushNotification({type:'overdue', title:`${changed} overdue strike${changed>1?'s':''} recorded`, body:'Members with overdue loans have had a strike added (and any matching consequence applied).', route:'users'}); }catch(e){}
+    if(route==='users' || route==='reminders' || route==='home' || route==='dashboard') render();
+  }
+}
 let reminderAlertedIds = new Set();
 function checkReminderAlerts(){
   if(!SESSION || !DB || !Array.isArray(DB.circulation) || $('#timedAlertBackdrop')) return;
@@ -7996,7 +8025,7 @@ function restartOutstandingSummaryTimer(){
   outstandingSummaryTimer = setInterval(checkOutstandingSummaryAlert, ms);
 }
 restartOutstandingSummaryTimer();
-setInterval(()=>{ checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); checkCheckoutReminderAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
+setInterval(()=>{ try{ processOverdueStrikes(); }catch(e){ console.warn('Overdue strike check failed', e); } checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); checkCheckoutReminderAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
 
 /* ================= navigation ================= */
 const NAV = [
@@ -10638,12 +10667,42 @@ function openReportModal(){
     modalElement.addEventListener('keydown', (e) => trapFocusInModal(e, modalElement));
   }
 }
+/* When was this loan overdue? A loan counts as overdue from the day AFTER its due date until it is returned, or
+   until today if it is still out — so a loan that has not come back yet is just as overdue as one that did.
+   Returns null if it never was. (Reports used to look only at loans already returned, or at a "right now"
+   snapshot, so overdue loans that were still out never showed up in the period they went overdue in.) */
+function loanOverdueSpan(t){
+  const due = parseAnyDate(t.dueDate); if(!due) return null;
+  const startsOn = new Date(due.getFullYear(), due.getMonth(), due.getDate()+1);
+  const ret = t.returnDate ? parseAnyDate(t.returnDate) : null;
+  const now = new Date();
+  if(ret){ if(ret < startsOn) return null; }          /* handed back on time */
+  else if(now < startsOn) return null;                /* still out, but not late yet */
+  const end = ret || now;
+  return {startsOn, end, stillOut: !ret, days: Math.max(1, daysBetween(due, end))};
+}
+/* Was the loan overdue at any point between from and to (either may be open)? Returned or not. */
+function loanOverdueInRange(t, from, to){
+  const sp = loanOverdueSpan(t); if(!sp) return null;
+  const f = from ? new Date(from.getFullYear(), from.getMonth(), from.getDate()) : null;
+  const e = to ? new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59) : null;
+  if(e && sp.startsOn > e) return null;               /* only became overdue after the period ended */
+  if(f && !sp.stillOut && sp.end < f) return null;    /* was returned before the period began */
+  return sp;
+}
+function liveOverdueCount(userId){
+  return (DB.circulation||[]).filter(t=> t.userId===userId && txnStatus(t)==='OVERDUE').length;
+}
 function generateReport(periodLabel, from, to){
   const visits = DB.registerLog.filter(r=> inRange(r.date, from, to));
   const issued = DB.circulation.filter(t=> inRange(t.dateBorrowed, from, to));
   const returned = DB.circulation.filter(t=> t.returnDate && inRange(t.returnDate, from, to));
   const missing = DB.circulation.filter(t=> txnStatus(t)==='MISSING' && inRange(t.returnDate, from, to));
   const overdueNow = DB.circulation.filter(t=>txnStatus(t)==='OVERDUE');
+  /* Overdue during this period — whether or not it has been returned yet. */
+  const overdueInPeriod = DB.circulation.map(t=>({t, sp: loanOverdueInRange(t, from, to)})).filter(x=>x.sp)
+    .map(x=>({...x.t, _daysOverdue:x.sp.days, _stillOut:x.sp.stillOut})).sort((a,b)=>b._daysOverdue-a._daysOverdue);
+  const overdueStillOut = overdueInPeriod.filter(x=>x._stillOut).length;
   const discipline = DB.registerLog.filter(r=> r.offense && inRange(r.date, from, to));
   const reminders = DB.reminders.filter(r=> inRange(r.dateSent, from, to));
   const feedbackInRange = DB.feedback.filter(f=> inRange(f.date, from, to));
@@ -10658,6 +10717,9 @@ function generateReport(periodLabel, from, to){
       {label:'Titles issued', value: issued.length},
       {label:'Titles returned', value: returned.length},
       {label:'Reported missing', value: missing.length},
+      {label:'Overdue in this period', value: overdueInPeriod.length},
+      {label:'…still not returned', value: overdueStillOut},
+      {label:'…returned late', value: overdueInPeriod.length - overdueStillOut},
       {label:'Currently overdue', value: overdueNow.length},
       {label:'Discipline entries', value: discipline.length},
       {label:'Reminders sent', value: reminders.length},
@@ -10684,9 +10746,15 @@ function generateReport(periodLabel, from, to){
     ], rows: discipline },
     ...skipReportSections(skipRecs, {note: skipTrackingNote(skipFrom) || undefined}),
     absenceReportSection(absencesInRange, true),
-    { heading:'Overdue right now', columns:[
-      {label:'Member', get:r=>r.name}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title}, {label:'Due', get:r=>fmtDate(r.dueDate)},
-    ], rows: overdueNow.slice(0,300) },
+    { heading:'Overdue in this period (returned or not)', columns:[
+      {label:'Member', get:r=>r.name}, {label:'Class', get:r=>r.cls}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title},
+      {label:'Due', get:r=>fmtDate(r.dueDate)}, {label:'Returned', get:r=>r.returnDate? fmtDate(r.returnDate) : 'NOT RETURNED'},
+      {label:'Days overdue', get:r=>r._daysOverdue},
+    ], rows: overdueInPeriod.slice(0,300) },
+    { heading:'Overdue right now (not yet returned)', columns:[
+      {label:'Member', get:r=>r.name}, {label:'Class', get:r=>r.cls}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title}, {label:'Due', get:r=>fmtDate(r.dueDate)},
+      {label:'Days overdue', get:r=>Math.max(1, daysBetween(parseAnyDate(r.dueDate), new Date()))},
+    ], rows: overdueNow.slice().sort((a,b)=>daysBetween(parseAnyDate(b.dueDate), parseAnyDate(a.dueDate))).slice(0,300) },
   ]);
 }
 
@@ -13954,6 +14022,7 @@ function pageUsers(){
       {key:'category', label:'Category'},
       {key:'cls', label:'Class / Designation'},
       {key:'borrowed', label:'Borrowed', render:r=>`${r.borrowed} / ${r.maxAllowed}`},
+      {key:'overdueNow', label:'Overdue now', render:r=>{ const n=liveOverdueCount(r.id); return n>0?`<span class="badge red">${n}</span>`:'0'; }},
       {key:'strike', label:'Strikes', render:r=>r.strike>0?`<span class="badge red">${r.strike}</span>`:'0'},
       {key:'eligibility', label:'Eligible', render:r=>`<span class="badge ${r.eligibility==='YES'?'green':'red'}">${esc(r.eligibility)}</span>`},
       {key:'status', label:'Status', render:r=>`<span class="badge ${r.status==='ACTIVE'?'green':'grey'}">${esc(r.status)}</span>`},
@@ -13964,7 +14033,7 @@ function pageUsers(){
       {label:'Phone', get:r=>r.category==='STAFF'? (r.teacher||'') : ''},
       {label:'Class Teacher', get:r=>r.category==='STUDENT'? classTeacherLabelPlain(r.cls) : ''},
       {label:'Max Allowed', get:r=>r.maxAllowed},{label:'Currently Borrowed', get:r=>r.borrowed},{label:'Total Borrowed', get:r=>r.totalBorrowed},
-      {label:'Strikes', get:r=>r.strike},{label:'Eligibility', get:r=>r.eligibility},{label:'Status', get:r=>r.status},
+      {label:'Overdue now', get:r=>liveOverdueCount(r.id)},{label:'Strikes', get:r=>r.strike},{label:'Eligibility', get:r=>r.eligibility},{label:'Status', get:r=>r.status},
     ],
     addLabel:'+ Add member',
     onAdd:()=>openUserForm(),
@@ -15223,7 +15292,7 @@ function bulkReturnCirculation(){
     circulationModuleState.selected.clear();
     logActivity('circulation', 'return', `Returned ${targets.length} loan(s) in bulk`);
     saveDB(`${targets.length} loan(s) returned`); render();
-    toast(`${targets.length} loan(s) returned${overdueCount? ` — ${overdueCount} were overdue, strikes added`:''}`);
+    toast(`${targets.length} loan(s) returned${overdueCount? ` — ${overdueCount} were overdue`:''}`);
   });
 }
 function bulkDeleteCirculation(){
@@ -15714,6 +15783,7 @@ function doReturnOne(trx, condition, opts={}){
   const user = DB.users.find(u=>u.id===trx.userId);
   autoCheckInForCirculation(user, 'RETURNING BOOK', false, 'Returned', trx.title);
   const wasOverdue = txnStatus(trx)==='OVERDUE';
+  const strikeNow = wasOverdue && !trx.strikeCounted;   /* strike already given when it went overdue? then don't repeat it */
   const isMissing = condition === 'MISSING';
   trx.returnDate = todayISO(); trx.condition = condition;
   trx.finalStatus = isMissing ? 'MISSING' : 'RETURNED';
@@ -15724,9 +15794,9 @@ function doReturnOne(trx, condition, opts={}){
     if(!Array.isArray(book.history)) book.history = [];
     book.history.unshift({date:trx.returnDate, condition, shelf:book.shelf, available:book.available, note: isMissing? 'Returned — recorded MISSING' : `Returned by ${trx.name}${wasOverdue?' (was overdue)':''}`});
   }
-  if(user){ user.borrowed = Math.max(0, user.borrowed-1); if(wasOverdue) user.strike = (user.strike||0)+1; }
+  if(user){ user.borrowed = Math.max(0, user.borrowed-1); if(strikeNow){ user.strike = (user.strike||0)+1; trx.strikeCounted = true; trx.strikeDate = trx.returnDate; } }
   logActivity('circulation', isMissing?'missing':'return', `${isMissing?'Recorded MISSING':'Returned'}: "${trx.title}" (${trx.acc}) by ${trx.name}${wasOverdue?' — was overdue':''}`);
-  const consequences = applyReturnConsequences(user, trx, condition, wasOverdue);
+  const consequences = applyReturnConsequences(user, trx, condition, strikeNow);
   sendScanWebhook('return', {acc:trx.acc, title:trx.title, memberId:trx.userId, condition, wasOverdue});
   if(!opts.quiet && !isMissing) sendTransactionReceiptIfEnabled(trx, 'RETURNED');
   if(!isMissing && book) fulfillReservationsForReturn(trx.acc, book);
@@ -15749,7 +15819,7 @@ function returnBook(){
   if(consequences && consequences.length){
     toast(`⚠ Consequence triggered: ${consequences.map(c=>c.rule.consequence).join(' · ')}`);
   } else {
-    toast(isMissing ? `${book?book.title:'Title'} recorded as MISSING — catalogue updated` : `Return recorded${wasOverdue?' — loan was overdue, strike added':''}`);
+    toast(isMissing ? `${book?book.title:'Title'} recorded as MISSING — catalogue updated` : `Return recorded${wasOverdue?(strikeNow?' — loan was overdue, strike added':' — loan was overdue (strike already recorded)'):''}`);
   }
 }
 /* ---- batch return: stage several active loans and return them together ---- */
@@ -24979,7 +25049,7 @@ function saveInstitution(){
 }
 /* ================= write current data back into a downloadable copy of the app itself ================= */
 function catalogueToRows(){ return DB.catalogue.map(b=>[b.acc,b.title,b.info,b.edition,b.vol,b.cls,b.author,b.publisher,b.year,b.category,b.division,b.mainClass,b.shelf,b.dateAdded,b.condition,b.available]); }
-function usersToRows(){ return DB.users.map(u=>[u.id,u.name,u.gender,u.category,u.cls,u.teacher,u.maxAllowed,u.borrowed,u.overdue,u.totalBorrowed,u.strike,u.reset,u.discipline,u.eligibility,u.status,u.notes]); }
+function usersToRows(){ return DB.users.map(u=>[u.id,u.name,u.gender,u.category,u.cls,u.teacher,u.maxAllowed,u.borrowed,liveOverdueCount(u.id),u.totalBorrowed,u.strike,u.reset,u.discipline,u.eligibility,u.status,u.notes]); }
 function circulationToRows(){ return DB.circulation.map(t=>[t.trxId,t.acc,t.title,t.userId,t.name,t.category,t.cls,t.dateBorrowed,t.dueDate,t.returnDate,t.finalStatus||t.statusRaw||'',t.condition,t.note]); }
 function feedbackToRows(){ return DB.feedback.map(f=>[f.entryId,f.date,f.userId,f.userName,f.dept,f.type,f.subject,f.text,f.priority,f.status]); }
 function registerDeskToRows(){ return DB.registerLog.filter(r=>r.source==='DESK').map(r=>[r.date,r.timeIn,r.timeOut,'',r.period,r.id,r.name,r.category,r.cls,r.purpose,r.conduct,r.action,r.borrow,r.note]); }
@@ -25392,9 +25462,9 @@ function changeAdminKey(){
 let activityLogModule;
 let activityLogModuleState = {q:'', filters:{}, sort:''};
 const ACTIVITY_MODULE_LABELS = {catalogue:'Catalogue', members:'Members', circulation:'Circulation', reservations:'Reservations', equipment:'Assets & Equipment'};
-const ACTIVITY_ACTION_LABELS = {add:'Added', edit:'Edited', delete:'Deleted', issue:'Issued', return:'Returned', missing:'Missing', renew:'Renewed', fine_payment:'Fine payment', fine_waived:'Fine waived'};
+const ACTIVITY_ACTION_LABELS = {add:'Added', edit:'Edited', delete:'Deleted', issue:'Issued', return:'Returned', missing:'Missing', overdue:'Overdue strike', renew:'Renewed', fine_payment:'Fine payment', fine_waived:'Fine waived'};
 function activityActionBadgeClass(a){
-  return a==='delete' ? 'red' : a==='add' || a==='issue' ? 'green' : a==='missing' ? 'red' : a==='fine_waived' ? 'gold' : 'grey';
+  return a==='delete' ? 'red' : a==='add' || a==='issue' ? 'green' : a==='missing' || a==='overdue' ? 'red' : a==='fine_waived' ? 'gold' : 'grey';
 }
 function pageActivityLog(){
   if(!isAdmin()){
