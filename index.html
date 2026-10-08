@@ -3721,7 +3721,17 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 }
 .home-hero h1, .home-hero p{ text-shadow:0 1px 8px rgba(0,0,0,.28);}
 .weather-label-dot{ width:9px; height:9px; border-radius:50%; flex:none;}
-.home-hero > *:not(.weather-ambience):not(.weather-label){ position:relative; z-index:1;}
+.home-hero > *:not(.weather-ambience):not(.weather-label):not(.weather-temp){ position:relative; z-index:1;}
+/* Weather-app style block: big temperature, place and condition underneath. Sits on the right, vertically
+   centred over the scene; clicks pass through to the sky underneath. */
+.weather-temp{ position:absolute !important; right:34px !important; top:50% !important; transform:translateY(-50%); z-index:4 !important;
+  text-align:right; color:#fff; pointer-events:none; text-shadow:0 2px 12px rgba(0,0,0,.35); line-height:1;}
+.weather-temp .wt-num{ font-size:68px; font-weight:300; letter-spacing:-2px; line-height:1;}
+.weather-temp .wt-num sup{ font-size:.36em; font-weight:500; letter-spacing:0; vertical-align:top; position:relative; top:.28em; margin-left:2px; opacity:.85;}
+.weather-temp .wt-place{ display:flex; align-items:center; justify-content:flex-end; gap:5px; margin-top:8px; font-size:14px; font-weight:600; color:#F3EEDD;}
+.weather-temp .wt-place svg{ width:13px; height:13px; flex:none; opacity:.9;}
+.weather-temp .wt-cond{ margin-top:5px; font-size:13px; font-weight:500; color:#E4EBDD; letter-spacing:.2px;}
+@media (min-width:641px){ .home-hero:has(.weather-temp) h1, .home-hero:has(.weather-temp) p{ padding-right:210px;} }
 @media (max-width:1100px){
   .home-hero h1, .home-hero p{ max-width:none;}
 }
@@ -3730,6 +3740,9 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
      normal flow above the title instead (it's already first in the markup, so this just un-floats it). */
   .weather-label{ position:static !important; margin-bottom:10px;}
   .home-hero h1{ padding-right:0;}
+  .weather-temp{ position:static !important; transform:none; text-align:left; margin-bottom:12px;}
+  .weather-temp .wt-num{ font-size:52px;}
+  .weather-temp .wt-place{ justify-content:flex-start;}
 }
 .quicklinks{ grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin-left:-26px; margin-right:-26px; padding-left:26px; padding-right:26px;}
 .qlink{ padding:16px; cursor:pointer; transition:transform .12s, box-shadow .12s;}
@@ -5176,7 +5189,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', weatherSource:'simulated', weatherDimSun:true, weatherShowTemp:true, weatherUnit:'C', weatherLat:6.5244, weatherLon:3.3792, weatherPlace:'Lagos', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'starburst',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', weatherSource:'live', weatherDimSun:true, weatherShowTemp:true, weatherUnit:'C', weatherLat:6.5244, weatherLon:3.3792, weatherPlace:'Lagos', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'starburst',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -5363,6 +5376,9 @@ async function loadPrefs(){
          as if it had been chosen, and that kept overriding the new default. An icon only counts as the
          person's own pick if they chose it (quickActionIconChosen) or it is something other than the old
          default; otherwise they get the current default. */
+      /* Live weather is now the default. Older saves carry the old default ('simulated') as if it had been
+         chosen, so switch those over once; after that the person's own choice sticks. */
+      if(!PREFS.weatherLiveDefaultSet){ if(loaded.weatherSource!=='live') PREFS.weatherSource = 'live'; PREFS.weatherLiveDefaultSet = true; }
       if(!PREFS.quickActionIconChosen){
         if(!loaded.quickActionIcon || loaded.quickActionIcon==='boltEmoji') PREFS.quickActionIcon = DEFAULT_PREFS.quickActionIcon;
         else PREFS.quickActionIconChosen = true;
@@ -11459,6 +11475,7 @@ function wxLiveChanged(){
   WX_LIVE.sig = sig;
   const st = document.getElementById('wxLiveStatus'); if(st) st.textContent = wxLiveStatusText();
   if(!changed) return;
+  wxUpdateTempBlocks();
   document.querySelectorAll('svg.weather-ambience').forEach(svg=>{
     const hero = svg.closest('.home-hero'), label = hero && hero.querySelector('.weather-label');
     svg.outerHTML = renderWeatherAmbience();
@@ -11474,18 +11491,36 @@ function wxEstTempC(){
 }
 function wxFmtTemp(c){ return PREFS.weatherUnit==='F' ? Math.round(c*9/5+32)+'\u00B0F' : Math.round(c)+'\u00B0C'; }
 function wxTimeStr(t){ try{ return new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }catch(e){ return ''; } }
-/* The extra text after "It's Afternoon": the live condition + real temperature, or an estimated temperature (marked ~). */
-function wxLabelExtra(){
-  const parts = [];
-  if(wxLiveActive()){
-    const i = wxLiveInfo();
-    if(i.label) parts.push(i.label);
-    if(PREFS.weatherShowTemp!==false) parts.push(wxFmtTemp(WX_LIVE.data.temp));
-  } else if(PREFS.weatherShowTemp!==false){
-    parts.push('~'+wxFmtTemp(wxEstTempC()));
+/* Weather condition in plain words. Live: from the real weather code. Simulated: worked out from today's
+   cloud cover. dayAware turns "Clear" into "Sunny" while the sun is up. */
+function wxIsDaytime(){ return ['sunrise','morning','noon','afternoon','goldenHour','sunset'].indexOf(weatherPeriodForHour(Math.floor(weatherHourNow()))) >= 0; }
+function wxCondLabel(dayAware){
+  let l = '';
+  if(wxLiveActive()){ const i = wxLiveInfo(); l = (i && i.label) || ''; }
+  else {
+    const c = wxCloudCover(weatherPeriodForHour(Math.floor(weatherHourNow())));
+    l = c < .22 ? 'Clear' : c < .42 ? 'Mostly clear' : c < .65 ? 'Partly cloudy' : c < .85 ? 'Cloudy' : 'Overcast';
   }
-  return parts.length ? ' \u00B7 '+parts.join(' \u00B7 ') : '';
+  if(dayAware && wxIsDaytime()){ if(l==='Clear') l = 'Sunny'; else if(l==='Mostly clear') l = 'Mostly sunny'; }
+  return l;
 }
+/* The extra text after "It's Afternoon": just the condition (the temperature has its own block now). */
+function wxLabelExtra(){
+  const l = wxCondLabel(false);
+  return l ? ' \u00B7 '+l : '';
+}
+function wxTempParts(c){ const f = PREFS.weatherUnit==='F'; return {n:Math.round(f ? c*9/5+32 : c), u:f?'F':'C'}; }
+function wxTempBlockInner(){
+  const live = wxLiveActive(), t = wxTempParts(live ? WX_LIVE.data.temp : wxEstTempC());
+  const place = PREFS.weatherPlace || 'Lagos';
+  const pin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  return '<div class="wt-num">'+(live?'':'~')+t.n+'<sup>\u00B0'+t.u+'</sup></div><div class="wt-place">'+pin+'<span>'+esc(place)+'</span></div><div class="wt-cond">'+esc(wxCondLabel(true))+'</div>';
+}
+function renderWeatherTemp(){
+  if(!PREFS.weatherAmbience || PREFS.weatherShowTemp===false) return '';
+  return '<div class="weather-temp" aria-label="Current weather">'+wxTempBlockInner()+'</div>';
+}
+function wxUpdateTempBlocks(){ document.querySelectorAll('.weather-temp').forEach(el=>{ el.innerHTML = wxTempBlockInner(); }); }
 function wxLabelTitle(){
   if(wxLiveActive()) return 'Live weather, updated '+wxTimeStr(WX_LIVE.data.at)+' \u00B7 click to change the weather scene';
   if(PREFS.weatherShowTemp!==false) return 'Temperature is an estimate from the season and time of day \u00B7 click to change the weather scene';
@@ -11662,6 +11697,7 @@ function weatherTick(){
     }
     updateWeatherCelestial(svg);
   });
+  wxUpdateTempBlocks();
   document.querySelectorAll('.weather-label .wx-label-extra').forEach(el=>{ el.textContent = wxLabelExtra(); if(el.closest('.weather-label')) el.closest('.weather-label').title = wxLabelTitle(); });
 }
 function ensureWeatherTick(){
@@ -12293,6 +12329,7 @@ function pageHome(){
     <div class="home-hero">
       ${renderWeatherAmbience()}
       ${renderWeatherLabel()}
+      ${renderWeatherTemp()}
       <h1>${greeting}, ${esc(firstNameOf((SESSION&&SESSION.fullName)||''))}!</h1>
       <p>${DB.setup.institutionName? esc(DB.setup.institutionName)+' — ':''}Search the catalogue, issue and return loans, keep an eye on overdue titles, and manage your members — all from one shelf.</p>
     </div>
