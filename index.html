@@ -11199,13 +11199,42 @@ const WX_MOON_FRAMES = [
   [29.5, 0.94, 0.22, 25, 56,.16],
   [30.2, 1.02,-0.12, 24, 50,.12]
 ];
+/* ---------- How much cloud is in the sky today? ----------
+   Real clouds are not always there. How much sky they cover depends on the season and on the time of day:
+   - SEASON (WX_CLOUD_MONTH, Jan..Dec): a tropical West-African pattern. The dry, dusty harmattan months
+     (Dec–Feb) have mostly clear/hazy skies; clouds build through the spring thunderstorm months (Mar–May);
+     the main rainy season (Jun–Sep) is the cloudiest, with low grey cloud for days; it thins out again in
+     Oct–Nov. Edit these 12 numbers (0 = clear, 1 = solid overcast) to match any other climate.
+   - TIME OF DAY (WX_CLOUD_HOUR): heating of the ground builds cumulus through the day (peak in the
+     afternoon), which then melts away after sunset, so evenings and nights are clearer than afternoons.
+   - TODAY'S WEATHER: a seeded random swing per day (some days are clearer, some grayer than the average),
+     so it varies from day to day but stays steady while you look at it.
+   Add ?wxmonth=7 to the page address to preview a month. */
+const WX_CLOUD_MONTH = [0.16, 0.26, 0.46, 0.62, 0.76, 0.90, 0.92, 0.84, 0.82, 0.70, 0.44, 0.22];
+const WX_CLOUD_HOUR = {lateNight:.80, dawn:.85, sunrise:.80, morning:.85, noon:.95, afternoon:1.10, goldenHour:1.0, sunset:.82, evening:.66, night:.55};
+function wxDayNumber(){ return Math.floor((Date.now() - new Date().getTimezoneOffset()*6e4)/864e5); }
+function wxCloudCover(key){
+  const d = new Date();
+  let m = d.getMonth(), frac = (d.getDate()-1) / new Date(d.getFullYear(), m+1, 0).getDate();
+  try{
+    const q = new URLSearchParams(location.search).get('wxmonth');
+    if(q!==null && q!=='' && isFinite(+q)){ m = (((+q)-1)%12+12)%12; frac = 0.5; }
+  }catch(e){}
+  const base = WX_CLOUD_MONTH[m] + (WX_CLOUD_MONTH[(m+1)%12]-WX_CLOUD_MONTH[m]) * frac;
+  const day = wxDayNumber(), idx = Object.keys(WEATHER_PERIODS).indexOf(key);
+  const rnd = n => { const x = Math.sin((day*31 + n)*78.233)*43758.5453; return x-Math.floor(x); };
+  /* the day as a whole: clearer or cloudier than the monthly average; swings less in the steady dry season, more in the changeable wet one */
+  const dayShift = (rnd(1)-0.5)*0.4*(0.4+base);
+  const jitter  = (rnd(10+idx)-0.5)*0.14;      /* small change from one part of the day to the next */
+  const c = base*(WX_CLOUD_HOUR[key] || 1) + dayShift + jitter;
+  return Math.max(0, Math.min(0.97, c));
+}
 /* Clouds per period.
    tint    – cloud colour for that light (peach in the afternoon, lilac in the evening…)
    amb     – how visible the drifting background clouds are (0 = none, 1 = bold)
    flat    – long flat streaks (late-day) instead of puffy clouds
-   chance  – how likely a cloud is to drift in front of the sun/moon that day
-   strength– how opaque that cloud is (a thin veil vs. a thick bank)
-   second  – chance of a second cloud overlapping the first (like the afternoon in the reference) */
+   (chance / strength / second were for the old sun-following clouds and are no longer used;
+   how many clouds there are now comes from wxCloudCover above.) */
 const WX_CLOUDS = {
   lateNight: {tint:'#8FA2CC', amb:.22, chance:.35, strength:.30, second:0},
   dawn:      {tint:'#B4C0E0', amb:.30, chance:.40, strength:.30, second:0},
@@ -11273,8 +11302,10 @@ function wxMix(a, b, t){
    across it. Returned as the inside of <g class="wx-celestial">, so it can be rebuilt in place
    every minute without touching the rest of the scene or any sky activity in progress. */
 function weatherCelestialMarkup(key, svg){
-  const p = WEATHER_PERIODS[key], cc = WX_CLOUDS[key] || WX_CLOUDS.noon;
-  const op = PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4;
+  const p = WEATHER_PERIODS[key];
+  /* A thick overcast veils the sun/moon (it never shines at full strength through a solid cloud deck). */
+  const cover = wxCloudCover(key);
+  const op = (PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4) * (1 - 0.6*Math.max(0,(cover-0.6)/0.4));
   const hf = weatherHourNow();
   const setKey = weatherSceneKey();
   const hz = WX_HORIZON[setKey] || 92;
@@ -11304,28 +11335,11 @@ function weatherCelestialMarkup(key, svg){
         <circle class="wx-glow" style="animation-duration:5s;animation-delay:-1.8s" cx="${cx}" cy="${cy}" r="${(halo*0.68).toFixed(1)}" fill="${p.sunGlow}" opacity="${Math.min(1,op*hop).toFixed(3)}"/>
         <g clip-path="url(#wxHz-${key})"><circle class="wx-core" cx="${cx}" cy="${cy}" r="${r}" fill="${p.sun}" opacity="${op}"/></g>`;
   }
-  /* Cloud(s) in front of the sun/moon. Which ones show is decided by a seed made from today's date
-     and the period, so it varies day to day but stays steady while you look at it. */
-  const idx = Object.keys(WEATHER_PERIODS).indexOf(key);
-  const day = Math.floor((Date.now() - new Date().getTimezoneOffset()*6e4)/864e5);
-  const rnd = n => { const x = Math.sin((day*13 + idx*7 + n)*12.9898)*43758.5453; return x-Math.floor(x); };
-  let over = '';
-  if(rnd(1) < cc.chance){
-    const n = rnd(2) < cc.second ? 2 : 1;
-    for(let i=0;i<n;i++){
-      const dx = (i ? 14 : -12) + (rnd(4+i)-.5)*14;
-      const dy = (i ? -7 : 5) + (rnd(6+i)-.5)*8;
-      const sc = ((i ? 0.8 : 1.15) + rnd(8+i)*0.3) * (0.85 + 0.35*cc.strength);   /* heavier cloud = bigger cloud */
-      const dur = 24 + rnd(10+i)*14;
-      const phase = ((Date.now()/1000) % (2*dur)).toFixed(2);   /* keeps the drift continuous across updates */
-      /* Solid (never see-through) so it really hides the sun/moon behind it; only its colour is toned to the sky. */
-      const col = wxMix(cc.tint, p.skyBot, 0.55 + 0.4*op);
-      over += `<g class="wx-suncloud" style="animation-duration:${dur.toFixed(1)}s;animation-delay:-${phase}s;${i?'animation-direction:alternate-reverse;':''}">
-        <g transform="translate(${(cx+dx).toFixed(1)},${(cy+dy).toFixed(1)}) scale(${sc.toFixed(2)})">${wxCloudShape(cc.flat, col)}</g></g>`;
-    }
-  }
+  /* No cloud is drawn here any more. Clouds used to be pinned to the sun/moon's position, so they rose and set
+     with it. Real clouds hang at their own height and just drift, so they now live only in the sky layer
+     (see renderWeatherAmbience) and the sun/moon simply passes behind them when they happen to overlap. */
   return `<clipPath id="wxHz-${key}"><rect x="${cx-160}" y="0" width="320" height="${hz+3}"/></clipPath>
-    ${body}${over}`;
+    ${body}`;
 }
 /* Once a minute: nudge the sun/moon along its arc without a full re-render. If the period itself has
    just changed (new sky colours), swap in a fresh scene — but only when no sky activity is running. */
@@ -11373,33 +11387,44 @@ function renderWeatherAmbience(){
   // bleed edge-to-edge on any hero width without ever cropping — but the sun/moon is a single,
   // one-of-a-kind element that now travels along its own arc (see weatherCelestialMarkup).
   const h=WX_H, w=WX_W;
+  const starVis = Math.max(0, 1 - 0.9*wxCloudCover(key));   /* cloud hides the stars */
   let stars = '';
   if(p.stars){
     const rand = (seed)=> { const x = Math.sin(seed*999)*10000; return x-Math.floor(x); };
     stars = Array.from({length:84},(_,i)=>{
       const x = Math.round(rand(i+1)*w), y = Math.round(rand(i+50)*70), r = rand(i+80)<0.25?1.6:0.9;
       const dur = 2.4 + rand(i+120)*3.6, dl = rand(i+160)*dur;
-      return `<circle class="wx-twinkle" style="--o:${(0.55*op).toFixed(3)};animation-duration:${dur.toFixed(2)}s;animation-delay:-${dl.toFixed(2)}s" cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${0.55*op}"/>`;
+      return `<circle class="wx-twinkle" style="--o:${(0.55*op*starVis).toFixed(3)};animation-duration:${dur.toFixed(2)}s;animation-delay:-${dl.toFixed(2)}s" cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${(0.55*op*starVis).toFixed(3)}"/>`;
     }).join('');
   }
-  const shooting = p.stars ? [{x:w-190,y:8,dur:13,delay:2},{x:w-390,y:24,dur:19,delay:11}].map(m=>
+  const shooting = (p.stars && starVis>0.5) ? [{x:w-190,y:8,dur:13,delay:2},{x:w-390,y:24,dur:19,delay:11}].map(m=>
     `<g class="wx-shoot" style="animation-duration:${m.dur}s;animation-delay:-${m.delay}s">
        <line x1="${m.x}" y1="${m.y}" x2="${m.x+64}" y2="${m.y-22}" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity="${(0.35*op).toFixed(3)}"/>
        <line x1="${m.x}" y1="${m.y}" x2="${m.x+30}" y2="${m.y-10.5}" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity="${op}"/>
      </g>`).join('') : '';
-  // Background clouds now exist in every period (tinted by the light — peach in the afternoon,
-  // lilac in the evening, blue-grey at night) and are more or less visible depending on the hour.
+  // Clouds hang at their own fixed height (they never follow the sun or moon) and only drift sideways.
+  // How many there are depends on today's cloud cover for the season and hour (see wxCloudCover): a clear
+  // sky has none, an overcast day fills the sky with big, grey-ish clouds. Their tint still follows the light.
+  const cover = wxCloudCover(key);
   const ambScale = cc.amb/0.5;
+  const SLOTS = 24;
+  const count = cover < 0.07 ? 0 : Math.max(1, Math.round(cover*SLOTS));
+  const bulk = 1 + 1.1*Math.max(0, cover-0.5);            /* thicker cover = bigger clouds */
+  const grey = (!p.stars && cover>0.7) ? Math.min(0.5, (cover-0.7)*1.7) : 0;   /* rain-bearing cloud looks greyer */
   /* Solid (never see-through), so overlapping clouds — and any cloud crossing the sun or moon — hide what is
      behind them. Fainter clouds are simply toned closer to the sky colour instead of being faded out. */
   const cloudFn = (x,y,scale,fade,idx)=>{
-    const col = wxMix(cc.tint, p.skyBot, Math.min(0.92, 0.3 + 1.1*fade*ambScale*op));
+    let tint = grey ? wxMix('#9AA3AF', cc.tint, grey) : cc.tint;
+    const col = wxMix(tint, p.skyBot, Math.min(0.92, 0.3 + 1.1*fade*(0.7+cover)*ambScale*op));
     return `
       <g class="wx-cloud" style="animation-duration:${22 + (idx*7)%17}s;animation-delay:-${(idx*5.3)%19}s"><g transform="translate(${x},${y}) scale(${scale})">${wxCloudShape(cc.flat, col)}</g></g>`;
   };
-  // Scattered across the whole sky at seeded, uneven spacing and sizes (no repeating pattern).
-  const cr = wxRandom(401), clouds = Array.from({length:15},(_,i)=>
-    cloudFn(((i+.15+cr()*.7)*w/15).toFixed(0), (10+cr()*44).toFixed(0), (0.5+cr()*0.5).toFixed(2), 0.3+cr()*0.25, i)).join('');
+  // Every slot has a fixed spot, size and height; a seeded shuffle decides which slots are filled today, so
+  // adding clouds only adds more rather than rearranging the ones already there.
+  const cr = wxRandom(401);
+  const slots = Array.from({length:SLOTS},(_,i)=>({i, x:((i+.15+cr()*.7)*w/SLOTS), y:8+cr()*58, sc:0.5+cr()*0.5, fade:0.3+cr()*0.25, rank:cr()}));
+  const shown = slots.slice().sort((a,b)=>a.rank-b.rank).slice(0,count).sort((a,b)=>a.i-b.i);
+  const clouds = shown.map(c=> cloudFn(c.x.toFixed(0), c.y.toFixed(0), (c.sc*bulk).toFixed(2), c.fade, c.i)).join('');
   const sceneFn = WEATHER_SETS[weatherSceneKey()].render;
   const scene = sceneFn(p,w,h,op);   // one continuous scene across the full width
   const inner = `
