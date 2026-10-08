@@ -3725,13 +3725,13 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 /* Weather-app style block: big temperature, place and condition underneath. Sits on the right, vertically
    centred over the scene; clicks pass through to the sky underneath. */
 .weather-temp{ position:absolute !important; right:34px !important; top:50% !important; transform:translateY(-50%); z-index:4 !important;
-  display:flex; align-items:center; gap:16px; text-align:left; color:#fff; pointer-events:none; text-shadow:0 2px 12px rgba(0,0,0,.35); line-height:1;}
+  display:flex; flex-direction:column; align-items:flex-start; gap:8px; text-align:left; color:#fff; pointer-events:none; text-shadow:0 2px 12px rgba(0,0,0,.35); line-height:1;}
 .weather-temp .wt-num{ font-size:68px; font-weight:700; letter-spacing:-2px; line-height:1;}
 .weather-temp .wt-num sup{ font-size:.36em; font-weight:500; letter-spacing:0; vertical-align:top; position:relative; top:.28em; margin-left:2px; opacity:.85;}
 .weather-temp .wt-place{ display:flex; align-items:center; justify-content:flex-start; gap:5px; font-size:14px; font-weight:600; color:#F3EEDD;}
 .weather-temp .wt-place svg{ width:13px; height:13px; flex:none; opacity:.9;}
 .weather-temp .wt-cond{ margin-top:5px; font-size:13px; font-weight:500; color:#E4EBDD; letter-spacing:.2px;}
-@media (min-width:641px){ .home-hero:has(.weather-temp) h1, .home-hero:has(.weather-temp) p{ padding-right:300px;} }
+@media (min-width:641px){ .home-hero:has(.weather-temp) h1, .home-hero:has(.weather-temp) p{ padding-right:230px;} }
 @media (max-width:1100px){
   .home-hero h1, .home-hero p{ max-width:none;}
 }
@@ -3740,7 +3740,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
      normal flow above the title instead (it's already first in the markup, so this just un-floats it). */
   .weather-label{ position:static !important; margin-bottom:10px;}
   .home-hero h1{ padding-right:0;}
-  .weather-temp{ position:static !important; transform:none; margin-bottom:12px; gap:12px;}
+  .weather-temp{ position:static !important; transform:none; margin-bottom:12px; gap:6px;}
   .weather-temp .wt-num{ font-size:52px;}
 }
 .quicklinks{ grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin-left:-26px; margin-right:-26px; padding-left:26px; padding-right:26px;}
@@ -11512,7 +11512,7 @@ function wxTempBlockInner(){
   const live = wxLiveActive(), t = wxTempParts(live ? WX_LIVE.data.temp : wxEstTempC());
   const place = PREFS.weatherPlace || 'Lagos';
   const pin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>';
-  return '<div class="wt-info"><div class="wt-place">'+pin+'<span>'+esc(place)+'</span></div><div class="wt-cond">'+esc(wxCondLabel(true))+'</div></div><div class="wt-num">'+(live?'':'~')+t.n+'<sup>\u00B0'+t.u+'</sup></div>';
+  return '<div class="wt-num">'+(live?'':'~')+t.n+'<sup>\u00B0'+t.u+'</sup></div><div class="wt-info"><div class="wt-place">'+pin+'<span>'+esc(place)+'</span></div><div class="wt-cond">'+esc(wxCondLabel(true))+'</div></div>';
 }
 function renderWeatherTemp(){
   if(!PREFS.weatherAmbience || PREFS.weatherShowTemp===false) return '';
