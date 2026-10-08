@@ -27033,6 +27033,19 @@ function patchNonStaffIssueReturnModal() {
   activateFocusOnQuickModal();
 }
 
+/* Scrolls the Today's Schedule list to where the day is up to: the row that is running now, else the next
+   one starting soon, else the first one that hasn't passed, else (day over) the last row. */
+function scrollTodaySchedToCurrent(box){
+  if(!box) return;
+  const rows = [...box.children].filter(el=> el.classList && el.classList.contains('activity-row'));
+  if(!rows.length) return;
+  const has = (r, test)=> [...r.querySelectorAll('.badge')].some(b=> test(b.textContent.trim()));
+  const target = rows.find(r=> has(r, t=> t==='NOW'))
+    || rows.find(r=> has(r, t=> /^IN \d+ MIN$/.test(t)))
+    || rows.find(r=> !has(r, t=> t==='PASSED'))
+    || rows[rows.length-1];
+  box.scrollTop = Math.max(0, target.offsetTop - 8);
+}
 function openScheduleModal() {
   const modal = document.getElementById('quickActionModals');
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
@@ -27048,7 +27061,7 @@ function openScheduleModal() {
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
-          <div id="todaySchedBox" style="max-height: 400px; overflow-y: auto;">
+          <div id="todaySchedBox" style="max-height: 400px; overflow-y: auto; position: relative;">
             ${scheduleContent}
           </div>
         </div>
@@ -27062,6 +27075,10 @@ function openScheduleModal() {
   
   // Activate focus management for this modal
   activateFocusOnQuickModal();
+
+  // Open on the current period instead of the top of the day (again next frame, once the modal has laid out).
+  scrollTodaySchedToCurrent(document.getElementById('todaySchedBox'));
+  requestAnimationFrame(()=> scrollTodaySchedToCurrent(document.getElementById('todaySchedBox')));
 
   // Keep NOW / IN n MIN / PASSED current while the panel stays open.
   clearInterval(window._todaySchedTimer);
