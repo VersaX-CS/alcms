@@ -5176,7 +5176,7 @@ function initSidebarFooter() {
 }
 document.addEventListener('DOMContentLoaded', initSidebarFooter);
 initSidebarFooter(); // Also call immediately in case DOM is already loaded
-let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'starburst',
+let PREFS = {clockFormat:'12h', dateFormat:'DD MMM YYYY', theme:'light', palette:'forest', clockFont:'digital', dateFont:'default', appFont:'default', headingFont:'default', headingScale:1, bodyScale:1, headingWeight:'default', headingStyle:'normal', bodyWeight:'default', bodyStyle:'normal', authClockStyle:'digital', weatherAmbience:true, weatherActivities:true, weatherAmbienceStyle:'soft', weatherAmbienceSet:'ocean', weatherSource:'simulated', weatherDimSun:true, weatherShowTemp:true, weatherUnit:'C', weatherLat:6.5244, weatherLon:3.3792, weatherPlace:'Lagos', paletteAuto:true, headingColor:'default', bodyColor:'default', mutedColor:'default', iconPack:'line', transitionStyle:'scale', sectionStyle:'solid', sectionOpacity:70, topbarStyle:'solid', authBoxOpacity:90, lockscreenDecorStyle:'circle', notificationSound:'crystalBell', quickActionIcon:'starburst',
   lockscreenElements:{circles:true, quotes:true, clock:true, tips:true, gettingstarted:true, contact:true, notifbell:true}};
 const DEFAULT_PREFS = JSON.parse(JSON.stringify(PREFS));
 const CLOCK_FONTS = {
@@ -8767,15 +8767,21 @@ function previewClockDatePrefs(){
 let weatherPrefsPreviewOriginal = null;
 function previewWeatherAmbiencePrefs(){
   if(!weatherPrefsPreviewOriginal){
-    weatherPrefsPreviewOriginal = {weatherActivities: PREFS.weatherActivities, weatherAmbience: PREFS.weatherAmbience, weatherAmbienceStyle: PREFS.weatherAmbienceStyle, weatherAmbienceSet: PREFS.weatherAmbienceSet};
+    weatherPrefsPreviewOriginal = {weatherActivities: PREFS.weatherActivities, weatherAmbience: PREFS.weatherAmbience, weatherAmbienceStyle: PREFS.weatherAmbienceStyle, weatherAmbienceSet: PREFS.weatherAmbienceSet, weatherSource: PREFS.weatherSource, weatherDimSun: PREFS.weatherDimSun, weatherShowTemp: PREFS.weatherShowTemp, weatherUnit: PREFS.weatherUnit, weatherLat: PREFS.weatherLat, weatherLon: PREFS.weatherLon, weatherPlace: PREFS.weatherPlace};
   }
   appearancePreviewDirty = true;
   PREFS.weatherAmbience = document.getElementById('setWeatherAmbience')?.checked ?? PREFS.weatherAmbience;
   PREFS.weatherActivities = document.getElementById('setWeatherActivities')?.checked ?? PREFS.weatherActivities;
   PREFS.weatherAmbienceStyle = document.getElementById('setWeatherStyle')?.value || PREFS.weatherAmbienceStyle;
   PREFS.weatherAmbienceSet = document.getElementById('setWeatherSet')?.value || PREFS.weatherAmbienceSet;
+  PREFS.weatherSource = document.getElementById('setWeatherSource')?.value || PREFS.weatherSource;
+  PREFS.weatherUnit = document.getElementById('setWeatherUnit')?.value || PREFS.weatherUnit;
+  PREFS.weatherDimSun = document.getElementById('setWeatherDimSun')?.checked ?? PREFS.weatherDimSun;
+  PREFS.weatherShowTemp = document.getElementById('setWeatherShowTemp')?.checked ?? PREFS.weatherShowTemp;
   const box = document.getElementById('weatherAmbiencePreviewBox');
   if(box) box.innerHTML = PREFS.weatherAmbience ? renderWeatherAmbience() : '<p class="field-hint">Ambience is off — nothing will show on the Home greeting.</p>';
+  if(PREFS.weatherSource==='live') wxFetchLive();
+  const wst = document.getElementById('wxLiveStatus'); if(wst) wst.textContent = wxLiveStatusText();
 }
 const PAGE_META = {
   home:['Home','Welcome to the Access Library circulation desk'],
@@ -11211,7 +11217,7 @@ function renderWeatherLabel(){
   const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
   const p = WEATHER_PERIODS[key];
   const dotColor = p.moon || p.sun;
-  return `<div class="weather-label" onclick="cycleWeatherAmbienceSet()" title="Click to change the weather scene"><span class="weather-label-dot" style="background:${dotColor};box-shadow:0 0 10px 2px ${dotColor}"></span>It's ${esc(p.label)}</div>`;
+  return `<div class="weather-label" onclick="cycleWeatherAmbienceSet()" title="${esc(wxLabelTitle())}"><span class="weather-label-dot" style="background:${dotColor};box-shadow:0 0 10px 2px ${dotColor}"></span><span>It's ${esc(p.label)}<span class="wx-label-extra">${esc(wxLabelExtra())}</span></span></div>`;
 }
 /* WEATHER_SETS — the actual choosable "look" of the ambience illustration (the landscape drawn
    in front of the sky/sun/moon). Independent of time-of-day (WEATHER_PERIODS), which only
@@ -11351,6 +11357,7 @@ const WX_CLOUD_MONTH = [0.16, 0.26, 0.46, 0.62, 0.76, 0.90, 0.92, 0.84, 0.82, 0.
 const WX_CLOUD_HOUR = {lateNight:.80, dawn:.85, sunrise:.80, morning:.85, noon:.95, afternoon:1.10, goldenHour:1.0, sunset:.82, evening:.66, night:.55};
 function wxDayNumber(){ return Math.floor((Date.now() - new Date().getTimezoneOffset()*6e4)/864e5); }
 function wxCloudCover(key){
+  if(wxLiveActive()) return wxLiveCover();
   const d = new Date();
   let m = d.getMonth(), frac = (d.getDate()-1) / new Date(d.getFullYear(), m+1, 0).getDate();
   try{
@@ -11365,6 +11372,151 @@ function wxCloudCover(key){
   const jitter  = (rnd(10+idx)-0.5)*0.14;      /* small change from one part of the day to the next */
   const c = base*(WX_CLOUD_HOUR[key] || 1) + dayShift + jitter;
   return Math.max(0, Math.min(0.97, c));
+}
+/* ---------- Live weather (optional), temperature, and sun dimming ----------
+   Weather source is the person's choice (Personalization > Weather ambience):
+   - Simulated (default): the sky is generated from the season and time of day, works fully offline.
+   - Live: current conditions come from the free Open-Meteo service (no key needed) for the saved
+     location (Lagos by default). If the network is down the last reading is reused for up to 3 hours,
+     then the app quietly falls back to the simulated sky. */
+const WX_LIVE = {data:null, failedAt:0, pending:false, error:null, sig:null, loaded:false};
+const WX_LIVE_KEY = 'alcms:wx_live_v1', WX_LIVE_FRESH = 15*60e3, WX_LIVE_MAX_AGE = 3*3600e3;
+/* Typical monthly high / low (deg C), Jan..Dec, for the simulated temperature. Same tropical West-African
+   pattern as WX_CLOUD_MONTH — edit these 24 numbers to match another climate. */
+const WX_TEMP_HI = [31,32,32,32,31,29,28,27.5,28.5,29.5,31,31];
+const WX_TEMP_LO = [23,24,25,25,24.5,24,23.5,23,23.5,24,24.5,23.5];
+function wxCodeInfo(code){
+  const c = +code;
+  if(c===0) return {label:'Clear'};
+  if(c===1) return {label:'Mostly clear'};
+  if(c===2) return {label:'Partly cloudy'};
+  if(c===3) return {label:'Overcast'};
+  if(c===45 || c===48) return {label:'Fog', fog:true};
+  if(c>=51 && c<=57) return {label:'Drizzle', precip:'rain', dense:.5};
+  if(c===61 || c===80) return {label:'Light rain', precip:'rain', dense:.8};
+  if(c===63 || c===81 || c===66) return {label:'Rain', precip:'rain', dense:1};
+  if(c===65 || c===82 || c===67) return {label:'Heavy rain', precip:'rain', dense:1.5};
+  if(c===71 || c===77 || c===85) return {label:'Light snow', precip:'snow', dense:1};
+  if(c===73) return {label:'Snow', precip:'snow', dense:1};
+  if(c===75 || c===86) return {label:'Heavy snow', precip:'snow', dense:1};
+  if(c>=95) return {label:'Thunderstorm', precip:'storm', dense:1.9};
+  return {label:''};
+}
+function wxLiveLoadCache(){
+  if(WX_LIVE.loaded) return; WX_LIVE.loaded = true;
+  try{ const d = JSON.parse(localStorage.getItem(WX_LIVE_KEY) || 'null'); if(d && typeof d.temp==='number' && d.at) WX_LIVE.data = d; }catch(e){}
+}
+function wxLiveActive(){
+  if(PREFS.weatherSource!=='live') return false;
+  wxLiveLoadCache();
+  const d = WX_LIVE.data;
+  return !!d && (Date.now()-d.at) < WX_LIVE_MAX_AGE && Math.abs(d.lat-PREFS.weatherLat) < .05 && Math.abs(d.lon-PREFS.weatherLon) < .05;
+}
+function wxLiveInfo(){ return wxLiveActive() ? wxCodeInfo(WX_LIVE.data.code) : null; }
+function wxLiveCover(){
+  const d = WX_LIVE.data, i = wxCodeInfo(d.code);
+  let c = (+d.cloud || 0)/100;
+  if(i.precip) c = Math.max(c, .85);
+  if(i.fog) c = Math.max(c, .8);
+  return Math.max(0, Math.min(.97, c));
+}
+/* How strongly the sun/moon shines through the real weather (1 = full). Respects the "Dim the sun" setting. */
+function wxLiveSunFactor(){
+  if(PREFS.weatherDimSun===false) return 1;
+  const i = wxLiveInfo(); if(!i) return 1;
+  return i.precip==='storm' ? .2 : i.precip==='rain' ? .45 : i.precip==='snow' ? .55 : i.fog ? .6 : 1;
+}
+async function wxFetchLive(force){
+  if(PREFS.weatherSource!=='live') return;
+  wxLiveLoadCache();
+  if(WX_LIVE.pending) return;
+  const now = Date.now();
+  if(!force){
+    if(wxLiveActive() && now-WX_LIVE.data.at < WX_LIVE_FRESH) return;
+    if(now-WX_LIVE.failedAt < 120000) return;
+  }
+  WX_LIVE.pending = true;
+  const lat = +PREFS.weatherLat, lon = +PREFS.weatherLon;
+  try{
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(lat)+'&longitude='+encodeURIComponent(lon)+'&current=temperature_2m,weather_code,cloud_cover&timezone=auto';
+    const r = await fetch(url, {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json(), cur = j && j.current;
+    if(!cur || typeof cur.temperature_2m!=='number') throw new Error('No data');
+    WX_LIVE.data = {temp:cur.temperature_2m, code:cur.weather_code, cloud:cur.cloud_cover, lat, lon, at:Date.now()};
+    WX_LIVE.error = null; WX_LIVE.failedAt = 0;
+    try{ localStorage.setItem(WX_LIVE_KEY, JSON.stringify(WX_LIVE.data)); }catch(e){}
+  }catch(e){ WX_LIVE.error = String((e && e.message) || e); WX_LIVE.failedAt = Date.now(); }
+  finally{ WX_LIVE.pending = false; wxLiveChanged(); }
+}
+function wxLiveSig(){
+  const d = WX_LIVE.data;
+  return JSON.stringify([PREFS.weatherSource, wxLiveActive() ? [Math.round((+d.cloud||0)/10), d.code, Math.round(d.temp)] : (WX_LIVE.error ? 'err' : 0)]);
+}
+/* New live data (or a failure) arrived: refresh the settings status line and redraw the sky + label if anything visible changed. */
+function wxLiveChanged(){
+  const sig = wxLiveSig(), changed = sig !== WX_LIVE.sig;
+  WX_LIVE.sig = sig;
+  const st = document.getElementById('wxLiveStatus'); if(st) st.textContent = wxLiveStatusText();
+  if(!changed) return;
+  document.querySelectorAll('svg.weather-ambience').forEach(svg=>{
+    const hero = svg.closest('.home-hero'), label = hero && hero.querySelector('.weather-label');
+    svg.outerHTML = renderWeatherAmbience();
+    if(label) label.outerHTML = renderWeatherLabel();
+  });
+}
+function wxEstTempC(){
+  const m = new Date().getMonth(), h = weatherHourNow();
+  const hi = WX_TEMP_HI[m], lo = WX_TEMP_LO[m];
+  const f = (Math.cos((h-15)/24*2*Math.PI)+1)/2;
+  const cover = wxCloudCover(weatherPeriodForHour(Math.floor(h)));
+  return lo + (hi-lo)*f - 1.5*cover*f;
+}
+function wxFmtTemp(c){ return PREFS.weatherUnit==='F' ? Math.round(c*9/5+32)+'\u00B0F' : Math.round(c)+'\u00B0C'; }
+function wxTimeStr(t){ try{ return new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }catch(e){ return ''; } }
+/* The extra text after "It's Afternoon": the live condition + real temperature, or an estimated temperature (marked ~). */
+function wxLabelExtra(){
+  const parts = [];
+  if(wxLiveActive()){
+    const i = wxLiveInfo();
+    if(i.label) parts.push(i.label);
+    if(PREFS.weatherShowTemp!==false) parts.push(wxFmtTemp(WX_LIVE.data.temp));
+  } else if(PREFS.weatherShowTemp!==false){
+    parts.push('~'+wxFmtTemp(wxEstTempC()));
+  }
+  return parts.length ? ' \u00B7 '+parts.join(' \u00B7 ') : '';
+}
+function wxLabelTitle(){
+  if(wxLiveActive()) return 'Live weather, updated '+wxTimeStr(WX_LIVE.data.at)+' \u00B7 click to change the weather scene';
+  if(PREFS.weatherShowTemp!==false) return 'Temperature is an estimate from the season and time of day \u00B7 click to change the weather scene';
+  return 'Click to change the weather scene';
+}
+function wxLiveStatusText(){
+  const place = PREFS.weatherPlace || 'Lagos';
+  if(PREFS.weatherSource!=='live') return 'Using the simulated sky (season and time of day, works offline). Location for live weather: '+place+'.';
+  if(wxLiveActive()){
+    const i = wxLiveInfo();
+    return 'Live for '+place+': '+(i.label ? i.label+', ' : '')+wxFmtTemp(WX_LIVE.data.temp)+' \u00B7 updated '+wxTimeStr(WX_LIVE.data.at)+(WX_LIVE.error ? " (couldn't refresh just now)" : '');
+  }
+  if(WX_LIVE.pending || !WX_LIVE.error) return 'Getting live weather for '+place+'\u2026';
+  return "Couldn't reach the weather service"+(WX_LIVE.error ? ' ('+WX_LIVE.error+')' : '')+' \u2014 showing the simulated sky until it is back.';
+}
+function wxUseMyLocation(){
+  const st = document.getElementById('wxLiveStatus');
+  if(!navigator.geolocation){ toast('This browser cannot share a location'); return; }
+  if(st) st.textContent = 'Asking for your location\u2026';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    previewWeatherAmbiencePrefs();
+    PREFS.weatherLat = +pos.coords.latitude.toFixed(3); PREFS.weatherLon = +pos.coords.longitude.toFixed(3); PREFS.weatherPlace = 'My location';
+    WX_LIVE.failedAt = 0; WX_LIVE.sig = null; wxFetchLive(true);
+    const s2 = document.getElementById('wxLiveStatus'); if(s2) s2.textContent = wxLiveStatusText();
+  }, ()=>{ toast("Couldn't get your location \u2014 keeping "+(PREFS.weatherPlace || 'Lagos')); if(st) st.textContent = wxLiveStatusText(); }, {timeout:10000, maximumAge:600000});
+}
+function wxUseLagos(){
+  previewWeatherAmbiencePrefs();
+  PREFS.weatherLat = 6.5244; PREFS.weatherLon = 3.3792; PREFS.weatherPlace = 'Lagos';
+  WX_LIVE.failedAt = 0; WX_LIVE.sig = null; wxFetchLive(true);
+  const st = document.getElementById('wxLiveStatus'); if(st) st.textContent = wxLiveStatusText();
 }
 /* Clouds per period.
    tint    – cloud colour for that light (peach in the afternoon, lilac in the evening…)
@@ -11442,7 +11594,8 @@ function weatherCelestialMarkup(key, svg){
   const p = WEATHER_PERIODS[key];
   /* A thick overcast veils the sun/moon (it never shines at full strength through a solid cloud deck). */
   const cover = wxCloudCover(key);
-  const op = (PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4) * (1 - 0.6*Math.max(0,(cover-0.6)/0.4));
+  const veil = 1 - 0.6*Math.max(0,(cover-0.6)/0.4);   /* thick overcast veils the sun/moon */
+  const op = (PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4) * Math.min(veil, wxLiveSunFactor());   /* ...and so does real rain, snow or storm (if enabled) */
   const hf = weatherHourNow();
   const setKey = weatherSceneKey();
   const hz = WX_HORIZON[setKey] || 92;
@@ -11494,6 +11647,7 @@ function weatherCelestialMarkup(key, svg){
    just changed (new sky colours), swap in a fresh scene — but only when no sky activity is running. */
 let weatherTickTimer = null, weatherRO = null, weatherROTimer = null;
 function weatherTick(){
+  wxFetchLive();   /* no-op unless Live weather is chosen and the last reading is stale */
   const key = weatherPeriodForHour(Math.floor(weatherHourNow()));
   const busy = Date.now() < Math.max(skyState.flyerUntil||0, skyState.precipUntil||0, skyState.groundUntil||0);
   document.querySelectorAll('svg.weather-ambience').forEach(svg=>{
@@ -11508,6 +11662,7 @@ function weatherTick(){
     }
     updateWeatherCelestial(svg);
   });
+  document.querySelectorAll('.weather-label .wx-label-extra').forEach(el=>{ el.textContent = wxLabelExtra(); if(el.closest('.weather-label')) el.closest('.weather-label').title = wxLabelTitle(); });
 }
 function ensureWeatherTick(){
   if(weatherTickTimer) return;
@@ -12046,6 +12201,11 @@ function skyPrecip(c, o){
   const nodes = [], H = c.H, T = o.T, x0 = c.x0-40, span = c.vis+80, rain = o.kind==='rain';
   const shade = skyEl(c.sky, `<rect x="${c.x0}" y="0" width="${c.vis}" height="${H}" fill="${o.storm?'#141B2B':'#1B2536'}"/>`, 'opacity:0');
   skyGo(shade, [{opacity:0, offset:0},{opacity:o.storm?.32:.16, offset:.12},{opacity:o.storm?.32:.16, offset:.88},{opacity:0, offset:1}], {duration:T, easing:'linear'}); nodes.push(shade);
+  /* Simulated weather: the sun/moon fades down with the shower and back up as it clears (live weather dims it in the markup instead). */
+  if(!o.live && PREFS.weatherDimSun!==false){
+    const cel = c.svg.querySelector('.wx-celestial'), m = o.storm ? .2 : (rain ? .45 : .55);
+    if(cel) skyGo(cel, [{opacity:1, offset:0},{opacity:m, offset:1600/T},{opacity:m, offset:(T-2000)/T},{opacity:1, offset:1}], {duration:T, easing:'linear', fill:'none'});
+  }
   /* (A dark cloud-bank of ovals used to be drawn along the top edge for storms; removed — the darkened
      sky, rain and lightning carry the effect on their own.) */
   const col = rain ? (c.dim ? '#BFD0F0' : '#DDEBFF') : '#FFFFFF';
@@ -12073,7 +12233,7 @@ function skyPrecip(c, o){
       nodes.push(f);
     }
   }
-  const dayEnd = !c.dim && (Math.random()<.5);
+  const dayEnd = !c.dim && !o.live && (Math.random()<.5);
   if(dayEnd){ setTimeout(()=>{ if(c.svg.isConnected && route==='home'){ const r = skyRainbow(c); setTimeout(()=> r.nodes.forEach(n=>n.remove()), r.duration+800); skyState.flyerUntil = Date.now()+r.duration+800; } }, T+400); }
   return {nodes, duration:T};
 }
@@ -12084,7 +12244,19 @@ function skyMaybeStart(){
   if(document.querySelector('.modal-backdrop, .quick-modal-overlay.show')) return;
   const c = skyContext(svg); if(!c || !c.sky || !c.front) return;
   const now = Date.now();
-  const pool = SKY_ACTIVITIES.filter(a=> (a.when==='any' || (a.when==='day' && !c.dim) || (a.when==='dim' && c.dim)) && now >= skyState[a.slot+'Until'] && a.name!==skyState.last);
+  const live = wxLiveActive();
+  if(live){
+    /* Real weather decides when it rains or snows: keep it going while it lasts, and drop the random showers and rainbows. */
+    const lp = wxLiveInfo();
+    if(lp && lp.precip && (now >= skyState.precipUntil - 6000 || skyState.precipSvg !== c.svg)){
+      const pr = skyPrecip(c, {kind: lp.precip==='snow' ? 'snow' : 'rain', T:120000, dense:lp.dense || 1, storm:lp.precip==='storm', live:true});
+      skyState.precipUntil = now + pr.duration + 800; skyState.precipSvg = c.svg; skyState.last = 'precip';
+      setTimeout(()=> pr.nodes.forEach(n=> n.remove()), pr.duration + 800);
+      setTimeout(()=>{ try{ skyMaybeStart(); }catch(e){} }, pr.duration - 4000);
+      return;
+    }
+  }
+  const pool = SKY_ACTIVITIES.filter(a=> (a.when==='any' || (a.when==='day' && !c.dim) || (a.when==='dim' && c.dim)) && now >= skyState[a.slot+'Until'] && a.name!==skyState.last && !(live && (a.slot==='precip' || a.name==='rainbow')));
   if(!pool.length) return;
   let roll = Math.random()*pool.reduce((s,a)=>s+a.weight,0), act = pool[0];
   for(const a of pool){ roll -= a.weight; if(roll<=0){ act = a; break; } }
@@ -23729,6 +23901,15 @@ function pageSettings(){
       <div class="field"><label>Intensity</label><select id="setWeatherStyle" onchange="previewWeatherAmbiencePrefs()"><option value="soft" ${PREFS.weatherAmbienceStyle==='soft'?'selected':''}>Soft (subtle)</option><option value="vivid" ${PREFS.weatherAmbienceStyle==='vivid'?'selected':''}>Vivid (more visible)</option></select></div>
     </div>
     <p class="field-hint">Pick the scene that's drawn behind the greeting — the colours still change automatically with the time of day.</p>
+    <div class="field-row">
+      <div class="field"><label>Weather source</label><select id="setWeatherSource" onchange="previewWeatherAmbiencePrefs()"><option value="simulated" ${PREFS.weatherSource!=='live'?'selected':''}>Simulated (works offline)</option><option value="live" ${PREFS.weatherSource==='live'?'selected':''}>Live weather (needs internet)</option></select></div>
+      <div class="field"><label>Temperature unit</label><select id="setWeatherUnit" onchange="previewWeatherAmbiencePrefs()"><option value="C" ${PREFS.weatherUnit!=='F'?'selected':''}>\u00B0C (Celsius)</option><option value="F" ${PREFS.weatherUnit==='F'?'selected':''}>\u00B0F (Fahrenheit)</option></select></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="setWeatherDimSun" ${PREFS.weatherDimSun!==false?'checked':''} onchange="previewWeatherAmbiencePrefs()"> Dim the sun and moon when it rains, snows or storms</label></div>
+    <div class="field"><label><input type="checkbox" id="setWeatherShowTemp" ${PREFS.weatherShowTemp!==false?'checked':''} onchange="previewWeatherAmbiencePrefs()"> Show the temperature on the Home greeting</label></div>
+    <div class="field"><button type="button" class="btn secondary small" onclick="wxUseMyLocation()">Use my location</button> <button type="button" class="btn secondary small" onclick="wxUseLagos()">Use Lagos</button>
+      <p class="field-hint" id="wxLiveStatus" style="margin-top:6px">${esc(wxLiveStatusText())}</p>
+      <p class="field-hint">Live weather comes from Open-Meteo for the saved location. With the simulated sky, the temperature shown is an estimate (marked ~) from the season and time of day. Press Save to keep these choices.</p></div>
     
     <div class="quote-live-preview" id="weatherAmbiencePreviewBox">${PREFS.weatherAmbience ? renderWeatherAmbience() : '<p class="field-hint">Ambience is off — nothing will show on the Home greeting.</p>'}</div>
     
@@ -25789,6 +25970,10 @@ async function saveWeatherAmbiencePrefs(silent){
   if($('#setWeatherActivities')) PREFS.weatherActivities = $('#setWeatherActivities').checked;
   if($('#setWeatherStyle')) PREFS.weatherAmbienceStyle = $('#setWeatherStyle').value;
   if($('#setWeatherSet')) PREFS.weatherAmbienceSet = $('#setWeatherSet').value;
+  if($('#setWeatherSource')) PREFS.weatherSource = $('#setWeatherSource').value;
+  if($('#setWeatherUnit')) PREFS.weatherUnit = $('#setWeatherUnit').value;
+  if($('#setWeatherDimSun')) PREFS.weatherDimSun = $('#setWeatherDimSun').checked;
+  if($('#setWeatherShowTemp')) PREFS.weatherShowTemp = $('#setWeatherShowTemp').checked;
   weatherPrefsPreviewOriginal = null;
   await savePrefs();
   if(!silent){ render(); toast('Preferences saved'); }
@@ -26253,6 +26438,7 @@ function render(){
     PREFS.weatherActivities = weatherPrefsPreviewOriginal.weatherActivities;
     PREFS.weatherAmbienceStyle = weatherPrefsPreviewOriginal.weatherAmbienceStyle;
     PREFS.weatherAmbienceSet = weatherPrefsPreviewOriginal.weatherAmbienceSet;
+    ['weatherSource','weatherDimSun','weatherShowTemp','weatherUnit','weatherLat','weatherLon','weatherPlace'].forEach(k=>{ PREFS[k] = weatherPrefsPreviewOriginal[k]; });
     weatherPrefsPreviewOriginal = null;
   }
   if(appBackgroundPreviewDirty && route!=='settings'){
