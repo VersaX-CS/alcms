@@ -11629,7 +11629,10 @@ function weatherCelestialMarkup(key, svg){
   /* A thick overcast veils the sun/moon (it never shines at full strength through a solid cloud deck). */
   const cover = wxCloudCover(key);
   const veil = 1 - 0.6*Math.max(0,(cover-0.6)/0.4);   /* thick overcast veils the sun/moon */
-  const op = (PREFS.weatherAmbienceStyle==='vivid' ? 0.85 : 0.4) * Math.min(veil, wxLiveSunFactor());   /* ...and so does real rain, snow or storm (if enabled) */
+  /* The sun is drawn noticeably stronger than the moon (it was too faint, especially with the hero's own 70% overlay on top). */
+  const vividStyle = PREFS.weatherAmbienceStyle==='vivid';
+  const baseOp = p.moon ? (vividStyle ? 0.85 : 0.4) : (vividStyle ? 1 : 0.85);
+  const op = baseOp * Math.min(veil, wxLiveSunFactor());   /* ...and so does real rain, snow or storm (if enabled) */
   const hf = weatherHourNow();
   const setKey = weatherSceneKey();
   const hz = WX_HORIZON[setKey] || 92;
