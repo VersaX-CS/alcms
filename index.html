@@ -12447,7 +12447,7 @@ function todaysClassScheduleRows(dateKey, weekday){
       const gVisited = g.classes.length && g.classes.every(c=>visitedClasses.has(c));
       const indivBreak = (r[5] && typeof r[5]==='object') ? Object.fromEntries(Object.entries(r[5]).filter(([c])=>g.individual.includes(c) || g.classes.includes(c))) : null;
       const individualHtml = renderIndividualFreeHtml(indivBreak, dateKey, r[1], r[2]);
-      const attendance = g.classes.length ? renderStudentAttendanceList(dateKey, r[1], g.classes) : '';
+      const attendance = g.classes.length ? renderStudentAttendanceList(dateKey, r[1], g.classes, {checkin:true}) : '';
       const label = g.classes.length ? esc(g.classes.join(', ')) : '';
       const timeTxt = g.start ? (g.end ? fmtTime(g.start)+'–'+fmtTime(g.end) : fmtTime(g.start)) : '';
       return {g, status, gVisited, individualHtml, attendance, label, timeTxt, isNow, isPast, startMin};
@@ -19804,17 +19804,18 @@ function excuseKey(id, dateKey, period){ return id+'|'+dateKey+'|'+String(period
 function excuseCb(id, dateKey, period, cls){
   return `<input type="checkbox" class="exc-cb" data-id="${esc(id)}" data-date="${esc(dateKey)}" data-period="${esc(period)}" data-cls="${esc(cls||'')}" ${excuseSel.has(excuseKey(id,dateKey,period))?'checked':''} onchange="toggleExcuseSel(this)" title="Tick to excuse several students at once" style="margin:0 4px 0 0;vertical-align:middle;cursor:pointer">`;
 }
-function excuseToolbar(label){
+function excuseToolbar(label, opts){
   return `<div class="exc-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 6px;font-size:11.5px">
     <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:var(--muted-label)"><input type="checkbox" class="exc-all" onchange="toggleExcuseGroup(this)" style="margin:0"> ${esc(label||'Select all unexplained')}</label>
     <button type="button" class="btn small exc-go" disabled onclick="excuseSelected(this)">Excuse selected (<span class="exc-count">0</span>)</button>
+    ${opts && opts.checkin ? `<button type="button" class="btn small exc-checkin" disabled onclick="checkInSelectedPrivate(this)" title="Check the ticked students in for this period as Private Reading">Check in selected (<span class="exc-count">0</span>)</button>` : ''}
   </div>`;
 }
 function syncExcuseGroup(g){
   if(!g) return;
   const cbs = [...g.querySelectorAll('.exc-cb')], n = cbs.filter(c=>c.checked).length;
   g.querySelectorAll('.exc-count').forEach(el=> el.textContent = n);
-  g.querySelectorAll('.exc-go').forEach(b=> b.disabled = n===0);
+  g.querySelectorAll('.exc-go, .exc-checkin').forEach(b=> b.disabled = n===0);
   g.querySelectorAll('.exc-all').forEach(a=>{ a.checked = cbs.length>0 && n===cbs.length; a.indeterminate = n>0 && n<cbs.length; });
 }
 function toggleExcuseSel(cb){
@@ -19854,6 +19855,47 @@ function excuseSelected(btn){
     toast(`${n} student${n===1?'':'s'} marked excused`);
   }, {title:`Excuse ${n} student${n===1?'':'s'}`, placeholder:'e.g. Sent to sick bay, approved by Mrs Adeyemi', confirmLabel:`Excuse ${n}`});
 }
+/* Today's Schedule: check the ticked students in for this period in one press. No prompt — the purpose is
+   always PRIVATE READING (the Undo on the toast reverses it). */
+function checkInSelectedPrivate(btn){
+  if(!isStaff()) return requireStaff('check students in');
+  const g = btn.closest('[data-exc-group]'); if(!g) return;
+  const items = [...g.querySelectorAll('.exc-cb:checked')].map(c=>({id:c.dataset.id, dateKey:c.dataset.date, period:c.dataset.period, cls:c.dataset.cls}));
+  if(!items.length) return toast('Tick at least one student first');
+  const today = todayISO(), timeIn = new Date().toTimeString().slice(0,5), stamp = new Date().toISOString();
+  const newIds = [], periods = new Set(), already = [], blocked = [];
+  items.forEach(i=>{
+    const u = DB.users.find(x=>x.id===i.id);
+    const nm = u ? u.name : i.id;
+    if(i.dateKey!==today) return;
+    if(openDeskEntryToday(i.id)){ already.push(nm); return; }
+    if(memberCheckinBlockReason(u) || isAbsentFromSchool(i.id, today)){ blocked.push(nm); return; }
+    const entryId = uid('REG');
+    DB.registerLog.unshift({
+      entryId, source:'DESK', date:today, timeIn, timeOut:'', period:i.period||'',
+      id:u.id, name:u.name, category:u.category, cls:i.cls||u.cls, purpose:'PRIVATE READING',
+      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:actorName(), note:"Checked in from Today's Schedule",
+      offense:'', offenseOther:'', consequence:'', consequenceOther:'',
+      inAt:stamp, inBy:actorName()||'', inVia:'schedule check-in'
+    });
+    newIds.push(entryId);
+    if(i.period) periods.add(i.period);
+    sendScanWebhook('checkin', {memberId:u.id, memberName:u.name, purpose:'PRIVATE READING'});
+  });
+  items.forEach(i=> excuseSel.delete(excuseKey(i.id,i.dateKey,i.period)));
+  periods.forEach(pd=> recordAttendanceStatusForPeriod(today, pd, 'checked_in'));
+  const n = newIds.length;
+  const extra = (already.length ? ` ${already.length} already in the library (${already.slice(0,3).join(', ')}${already.length>3?'…':''}) — left as they are.` : '')
+              + (blocked.length ? ` ${blocked.length} skipped (inactive or absent from school): ${blocked.slice(0,3).join(', ')}${blocked.length>3?'…':''}.` : '');
+  if(n){
+    saveDB(`${n} student${n===1?'':'s'} checked in from Today's Schedule`);
+    render(); refreshOpenScheduleModal(true);
+    toast(`${n} student${n===1?'':'s'} checked in (Private Reading).${extra}`, {action:{label:'Undo', onClick:()=>{ undoCheckins(newIds); refreshOpenScheduleModal(true); }}});
+  } else {
+    refreshOpenScheduleModal(true);
+    toast(`No one was checked in.${extra}`);
+  }
+}
 /* Whenever a schedule/report area appears (or is rebuilt), restore its ticks and counts. */
 (function(){
   const start = ()=>{ let t; new MutationObserver(ms=>{
@@ -19865,12 +19907,15 @@ function excuseSelected(btn){
 // The Quick Action "Today's Schedule" panel builds its own detached HTML rather than going
 // through the normal route render, so marking/unmarking an excuse from inside it needs its own
 // refresh call alongside the regular render().
-function refreshOpenScheduleModal(){
+function refreshOpenScheduleModal(keepScroll){
   const overlay = document.getElementById('tempOverlay');
   const heading = overlay && overlay.querySelector('.quick-modal-header h2');
-  if(heading && /Today's Schedule/.test(heading.textContent)) openScheduleModal();
+  if(heading && /Today's Schedule/.test(heading.textContent)){
+    const box = document.getElementById('todaySchedBox');
+    openScheduleModal(keepScroll===true && box ? box.scrollTop : undefined);
+  }
 }
-function renderStudentAttendanceList(dateKey, period, onlyClasses){
+function renderStudentAttendanceList(dateKey, period, onlyClasses, opts){
   const students = getStudentsInClassesForPeriod(dateKey, period, onlyClasses);
   if(!students.length) return '';
   
@@ -19880,6 +19925,8 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses){
   const unexplained = students.filter(s=>!s.absent && !s.checkedIn && !s.excused);
   const total = students.length - absent.length;
   const staff = isStaff();
+  // Quick-action Today's Schedule only: a "Check in selected" button beside "Excuse selected" (today's periods only).
+  const canCheckIn = !!(opts && opts.checkin) && dateKey===todayISO();
   
   const pill = (s)=>{
     if(s.absent){
@@ -19924,7 +19971,7 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses){
       <div style="margin-bottom:8px;font-weight:600;color:var(--text-accent)">Individual attendance — ${checkedIn.length}/${total} checked in${excused.length? ` · ${excused.length} excused`:''}${unexplained.length? ` · ${unexplained.length} unexplained`:''}${absent.length? ` · ${absent.length} absent (exempt)`:''}</div>
       ${group('Checked in', checkedIn)}
       ${group('Excused', excused)}
-      ${group('Unexplained', unexplained, staff && unexplained.length>1 ? excuseToolbar('Select all unexplained') : '')}
+      ${group('Unexplained', unexplained, staff && (unexplained.length>1 || (canCheckIn && unexplained.length>=1)) ? excuseToolbar('Select all unexplained', {checkin: canCheckIn}) : '')}
       ${group('Absent from school — exempt', absent)}
     </div>
   `;
@@ -27046,7 +27093,7 @@ function scrollTodaySchedToCurrent(box){
     || rows[rows.length-1];
   box.scrollTop = Math.max(0, target.offsetTop - 8);
 }
-function openScheduleModal() {
+function openScheduleModal(keepTop) {
   const modal = document.getElementById('quickActionModals');
   const weekday = new Date().toLocaleDateString('en-GB',{weekday:'long'}).toUpperCase();
   const today = todayISO();
@@ -27077,8 +27124,11 @@ function openScheduleModal() {
   activateFocusOnQuickModal();
 
   // Open on the current period instead of the top of the day (again next frame, once the modal has laid out).
-  scrollTodaySchedToCurrent(document.getElementById('todaySchedBox'));
-  requestAnimationFrame(()=> scrollTodaySchedToCurrent(document.getElementById('todaySchedBox')));
+  if(typeof keepTop==='number'){ const kb = document.getElementById('todaySchedBox'); if(kb) kb.scrollTop = keepTop; }
+  else {
+    scrollTodaySchedToCurrent(document.getElementById('todaySchedBox'));
+    requestAnimationFrame(()=> scrollTodaySchedToCurrent(document.getElementById('todaySchedBox')));
+  }
 
   // Keep NOW / IN n MIN / PASSED current while the panel stays open.
   clearInterval(window._todaySchedTimer);
