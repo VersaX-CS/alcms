@@ -7960,25 +7960,79 @@ function checkCheckoutReminderAlerts(){
   checkoutRemFired.add(dueEnd);
   openCheckoutReminder(byEnd[dueEnd], dueEnd);
 }
+/* ---- Does this student still have a free period straight after this one? ----
+   Used by the end-of-period check-out reminder so students who are free in the NEXT period can be left
+   alone instead of being checked out and then walking straight back in. "Next period" is the first
+   lesson slot on the student's own bell schedule that starts after now (so a Years 7–8 and a Years 9–11
+   student are each judged on their own times). Free means one of:
+     • nothing is timetabled for their class in that slot (an empty cell is a free period);
+     • the slot is tagged LIBRARY (they are due back in the library anyway);
+     • the slot runs only subjects that are NOT in this student's own subject combination (personally free).
+   Assembly, Fellowship, Sports etc. are never free — everybody attends them.
+   Returns null when it can't tell (staff, no timetable entered for the class, no bell schedule…), so
+   nobody is ever marked "free" on a guess. */
+function nextPeriodFreeInfo(entry, nowDate){
+  const u = (DB.users||[]).find(x=> x.id===entry.id);
+  if(!u || u.category!=='STUDENT' || !u.cls) return null;
+  const now = nowDate || new Date();
+  const day = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][now.getDay()];
+  if(!TIMETABLE_DAYS.includes(day)) return null;
+  const tt = DB.classTimetable && DB.classTimetable[u.cls];
+  const sch = bellScheduleFor(u.cls, day);
+  if(!sch || !tt || !Object.keys(tt).length) return null;     /* no timetable to judge from */
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const next = (sch.slots||[]).filter(sl=> sl.type==='period').map(sl=>{
+    const t = periodTime(day, sl.label, u.cls);
+    return {label: sl.label, start: t ? timeToMinutes(t.start) : null, startStr: t ? t.start : ''};
+  }).filter(x=> x.start!=null && x.start > nowMin).sort((a,b)=> a.start-b.start)[0];
+  if(!next) return {free:false, state:'over', label:'No more periods today', period:null};
+  const vals = ttEffective(u.cls, day, next.label).values;
+  const at = ` at ${fmtTime(next.startStr)}`;
+  if(!vals.length) return {free:true, state:'free', label:`Free — no class ${next.label}`+at, period:next.label};
+  if(vals.includes('LIBRARY')) return {free:true, state:'library', label:`Library period ${next.label}`+at, period:next.label};
+  const acts = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const subjects = vals.filter(v=> !acts.includes(v) && (DB.setup.subjects||[]).includes(v));
+  if(subjects.length){
+    const mine = studentSubjects(u);
+    if(!subjects.some(sub=> mine.includes(sub)))
+      return {free:true, state:'personal', label:`Free ${next.label}${at} — not offering ${subjects.join(' / ')}`, period:next.label};
+  }
+  return {free:false, state:'class', label:`${vals.join(' / ')} (${next.label})`+at, period:next.label};
+}
 function openCheckoutReminder(periods, endTime){
   if($('#checkoutRemBackdrop')) return;
   const inLib = currentlyInLibrary();
   if(!inLib.length) return;
-  const sel = {}; inLib.forEach(r=> sel[r.entryId] = true);
+  const nextInfo = r=>{ try{ return nextPeriodFreeInfo(r); }catch(e){ return null; } };
+  /* Students with a free period straight after this one start UNticked, so they aren't checked out just to walk back in. */
+  const sel = {}; inLib.forEach(r=>{ const n = nextInfo(r); sel[r.entryId] = !(n && n.free); });
+  const freeNextCount = inLib.filter(r=>{ const n = nextInfo(r); return n && n.free; }).length;
   const label = [...new Set(periods||[])].join(' / ');
-  pushNotification({type:'checkout', title:'Check out library users', body:`${inLib.length} still in the library — ${label||'period'} ends at ${fmtTime(endTime)}`, route:'register'});
+  pushNotification({type:'checkout', title:'Check out library users', body:`${inLib.length} still in the library — ${label||'period'} ends at ${fmtTime(endTime)}${freeNextCount? ` (${freeNextCount} free next period)`:''}`, route:'register'});
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop';
   wrap.id = 'checkoutRemBackdrop';
   const bodyHtml = ()=>{
     const list = currentlyInLibrary();
     if(!list.length) return `<div class="stage-empty">Everyone has been checked out. ✅</div>`;
-    return `<p style="margin:0 0 10px">${esc(label||'The library period')} ends at <strong>${esc(fmtTime(endTime))}</strong>. Untick anyone who is staying on.</p>
+    const info = {}; list.forEach(r=>{ info[r.entryId] = nextInfo(r); });
+    /* Anyone who has to leave comes first; students free next period are listed after them. */
+    const rank = r=> (info[r.entryId] && info[r.entryId].free) ? 1 : 0;
+    const ordered = list.map((r,i)=>({r,i})).sort((a,b)=> rank(a.r)-rank(b.r) || a.i-b.i).map(x=>x.r);
+    const nFree = ordered.filter(r=>rank(r)).length;
+    const nextCell = r=>{
+      const n = info[r.entryId];
+      if(!n) return '<span style="color:var(--muted)">—</span>';
+      if(n.free) return `<span class="badge green" title="Left unticked so they stay in the library">✓ ${esc(n.label)}</span>`;
+      if(n.state==='over') return `<span class="badge grey">${esc(n.label)}</span>`;
+      return `<span class="badge gold" title="Has a class next period">${esc(n.label)}</span>`;
+    };
+    return `<p style="margin:0 0 10px">${esc(label||'The library period')} ends at <strong>${esc(fmtTime(endTime))}</strong>. Untick anyone who is staying on.${nFree? ` <strong>${nFree}</strong> ${nFree===1?'has':'have'} a free period straight after this one and ${nFree===1?'is':'are'} left unticked.`:''}</p>
       <table class="stage-table"><thead><tr>
-        <th><input type="checkbox" id="coRemAll" ${list.every(r=>sel[r.entryId])?'checked':''} aria-label="Select all"></th>
-        <th>Name</th><th>Class</th><th>Time in</th></tr></thead>
-      <tbody>${list.map(r=>`<tr><td><input type="checkbox" class="coRemRow" data-id="${esc(r.entryId)}" ${sel[r.entryId]?'checked':''}></td>
-        <td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls)}</td><td>${esc(fmtTime(r.timeIn))}</td></tr>`).join('')}</tbody></table>`;
+        <th><input type="checkbox" id="coRemAll" ${ordered.every(r=>sel[r.entryId])?'checked':''} aria-label="Select all"></th>
+        <th>Name</th><th>Class</th><th>Time in</th><th>Next period</th></tr></thead>
+      <tbody>${ordered.map(r=>`<tr><td><input type="checkbox" class="coRemRow" data-id="${esc(r.entryId)}" ${sel[r.entryId]?'checked':''}></td>
+        <td>${memberNameHtml(r.name, r.id)}</td><td>${esc(r.cls)}</td><td>${esc(fmtTime(r.timeIn))}</td><td>${nextCell(r)}</td></tr>`).join('')}</tbody></table>`;
   };
   const paint = ()=>{
     const list = currentlyInLibrary();
@@ -11413,10 +11467,19 @@ function weatherCelestialMarkup(key, svg){
           <circle cx="${cx-11}" cy="${cy+4}" r="1.6" fill="${p.hillBack}" opacity="${op*0.22}"/>
         </g></g></g>`;
   } else {
-    body = `<circle class="wx-glow" style="animation-duration:9s" cx="${cx}" cy="${cy}" r="${(halo*1.55).toFixed(1)}" fill="${p.sunGlow}" opacity="${(op*hop*0.30).toFixed(3)}"/>
-        <circle class="wx-glow" style="animation-duration:7s" cx="${cx}" cy="${cy}" r="${halo}" fill="${p.sunGlow}" opacity="${(op*hop*0.70).toFixed(3)}"/>
-        <circle class="wx-glow" style="animation-duration:5s;animation-delay:-1.8s" cx="${cx}" cy="${cy}" r="${(halo*0.68).toFixed(1)}" fill="${p.sunGlow}" opacity="${Math.min(1,op*hop).toFixed(3)}"/>
-        <g clip-path="url(#wxHz-${key})"><circle class="wx-core" cx="${cx}" cy="${cy}" r="${r}" fill="${p.sun}" opacity="${op}"/></g>`;
+    /* The whole glow is ONE radial gradient with a smootherstep falloff (zero slope at both the centre and
+       the outer edge), so it blooms evenly outward from the sun with no visible rings or hard edges. The
+       sun's own disc is also a gradient that fades into the glow instead of ending in a crisp circle. */
+    const gOp = Math.min(0.95, op*hop*1.7), gR = (halo*2.5).toFixed(1);
+    const ease = t => { const s = 1-t; return s*s*s*(s*(s*6-15)+10); };
+    const stops = [0,.08,.16,.25,.35,.45,.55,.65,.75,.85,.93,1].map(t=>
+      `<stop offset="${t}" stop-color="${t<=.08 ? p.sun : p.sunGlow}" stop-opacity="${(gOp*ease(t)).toFixed(3)}"/>`).join('');
+    body = `<radialGradient id="wxSunGlow-${key}" cx="50%" cy="50%" r="50%">${stops}</radialGradient>
+        <radialGradient id="wxSunCore-${key}" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stop-color="${p.sun}" stop-opacity="1"/><stop offset=".6" stop-color="${p.sun}" stop-opacity="1"/><stop offset="1" stop-color="${p.sun}" stop-opacity="0"/>
+        </radialGradient>
+        <circle class="wx-glow" style="animation-duration:8s" cx="${cx}" cy="${cy}" r="${gR}" fill="url(#wxSunGlow-${key})"/>
+        <g clip-path="url(#wxHz-${key})"><circle class="wx-core" cx="${cx}" cy="${cy}" r="${(r*1.3).toFixed(1)}" fill="url(#wxSunCore-${key})" opacity="${op}"/></g>`;
   }
   /* No cloud is drawn here any more. Clouds used to be pinned to the sun/moon's position, so they rose and set
      with it. Real clouds hang at their own height and just drift, so they now live only in the sky layer
