@@ -3,7 +3,11 @@
 <head>
 <link rel="manifest" href="manifest.json">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1F3A2E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>alcms</title>
 <script>
 /* Runs synchronously, before any CSS paints, so the splash screen never flashes the default
@@ -4717,6 +4721,40 @@ html[data-theme="dark"] .form-group select {
   }
 }
 
+
+/* ===== Mobile compliance pass: speed-dial FAB, top-bar overflow menu, safe areas ===== */
+:root{ --bnav-h:76px; --fab-bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 16px); }
+#topMoreBtn, #topMoreMenu{ display:none;}
+#topMoreMenu.open{ display:block;}
+#topMoreMenu button{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px 14px; background:none; border:none; color:var(--ink); font:inherit; cursor:pointer;}
+#topMoreMenu button[disabled]{ opacity:.4;}
+@media (max-width:900px){
+  /* viewport: dvh tracks the real visible height as the browser URL bar shows/hides */
+  @supports (height:100dvh){
+    #app{ min-height:100dvh;} .main{ height:100dvh;}
+    .topbar-nav-menu{ height:calc(100dvh - 60px);}
+  }
+  /* top bar: essentials stay (back, title, search, bell, status dot, avatar); the rest live in the ⋮ menu */
+  #topMoreBtn{ display:flex; background:none; border:none; color:#EFE8D3; align-items:center; justify-content:center; border-radius:50%;}
+  #noteBtn, #themeToggleMobile, #installAppBtn, #navForwardBtn{ display:none !important;}
+  .topbar-right{ position:relative;}
+  .topbar > div:first-child{ min-width:0; flex:1 1 0;}
+  .topbar .titles{ min-width:0; flex:0 1 auto;}
+  /* undo stays in the DOM as an invisible anchor so its existing dropdown still positions correctly */
+  #undoBtn{ position:absolute !important; right:0; top:0; width:44px; height:44px; visibility:hidden; pointer-events:none;}
+  #undoBtn #undoMenu{ visibility:visible; pointer-events:auto;}
+  /* one speed-dial: the quick-actions FAB sits above the bottom nav (and any docked toolbar);
+     "Add" and "Scroll to top" now live inside its menu instead of being separate floating buttons */
+  .mobile-fab, .scroll-top-btn{ display:none !important;}
+  #quickActionBtn{ bottom:var(--fab-bottom); right:16px; width:56px; height:56px; z-index:999;}
+  #quickActionsPanel{
+    bottom:calc(var(--fab-bottom) + 56px + 12px); right:16px; min-width:0; width:min(300px, calc(100vw - 32px));
+    max-height:calc(100dvh - var(--fab-bottom) - 56px - 12px - 72px - env(safe-area-inset-top,0px));
+    overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+  }
+  .toast{ bottom:calc(var(--fab-bottom) + 56px + 12px); max-width:calc(100vw - 32px);}
+  .cloud-indicator{ bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 12px); left:12px; max-width:calc(100vw - 100px);}
+}
 </style>
 </head>
 <body>
@@ -4844,6 +4882,8 @@ html[data-theme="dark"] .form-group select {
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
           <div id="notifDropdown" style="display:none;position:absolute;right:0;top:100%;width:300px;max-width:min(88vw,320px);max-height:360px;overflow:hidden;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:6px;text-align:left"></div>
         </button>
+        <button class="icon-btn" id="topMoreBtn" onclick="toggleTopMore(event)" title="More" aria-label="More actions" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+        <div class="dropdown-menu" id="topMoreMenu" role="menu"></div>
         <button class="icon-btn" id="themeToggleMobile" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
         <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online"><span id="connectivityIcon">🌐</span><span id="connectivityText">Online</span></div>
         <div class="clock-chip" id="topClock"></div>
@@ -26917,6 +26957,85 @@ async function maybeShowInstallHint(){
 // never flashes the manual banner before falling back to the real Install button.
 setTimeout(maybeShowInstallHint, 2500);
 
+
+/* ===== Mobile speed-dial + top-bar overflow menu ===== */
+function syncDialExtras(){
+  const list = document.querySelector('#quickActionsPanel .quick-actions-list'); if(!list) return;
+  list.querySelectorAll('.dial-extra').forEach(n=>n.remove());
+  if(window.innerWidth>900) return;
+  const items = [];
+  const add = document.getElementById('mobileFab');
+  if(add && add.style.display==='flex' && add.onclick) items.push({icon:'+', label:add.getAttribute('aria-label')||'Add', run:()=>add.onclick()});
+  const main = document.querySelector('.main');
+  if(main && main.scrollTop>480) items.push({icon:'\u2191', label:'Scroll to top', run:()=>main.scrollTo({top:0,behavior:'smooth'})});
+  items.reverse().forEach(it=>{
+    const b = document.createElement('button');
+    b.className = 'quick-action-item dial-extra';
+    b.innerHTML = '<span class="quick-action-icon"></span><span></span>';
+    b.children[0].textContent = it.icon; b.children[1].textContent = it.label;
+    b.onclick = ()=>{ closeQuickPanel(); it.run(); };
+    list.insertBefore(b, list.firstChild);
+  });
+}
+function syncFabOffsets(){
+  const root = document.documentElement.style;
+  const nav = document.getElementById('bottomNav');
+  const navH = (nav && nav.offsetHeight) ? Math.max(0, nav.offsetHeight - parseFloat(getComputedStyle(nav).paddingBottom||0)) : 76;
+  root.setProperty('--bnav-h', navH+'px');
+  const tb = document.querySelector('.settings-toolbar');
+  const extra = (tb && window.innerWidth<=900) ? tb.offsetHeight : 0; /* docked save bar sits above the nav; lift the FAB over it */
+  root.setProperty('--fab-bottom', 'calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + '+(16+extra)+'px)');
+}
+(function(){
+  window.addEventListener('resize', syncFabOffsets);
+  window.addEventListener('orientationchange', syncFabOffsets);
+  const start = ()=>{
+    syncFabOffsets();
+    const c = document.getElementById('content');
+    if(c) new MutationObserver(syncFabOffsets).observe(c,{childList:true});
+    const n = document.getElementById('bottomNavInner');
+    if(n) new MutationObserver(syncFabOffsets).observe(n,{childList:true});
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+function closeTopMore(){
+  const m = document.getElementById('topMoreMenu'), b = document.getElementById('topMoreBtn');
+  if(m) m.classList.remove('open'); if(b) b.setAttribute('aria-expanded','false');
+  document.removeEventListener('click', closeTopMoreOutside);
+}
+function closeTopMoreOutside(e){
+  const m = document.getElementById('topMoreMenu'), b = document.getElementById('topMoreBtn');
+  if(m && !m.contains(e.target) && b && !b.contains(e.target)) closeTopMore();
+}
+function toggleTopMore(e){
+  if(e) e.stopPropagation();
+  const m = document.getElementById('topMoreMenu'), b = document.getElementById('topMoreBtn');
+  if(!m || !b) return;
+  if(m.classList.contains('open')){ closeTopMore(); return; }
+  try{ closeUndoMenu(); }catch(_){}
+  try{ closeNotificationCenter(); }catch(_){}
+  const inst = document.getElementById('installAppBtn');
+  const entries = [
+    ['\u21B6','Undo history',()=>toggleUndoMenu(), false],
+    ['\uD83D\uDCDD','Quick notes',()=>openNoteModal(), false],
+    ['\uD83C\uDF13','Switch theme',()=>cycleTheme(), false],
+  ];
+  if(typeof canGoForward==='function' && canGoForward()) entries.push(['\u2192','Forward',()=>navGoForward(), false]);
+  if(inst && inst.style.display!=='none') entries.push(['\u2B07\uFE0F','Install app',()=>promptInstallApp(), false]);
+  m.innerHTML = '';
+  entries.forEach(([ic,label,fn])=>{
+    const it = document.createElement('button'); it.type='button'; it.setAttribute('role','menuitem');
+    it.innerHTML = '<span aria-hidden="true"></span><span></span>';
+    it.children[0].textContent = ic; it.children[1].textContent = label;
+    it.onclick = ()=>{ closeTopMore(); setTimeout(fn,0); };
+    m.appendChild(it);
+  });
+  m.classList.add('open');
+  repositionTopbarDropdown(m, b, {width:230, maxHeight:360});
+  b.setAttribute('aria-expanded','true');
+  setTimeout(()=>document.addEventListener('click', closeTopMoreOutside),0);
+}
+
 /* ================= Floating Quick Actions Panel ================= */
 
 // Floating panel state
@@ -26926,6 +27045,7 @@ function toggleQuickPanel() {
   const panel = document.getElementById('quickActionsPanel');
   const overlay = document.getElementById('quickPanelOverlay');
   quickPanelOpen = !quickPanelOpen;
+  if(quickPanelOpen) syncDialExtras();
   const fab = document.getElementById('quickActionBtn'); if(fab) fab.classList.toggle('open', quickPanelOpen);
   
   if (quickPanelOpen) {
