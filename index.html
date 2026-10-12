@@ -11724,20 +11724,20 @@ function weatherCelestialMarkup(key, svg){
        crisp solid disc sitting inside that glow. */
     /* A proper hot sun: white-hot centre fading to a warm gold disc, a warm glow that adds light to the sky
        (screen blend) and a faint wide corona. The period colours alone are pale cream on a pale sky, which read as weak. */
-    const warmT = {sunrise:.35, morning:.6, noon:.65, afternoon:.5, goldenHour:.35, sunset:.25, evening:.2}[key] || .5;
-    const sunWarm = wxMix('#FFC93C', p.sun, warmT), glowWarm = wxMix('#FFB43A', p.sunGlow, warmT*.8);
-    const gOp = Math.min(1, op*hop*2.8), gR = (halo*2.2).toFixed(1), cR = (halo*3.6).toFixed(1);
+    /* The disc is ONE fixed colour at every time of day. The glow is the period's own sky-glow tint lightened
+       toward white, so it stays soft instead of turning yellow. */
+    const glowWarm = wxMix('#FFF6EA', p.sunGlow, 0.5);
+    const gOp = Math.min(1, op*hop*2.1), gR = (halo*2.2).toFixed(1), cR = (halo*3.6).toFixed(1);
     const ease = t => { const s = 1-t; return s*s*s*(s*(s*6-15)+10); };
     const stops = [0,.08,.16,.25,.35,.45,.55,.65,.75,.85,.93,1].map(t=>
-      `<stop offset="${t}" stop-color="${t<=.1 ? '#FFFBE6' : glowWarm}" stop-opacity="${(gOp*ease(t)).toFixed(3)}"/>`).join('');
+      `<stop offset="${t}" stop-color="${glowWarm}" stop-opacity="${(gOp*ease(t)).toFixed(3)}"/>`).join('');
     const cStops = [0,.2,.4,.6,.8,1].map(t=>
       `<stop offset="${t}" stop-color="${glowWarm}" stop-opacity="${(Math.min(.5, op*hop*.9)*ease(t)).toFixed(3)}"/>`).join('');
     body = `<radialGradient id="wxSunGlow-${key}" cx="50%" cy="50%" r="50%">${stops}</radialGradient>
         <radialGradient id="wxSunCorona-${key}" cx="50%" cy="50%" r="50%">${cStops}</radialGradient>
-        <radialGradient id="wxSunDisc-${key}" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="#FFF6D0"/><stop offset="1" stop-color="${sunWarm}"/></radialGradient>
-        <circle cx="${cx}" cy="${cy}" r="${cR}" fill="url(#wxSunCorona-${key})" />
+                <circle cx="${cx}" cy="${cy}" r="${cR}" fill="url(#wxSunCorona-${key})" />
         <circle class="wx-glow" style="animation-duration:8s" cx="${cx}" cy="${cy}" r="${gR}" fill="url(#wxSunGlow-${key})"/>
-        <g clip-path="url(#wxHz-${key})"><circle class="wx-core" cx="${cx}" cy="${cy}" r="${(r*1.12).toFixed(1)}" fill="url(#wxSunDisc-${key})" opacity="${Math.min(1,op)}"/></g>`;
+        <g clip-path="url(#wxHz-${key})"><circle class="wx-core" cx="${cx}" cy="${cy}" r="${(r*1.12).toFixed(1)}" fill="#FFE791" opacity="${Math.min(1,op)}"/></g>`;
   }
   /* No cloud is drawn here any more. Clouds used to be pinned to the sun/moon's position, so they rose and set
      with it. Real clouds hang at their own height and just drift, so they now live only in the sky layer
