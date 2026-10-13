@@ -4723,7 +4723,7 @@ html[data-theme="dark"] .form-group select {
 
 
 /* ===== Mobile compliance pass: speed-dial FAB, top-bar overflow menu, safe areas ===== */
-:root{ --bnav-h:76px; --fab-bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 16px); }
+:root{ --bnav-h:76px; --fab-bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 6px); }
 #topMoreBtn, #topMoreMenu{ display:none;}
 #topMoreMenu.open{ display:block;}
 #topMoreMenu button{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px 14px; background:none; border:none; color:var(--ink); font:inherit; cursor:pointer;}
@@ -4783,8 +4783,33 @@ html[data-theme="dark"] .form-group select {
 @media (max-width:900px){
   /* the scroll area ends clear of the bottom nav AND the floating button, so the last row is always reachable */
   .content{ padding-bottom:calc(var(--fab-bottom) + 56px + 16px);}
+  /* Homepage has its own inner scroller that already runs to the screen bottom (as originally designed):
+     keep .content flush there, and clear the nav/FAB with trailing space inside the scroller instead */
+  .content:has(.home-scroll-body){ padding-bottom:0px;}
+  .home-scroll-body{ padding-bottom:calc(var(--fab-bottom) + 56px + 16px);}
   .toolbar, .panel-head-actions{ flex-wrap:wrap; overflow:visible;}
   .toolbar input[type=text]{ min-width:0; flex:1 1 160px;}
+}
+
+/* ===== Bottom nav uses the same background, transparency and blur as the top bar ===== */
+@media (max-width:900px){
+  .bottom-nav{
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 40%),
+      linear-gradient(135deg, var(--sidebar-bg) 0%, var(--sidebar-bg-dark) 120%);
+    backdrop-filter:saturate(160%) blur(14px); -webkit-backdrop-filter:saturate(160%) blur(14px);
+    border-top:1px solid rgba(184,134,62,.35);
+    box-shadow:0 -4px 18px rgba(0,0,0,.2), 0 -1px 0 rgba(255,255,255,.06) inset;
+  }
+  body[data-topbar-style="glassy"] .bottom-nav{
+    background:rgba(var(--topbar-bg-rgb,31,58,46),var(--section-opacity,0.7));
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid rgba(255,255,255,.15);
+  }
+  body[data-topbar-style="blank"] .bottom-nav{
+    background:transparent; border-top:1px solid var(--line); box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none;
+  }
+  body[data-topbar-style="blank"] .bottom-nav button{ color:var(--muted);}
+  body[data-topbar-style="blank"] .bottom-nav button.active{ color:var(--ink);}
 }
 </style>
 </head>
@@ -27015,7 +27040,7 @@ function syncFabOffsets(){
   root.setProperty('--bnav-h', navH+'px');
   const tb = document.querySelector('.settings-toolbar');
   const extra = (tb && window.innerWidth<=900) ? tb.offsetHeight : 0; /* docked save bar sits above the nav; lift the FAB over it */
-  root.setProperty('--fab-bottom', 'calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + '+(16+extra)+'px)');
+  root.setProperty('--fab-bottom', 'calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + '+(6+extra)+'px)');
 }
 (function(){
   window.addEventListener('resize', syncFabOffsets);
@@ -27054,6 +27079,8 @@ function toggleTopMore(e){
     ['\uD83C\uDF13','Switch theme',()=>cycleTheme(), false],
   ];
   if(inst && inst.style.display!=='none') entries.push(['\u2B07\uFE0F','Install app',()=>promptInstallApp(), false]);
+  entries.push(['\uD83D\uDCBE','Save',()=>saveNow(), false]);
+  entries.push(['\uD83D\uDEAA','Sign out',()=>signOut(), false]);
   m.innerHTML = '';
   entries.forEach(([ic,label,fn,off])=>{
     const it = document.createElement('button'); it.type='button'; it.setAttribute('role','menuitem');
