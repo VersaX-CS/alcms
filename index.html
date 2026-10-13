@@ -7219,6 +7219,7 @@ function migrateNewFeatureData(db){
   // Frozen day-by-day record of skipped library periods (see SKIPPED LIBRARY SCHEDULE) and the date tracking began.
   if(!db.skipLedger || typeof db.skipLedger!=='object' || Array.isArray(db.skipLedger)) db.skipLedger = {};
   if(typeof db.skipTrackingStart!=='string') db.skipTrackingStart = '';
+  if(!db.skipSubjectSig || typeof db.skipSubjectSig!=='object' || Array.isArray(db.skipSubjectSig)) db.skipSubjectSig = {};
   if(!Array.isArray(db.schoolAbsences)) db.schoolAbsences = [];   // students absent from school on a given day (exempt from library obligations)
   (function normalizeActivitiesToUpperCase(){
     const caseMap = {}; // lowercased -> canonical UPPERCASE form
@@ -7530,6 +7531,7 @@ function buildSeedDB(){
     excusedSkips: [],
     skipLedger: {},
     skipTrackingStart: '',
+    skipSubjectSig: {},
     schoolAbsences: [],
     classTimetable: {},
     classTimings: {},
@@ -19351,6 +19353,7 @@ function setRollDueDates(on){
 function ensureSkipStore(){
   if(!DB.skipLedger || typeof DB.skipLedger!=='object' || Array.isArray(DB.skipLedger)) DB.skipLedger = {};
   if(typeof DB.skipTrackingStart!=='string') DB.skipTrackingStart = '';
+  if(!DB.skipSubjectSig || typeof DB.skipSubjectSig!=='object' || Array.isArray(DB.skipSubjectSig)) DB.skipSubjectSig = {};
 }
 function skipTrackingStart(){ ensureSkipStore(); return DB.skipTrackingStart||''; }
 function computeRawSkipsForDate(dateKey, onlyId){
@@ -19402,7 +19405,7 @@ function computeRawSkipsForDate(dateKey, onlyId){
 }
 // Freezes every finished day since tracking began. Saved quietly (no undo entry) — it's
 // bookkeeping, not something the person did.
-function syncSkipLedger(){
+function freezeSkipDays(){
   ensureSkipStore();
   let changed = false;
   if(!DB.skipTrackingStart){ DB.skipTrackingStart = getWeekStartISO(); changed = true; }
@@ -19413,6 +19416,10 @@ function syncSkipLedger(){
     k = isoAddDays(k, 1);
   }
   if(changed){ try{ Promise.resolve(storeSet(STORAGE_KEY, JSON.stringify(DB))).catch(()=>{}); }catch(e){} }
+}
+function syncSkipLedger(){
+  freezeSkipDays();
+  autoRecountSkipsForSubjects();   // picks up subject changes of any age, incl. edits made before this existed
 }
 /* opts: {from,to ('YYYY-MM-DD'), cls, type ('CLASS'|'INDIVIDUAL'), status ('UNEXPLAINED'|'EXCUSED'), q, userId}
    Returns newest-first records: {id,name,cls,dateKey,day,period,time,type,detail,status,reason,by}. */
@@ -19445,33 +19452,87 @@ function getSkipRecords(opts){
   }
   return out.sort((a,b)=> b.dateKey.localeCompare(a.dateKey) || periodSortKey(a.period)-periodSortKey(b.period) || a.name.localeCompare(b.name));
 }
-/* Recount one student's skips after their subject combination is saved or reset. Their personal free
-   periods depend on their subjects, so every finished day from the start of the current term (or from
-   when tracking began, if that is later) is rebuilt for THIS student only against the register and the
-   schedule as it now stands: periods they should have been in the library for and weren't are added,
-   and any that no longer apply are removed. Other students' frozen records, earlier terms, excuses,
-   absent-from-school days and closed days are left exactly as they are. Today is always live.
-   Call after syncLibrarySchedulePersonalFree() and before saveDB(). Returns {from, added, removed} or null. */
-function recountStudentSkips(userId){
-  const u = (DB.users||[]).find(x=>x.id===userId);
-  if(!u || u.category!=='STUDENT') return null;
-  syncSkipLedger();                                   // make sure every finished day has a ledger entry
+/* ---- Automatic recount when a student's subjects differ from what their frozen days assumed ----
+   A student's personal free periods depend on their subject combination. The app remembers the
+   combination each student's skip history was last worked out under (DB.skipSubjectSig). Whenever the
+   current combination differs - however it changed, including subject edits made before this feature
+   existed - that student's finished days are rebuilt from the start of the current term (or from when
+   tracking began / they were added, if later) against the register and the schedule as it now stands.
+   Periods they should have been in the library for and weren't are added; ones that no longer apply
+   are removed. Other students, earlier terms, excuses, absent-from-school days and closed days are
+   untouched, and today is always live. A move to another class is NOT treated as a subject change
+   (the new class's timetable never applies to days before the move) - it just updates the note. */
+function skipSubjectSigOf(u){ return {c:u.cls||'', s:studentSubjects(u).slice().sort().join(',')}; }
+// Records the current combination for any student without one. The first time ever, every existing
+// student is treated as enrolled since tracking began, and those with their own subject override
+// (edits made before this feature) are queued for a recount. Later, a student with no record is new.
+function registerSkipSigs(){
+  ensureSkipStore();
+  const sigs = DB.skipSubjectSig, legacy = Object.keys(sigs).length===0;
+  const need = new Set(); let dirty = false;
+  (DB.users||[]).forEach(u=>{
+    if(u.category!=='STUDENT') return;
+    const cur = skipSubjectSigOf(u), prev = sigs[u.id];
+    if(!prev){
+      sigs[u.id] = {...cur, since: legacy ? '' : todayISO()}; dirty = true;
+      if(legacy && Array.isArray(u.subjects)) need.add(u.id);
+      return;
+    }
+    if(prev.c!==cur.c){ sigs[u.id] = {...cur, since:prev.since||''}; dirty = true; return; }
+    if(prev.s!==cur.s) need.add(u.id);
+  });
+  return {need, dirty};
+}
+function rebuildSkipsFor(ids){
   const today = todayISO(), trackStart = DB.skipTrackingStart;
   const tp = DB.setup && DB.setup.currentTermStart ? parseAnyDate(DB.setup.currentTermStart) : null;
   const termKey = tp ? dateToKey(tp) : '';
-  const from = (termKey && termKey > trackStart) ? termKey : trackStart;
+  const base = (termKey && termKey > trackStart) ? termKey : trackStart;
+  const starts = new Map();
+  ids.forEach(id=>{
+    const u = DB.users.find(x=>x.id===id), sg = DB.skipSubjectSig[id];
+    const added = u && u.dateAdded ? dateToKey(parseAnyDate(u.dateAdded)) : '';
+    starts.set(id, [base, added, (sg&&sg.since)||''].reduce((a,b)=> b>a?b:a));
+  });
+  const minFrom = [...starts.values()].reduce((a,b)=> b<a?b:a, today);
+  const single = ids.size===1 ? [...ids][0] : undefined;
   let added = 0, removed = 0;
-  for(let k=from, g=0; k<today && g++<800; k=isoAddDays(k,1)){
+  for(let k=minFrom, g=0; k<today && g++<800; k=isoAddDays(k,1)){
     if(!Array.isArray(DB.skipLedger[k])) continue;
-    const old = DB.skipLedger[k].filter(r=>r.id===userId);
-    const rest = DB.skipLedger[k].filter(r=>r.id!==userId);
-    const fresh = computeRawSkipsForDate(k, userId);
-    const oldKeys = new Set(old.map(r=>r.period)), freshKeys = new Set(fresh.map(r=>r.period));
-    fresh.forEach(r=>{ if(!oldKeys.has(r.period)) added++; });
-    old.forEach(r=>{ if(!freshKeys.has(r.period)) removed++; });
+    const A = new Set([...ids].filter(id=> starts.get(id)<=k));
+    if(!A.size) continue;
+    const old = DB.skipLedger[k].filter(r=>A.has(r.id));
+    const rest = DB.skipLedger[k].filter(r=>!A.has(r.id));
+    const fresh = computeRawSkipsForDate(k, single).filter(r=>A.has(r.id));
+    const oldKeys = new Set(old.map(r=>r.id+'|'+r.period)), freshKeys = new Set(fresh.map(r=>r.id+'|'+r.period));
+    fresh.forEach(r=>{ if(!oldKeys.has(r.id+'|'+r.period)) added++; });
+    old.forEach(r=>{ if(!freshKeys.has(r.id+'|'+r.period)) removed++; });
     DB.skipLedger[k] = rest.concat(fresh);
   }
-  return {from, added, removed};
+  ids.forEach(id=>{
+    const u = DB.users.find(x=>x.id===id); if(!u) return;
+    DB.skipSubjectSig[id] = {...skipSubjectSigOf(u), since:(DB.skipSubjectSig[id]&&DB.skipSubjectSig[id].since)||''};
+  });
+  return {from:minFrom, added, removed};
+}
+function autoRecountSkipsForSubjects(){
+  const {need, dirty} = registerSkipSigs();
+  let res = null;
+  if(need.size){
+    try{ syncLibrarySchedulePersonalFree(); }catch(e){}   // make sure the free-period breakdown matches current subjects
+    res = rebuildSkipsFor(need);
+  }
+  if(dirty || need.size){ try{ Promise.resolve(storeSet(STORAGE_KEY, JSON.stringify(DB))).catch(()=>{}); }catch(e){} }
+  return res;
+}
+// Immediate recount for one student, used right after their subjects are saved or reset so the
+// confirmation can say what changed. Returns {from, added, removed} or null for non-students.
+function recountStudentSkips(userId){
+  const u = (DB.users||[]).find(x=>x.id===userId);
+  if(!u || u.category!=='STUDENT') return null;
+  freezeSkipDays();
+  registerSkipSigs();
+  return rebuildSkipsFor(new Set([userId]));
 }
 function skipRecountNote(res){
   if(!res) return '';
