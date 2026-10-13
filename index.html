@@ -15012,10 +15012,10 @@ function viewSubjects(userId){
   if(saveBtn) saveBtn.onclick = ()=>{
     const chosen = $$('.subjChk').filter(c=>c.checked).map(c=>c.value);
     u.subjects = chosen;
-    syncLibrarySchedulePersonalFree(); saveDB('Subjects updated for '+u.name); close(); render(); toast('Subjects updated for '+u.name);
+    syncLibrarySchedulePersonalFree(); const rc = recountStudentSkips(u.id); saveDB('Subjects updated for '+u.name); close(); render(); toast('Subjects updated for '+u.name+skipRecountNote(rc));
   };
   const resetBtn = $('#mResetDefault');
-  if(resetBtn) resetBtn.onclick = ()=>{ delete u.subjects; syncLibrarySchedulePersonalFree(); saveDB('Subjects reset to class default'); close(); render(); toast('Reset to class default'); };
+  if(resetBtn) resetBtn.onclick = ()=>{ delete u.subjects; syncLibrarySchedulePersonalFree(); const rc = recountStudentSkips(u.id); saveDB('Subjects reset to class default'); close(); render(); toast('Reset to class default'+skipRecountNote(rc)); };
 }
 
 /* ================= PAGE: CIRCULATION ================= */
@@ -15029,12 +15029,12 @@ function saveMemberSubjectsTab(id){
   if(!isAdmin()) return requireAdmin('edit member subjects');
   const u = DB.users.find(x=>x.id===id); if(!u) return;
   const chosen = $$('.subjChkProfile').filter(c=>c.checked).map(c=>c.value);
-  u.subjects = chosen; syncLibrarySchedulePersonalFree(); saveDB('Subjects updated for '+u.name); render(); toast('Subjects updated for '+u.name);
+  u.subjects = chosen; syncLibrarySchedulePersonalFree(); const rc = recountStudentSkips(u.id); saveDB('Subjects updated for '+u.name); render(); toast('Subjects updated for '+u.name+skipRecountNote(rc));
 }
 function resetMemberSubjectsTab(id){
   if(!isAdmin()) return requireAdmin('edit member subjects');
   const u = DB.users.find(x=>x.id===id); if(!u) return;
-  delete u.subjects; syncLibrarySchedulePersonalFree(); saveDB('Subjects reset to class default'); render(); toast('Reset to class default');
+  delete u.subjects; syncLibrarySchedulePersonalFree(); const rc = recountStudentSkips(u.id); saveDB('Subjects reset to class default'); render(); toast('Reset to class default'+skipRecountNote(rc));
 }
 function printMemberSubjectsTab(id){
   const u = DB.users.find(x=>x.id===id); if(!u) return;
@@ -19444,6 +19444,38 @@ function getSkipRecords(opts){
     });
   }
   return out.sort((a,b)=> b.dateKey.localeCompare(a.dateKey) || periodSortKey(a.period)-periodSortKey(b.period) || a.name.localeCompare(b.name));
+}
+/* Recount one student's skips after their subject combination is saved or reset. Their personal free
+   periods depend on their subjects, so every finished day from the start of the current term (or from
+   when tracking began, if that is later) is rebuilt for THIS student only against the register and the
+   schedule as it now stands: periods they should have been in the library for and weren't are added,
+   and any that no longer apply are removed. Other students' frozen records, earlier terms, excuses,
+   absent-from-school days and closed days are left exactly as they are. Today is always live.
+   Call after syncLibrarySchedulePersonalFree() and before saveDB(). Returns {from, added, removed} or null. */
+function recountStudentSkips(userId){
+  const u = (DB.users||[]).find(x=>x.id===userId);
+  if(!u || u.category!=='STUDENT') return null;
+  syncSkipLedger();                                   // make sure every finished day has a ledger entry
+  const today = todayISO(), trackStart = DB.skipTrackingStart;
+  const tp = DB.setup && DB.setup.currentTermStart ? parseAnyDate(DB.setup.currentTermStart) : null;
+  const termKey = tp ? dateToKey(tp) : '';
+  const from = (termKey && termKey > trackStart) ? termKey : trackStart;
+  let added = 0, removed = 0;
+  for(let k=from, g=0; k<today && g++<800; k=isoAddDays(k,1)){
+    if(!Array.isArray(DB.skipLedger[k])) continue;
+    const old = DB.skipLedger[k].filter(r=>r.id===userId);
+    const rest = DB.skipLedger[k].filter(r=>r.id!==userId);
+    const fresh = computeRawSkipsForDate(k, userId);
+    const oldKeys = new Set(old.map(r=>r.period)), freshKeys = new Set(fresh.map(r=>r.period));
+    fresh.forEach(r=>{ if(!oldKeys.has(r.period)) added++; });
+    old.forEach(r=>{ if(!freshKeys.has(r.period)) removed++; });
+    DB.skipLedger[k] = rest.concat(fresh);
+  }
+  return {from, added, removed};
+}
+function skipRecountNote(res){
+  if(!res) return '';
+  return ` — skips recounted from ${fmtDate(res.from)} (${res.added} added, ${res.removed} removed)`;
 }
 function groupSkipsByStudent(recs){
   const m = new Map();
