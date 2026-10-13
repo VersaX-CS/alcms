@@ -4811,6 +4811,20 @@ html[data-theme="dark"] .form-group select {
   body[data-topbar-style="blank"] .bottom-nav button{ color:var(--muted);}
   body[data-topbar-style="blank"] .bottom-nav button.active{ color:var(--ink);}
 }
+
+#topMoreMenu .mo-ico{ display:flex; align-items:center; justify-content:center; width:20px; height:20px; font-size:18px; flex:none; line-height:1;}
+#topMoreMenu .mo-ico svg{ width:1em; height:1em; display:block;}
+
+.quick-action-icon{ display:flex; align-items:center; justify-content:center; width:20px; height:20px;}
+.quick-action-icon svg{ width:1em; height:1em; display:block;}
+@media (max-width:900px){
+  /* Steady side menu: pin to top/bottom edges (no viewport-unit height to recompute when the browser bar
+     slides away on first scroll), keep scrolling inside it, and freeze the page behind while it is open */
+  .topbar-nav-menu{ height:auto !important; bottom:0; padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));
+    overscroll-behavior:contain; -webkit-overflow-scrolling:touch; transform:translateZ(0); backface-visibility:hidden;}
+  body:has(.topbar-nav-menu.open){ overflow:hidden;}
+  html, body{ overscroll-behavior-y:none;}
+}
 </style>
 </head>
 <body>
@@ -27021,14 +27035,14 @@ function syncDialExtras(){
   if(window.innerWidth>900) return;
   const items = [];
   const add = document.getElementById('mobileFab');
-  if(add && add.style.display==='flex' && add.onclick) items.push({icon:'+', label:add.getAttribute('aria-label')||'Add', run:()=>add.onclick()});
+  if(add && add.style.display==='flex' && add.onclick) items.push({icon:(window.STANDARD_ICONS&&STANDARD_ICONS.qa_plus)||'+', label:add.getAttribute('aria-label')||'Add', run:()=>add.onclick()});
   const main = document.querySelector('.main');
-  if(main && main.scrollTop>480) items.push({icon:'\u2191', label:'Scroll to top', run:()=>main.scrollTo({top:0,behavior:'smooth'})});
+  if(main && main.scrollTop>480) items.push({icon:(window.STANDARD_ICONS&&STANDARD_ICONS.qa_up)||'\u2191', label:'Scroll to top', run:()=>main.scrollTo({top:0,behavior:'smooth'})});
   items.reverse().forEach(it=>{
     const b = document.createElement('button');
     b.className = 'quick-action-item dial-extra';
     b.innerHTML = '<span class="quick-action-icon"></span><span></span>';
-    b.children[0].textContent = it.icon; b.children[1].textContent = it.label;
+    b.children[0].innerHTML = it.icon; b.children[1].textContent = it.label;
     b.onclick = ()=>{ closeQuickPanel(); it.run(); };
     list.insertBefore(b, list.firstChild);
   });
@@ -27071,21 +27085,23 @@ function toggleTopMore(e){
   try{ closeUndoMenu(); }catch(_){}
   try{ closeNotificationCenter(); }catch(_){}
   const inst = document.getElementById('installAppBtn');
+  const ico = (k,f)=>{ try{ return navIcon(k,f); }catch(_){ return f; } };      // same line icons the desktop uses
+  const btnSvg = (id,f)=>{ const sv = document.querySelector('#'+id+' > svg'); return sv ? sv.outerHTML : f; };
   const entries = [
-    ['\u2190','Back',()=>navGoBack(), !(typeof canGoBack==='function' && canGoBack())],
-    ['\u2192','Forward',()=>navGoForward(), !(typeof canGoForward==='function' && canGoForward())],
-    ['\u21B6','Undo history',()=>toggleUndoMenu(), false],
-    ['\uD83D\uDCDD','Quick notes',()=>openNoteModal(), false],
-    ['\uD83C\uDF13','Switch theme',()=>cycleTheme(), false],
+    [btnSvg('navBackBtn','\u2190'),'Back',()=>navGoBack(), !(typeof canGoBack==='function' && canGoBack())],
+    [btnSvg('navForwardBtn','\u2192'),'Forward',()=>navGoForward(), !(typeof canGoForward==='function' && canGoForward())],
+    [btnSvg('undoBtn','\u21B6'),'Undo history',()=>toggleUndoMenu(), false],
+    [ico('notes','\uD83D\uDCDD'),'Quick notes',()=>openNoteModal(), false],
+    [ico('theme','\uD83C\uDF13'),'Switch theme',()=>cycleTheme(), false],
   ];
-  if(inst && inst.style.display!=='none') entries.push(['\u2B07\uFE0F','Install app',()=>promptInstallApp(), false]);
-  entries.push(['\uD83D\uDCBE','Save',()=>saveNow(), false]);
-  entries.push(['\uD83D\uDEAA','Sign out',()=>signOut(), false]);
+  if(inst && inst.style.display!=='none') entries.push([ico('install','\u2B07\uFE0F'),'Install app',()=>promptInstallApp(), false]);
+  entries.push([ico('save','\uD83D\uDCBE'),'Save',()=>saveNow(), false]);
+  entries.push([ico('lock','\uD83D\uDEAA'),'Sign out',()=>signOut(), false]);
   m.innerHTML = '';
   entries.forEach(([ic,label,fn,off])=>{
     const it = document.createElement('button'); it.type='button'; it.setAttribute('role','menuitem');
-    it.innerHTML = '<span aria-hidden="true"></span><span></span>';
-    it.children[0].textContent = ic; it.children[1].textContent = label;
+    it.innerHTML = '<span class="mo-ico" aria-hidden="true"></span><span></span>';
+    it.children[0].innerHTML = ic; it.children[1].textContent = label;
     if(off){ it.disabled = true; } else { it.onclick = ()=>{ closeTopMore(); setTimeout(fn,0); }; }
     m.appendChild(it);
   });
@@ -27170,6 +27186,35 @@ function toggleTopMore(e){
   window.addEventListener('resize', sched); window.addEventListener('orientationchange', sched);
   const start = ()=>{ const c = document.getElementById('content'); if(c) new MutationObserver(sched).observe(c,{childList:true, subtree:true}); sched(); };
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
+
+/* ===== Quick-actions menu: line icons (same style as the desktop icon set) ===== */
+(function(){
+  const QA = {
+    checkin:  '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    issue:    '<path d="M4 5.5c2.5-.8 5 0 7 1.5v11c-2-1.5-4.5-2.3-7-1.5z"/><path d="M13 12h8"/><path d="M18 9l3 3-3 3"/>',
+    addtitle: '<path d="M5 4h10a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M5 18a2 2 0 0 1 2-2h10"/><path d="M11 8v5"/><path d="M8.5 10.5h5"/>',
+    addmember:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M19 8v6"/><path d="M16 11h6"/>',
+    schedule: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M9 3v4"/><path d="M15 3v4"/>',
+    timetable:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    absent:   '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 11h6"/>',
+    skipped:  '<circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/>',
+    calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M9 3v4"/><path d="M15 3v4"/><path d="M8 14h2"/><path d="M14 14h2"/><path d="M8 17h2"/>',
+    plus:     '<path d="M12 5v14"/><path d="M5 12h14"/>',
+    up:       '<path d="M12 19V5"/><path d="M6 11l6-6 6 6"/>'
+  };
+  function install(){
+    try{
+      Object.keys(QA).forEach(k=>{ STANDARD_ICONS['qa_'+k] = svgIco(QA[k]); });
+      document.querySelectorAll('#quickActionsPanel .quick-action-item:not(.dial-extra)').forEach(b=>{
+        const m = (b.getAttribute('onclick')||'').match(/openQuickAction\('(\w+)'\)/); if(!m) return;
+        const ic = b.querySelector('.quick-action-icon'); if(ic && QA[m[1]]) ic.innerHTML = STANDARD_ICONS['qa_'+m[1]];
+      });
+      window.STANDARD_ICONS = STANDARD_ICONS;
+    }catch(e){ console.warn('quick action icons', e); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', install); else install();
 })();
 
 /* ================= Floating Quick Actions Panel ================= */
