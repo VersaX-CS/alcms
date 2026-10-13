@@ -4825,6 +4825,42 @@ html[data-theme="dark"] .form-group select {
   body:has(.topbar-nav-menu.open){ overflow:hidden;}
   html, body{ overscroll-behavior-y:none;}
 }
+
+/* ===== Round 5: touch, keyboard, landscape/tablet, performance, accessibility ===== */
+a, button, input, select, textarea, label, summary, [role="button"], .btn, .icon-btn{ touch-action:manipulation;}
+:where(a,button,input,select,textarea,summary,[tabindex],[role="button"]):focus-visible{ outline:2px solid var(--brass,#B8863E); outline-offset:2px;}
+.skip-link{ position:absolute; left:8px; top:-60px; z-index:3000; background:var(--card,#fff); color:var(--ink,#111); padding:10px 14px; border-radius:8px; box-shadow:var(--shadow); text-decoration:none; font-weight:600;}
+.skip-link:focus{ top:max(8px, env(safe-area-inset-top,0px));}
+@media (max-width:900px){
+  .topbar{ padding-left:max(14px, env(safe-area-inset-left,0px)); padding-right:max(14px, env(safe-area-inset-right,0px));}
+  .bottom-nav-inner{ padding-left:max(4px, env(safe-area-inset-left,0px)); padding-right:max(4px, env(safe-area-inset-right,0px));}
+  /* on-screen keyboard open: get the fixed bars out of the way of the field being typed in */
+  body.kb-open .bottom-nav, body.kb-open #quickActionBtn, body.kb-open #quickActionsPanel,
+  body.kb-open #quickPanelOverlay, body.kb-open .settings-toolbar{ display:none !important;}
+  /* skip rendering below-the-fold panels until scrolled near (panels hosting dropdowns/toolbars are excluded: containment would clip them) */
+  .content > .card.panel:not(:first-child):not(:has(.dropdown-wrap, [data-dropdown-toggle], .toolbar, .panel-head-actions, .mo-trigger)){
+    content-visibility:auto; contain-intrinsic-size:auto 280px;
+  }
+}
+@media (max-width:900px) and (orientation:landscape) and (max-height:520px){
+  .topbar{ padding-top:calc(4px + env(safe-area-inset-top,0px)); padding-bottom:4px;}
+  .bottom-nav-inner{ padding-top:3px; padding-bottom:3px;}
+  .bottom-nav button{ gap:1px; padding:2px 2px; font-size:10px;}
+  .bottom-nav button .ico{ font-size:18px;}
+  #quickActionsPanel{ max-height:calc(100dvh - var(--fab-bottom) - 56px - 12px - 16px);}
+}
+@media (min-width:601px) and (max-width:900px){
+  .content:not(:has(.home-scroll-body)){ padding-left:max(16px, calc((100% - 760px)/2)); padding-right:max(16px, calc((100% - 760px)/2));}
+  #quickActionsPanel{ width:340px;}
+}
+
+/* "Update available" prompt from the service worker */
+#swUpdateBanner{ position:fixed; right:20px; bottom:20px; max-width:420px; z-index:1100; display:flex; align-items:center; gap:10px;
+  background:var(--forest-dark,#1F3A2E); color:#fff; padding:12px 14px; border-radius:10px; box-shadow:var(--shadow); font-size:14px;}
+#swUpdateBanner span{ flex:1;}
+#swUpdateBanner button{ min-height:36px; border-radius:8px; border:1px solid rgba(255,255,255,.6); background:transparent; color:#fff; padding:6px 12px; cursor:pointer; font:inherit; font-weight:600;}
+#swUpdateBanner button[data-a="go"]{ background:rgba(255,255,255,.18);}
+@media (max-width:900px){ #swUpdateBanner{ left:12px; right:84px; max-width:none; bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 12px);} body.kb-open #swUpdateBanner{ display:none;} }
 </style>
 </head>
 <body>
@@ -4895,6 +4931,7 @@ html[data-theme="dark"] .form-group select {
 </div>
 
 <div id="app">
+  <a class="skip-link" href="#content" onclick="event.preventDefault();var c=document.getElementById('content');if(c){c.setAttribute('tabindex','-1');c.focus();}">Skip to content</a>
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar(false)"></div>
   <aside class="sidebar" id="sidebar">
     <div class="brand">
@@ -4995,7 +5032,7 @@ html[data-theme="dark"] .form-group select {
   </nav>
 </div>
 <div id="modalRoot"></div>
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="installHintBanner" class="install-hint-banner" role="status">
   <span id="installHintText"></span>
   <button type="button" id="installHintDismissBtn" onclick="dismissInstallHintBanner()" aria-label="Dismiss">✕</button>
@@ -27143,7 +27180,7 @@ function toggleTopMore(e){
   function closeMenu(){
     if(!open) return;
     const {menu, trigger, holder} = open; open = null;
-    Array.from(menu.children).forEach(n=>{ if(holder && holder.isConnected) holder.appendChild(n); else n.remove(); });
+    Array.from(menu.children).forEach(n=>{ n.removeAttribute('role'); if(holder && holder.isConnected) holder.appendChild(n); else n.remove(); });
     menu.classList.remove('open'); trigger.setAttribute('aria-expanded','false');
   }
   function toggle(trigger, holder){
@@ -27151,7 +27188,7 @@ function toggleTopMore(e){
     closeMenu(); if(same) return;
     let menu = document.getElementById('moMenu');
     if(!menu){ menu = document.createElement('div'); menu.id = 'moMenu'; menu.setAttribute('role','menu'); document.body.appendChild(menu); }
-    Array.from(holder.children).forEach(n=>menu.appendChild(n));
+    Array.from(holder.children).forEach(n=>{ n.setAttribute('role','menuitem'); menu.appendChild(n); });
     menu.classList.add('open'); trigger.setAttribute('aria-expanded','true');
     open = {menu, trigger, holder};
     try{ positionFloatingPanel(menu, trigger, {align:'right'}); }catch(_){}
@@ -27168,7 +27205,7 @@ function toggleTopMore(e){
     if(!isMobile()){ if(document.querySelector('[data-mo]')) restoreAll(); return; }
     c.querySelectorAll(BAR_SEL).forEach(box=>{ if(!box.dataset.mo){ const n = cands(box).length; if(n>=3) collapse(box, Math.min(2, n-2), '\u22EF More', false); } });
     const cells = new Set();
-    c.querySelectorAll('td > button, td > a.btn, td > div > button').forEach(b=>{ const td = b.closest('td'); if(td) cells.add(td); });
+    c.querySelectorAll('td > button, td > a.btn, td > div > button').forEach(b=>{ const td = b.closest('td'); if(td && !td.closest('table.cards-on-mobile')) cells.add(td); });
     cells.forEach(td=>{
       if(td.dataset.mo) return;
       let group = td;
@@ -27215,6 +27252,127 @@ function toggleTopMore(e){
     }catch(e){ console.warn('quick action icons', e); }
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', install); else install();
+})();
+
+
+/* ===== Round 5: keyboard-aware bars, lazy images, form hints, dialog roles, theme-color, icons, service worker ===== */
+(function(){
+  const ready = fn=> document.readyState==='loading' ? document.addEventListener('DOMContentLoaded', fn) : fn();
+
+  /* on-screen keyboard: hide fixed bars + keep the focused field visible */
+  ready(()=>{
+    const vv = window.visualViewport; if(!vv) return;
+    let base = window.innerHeight;
+    const isField = el=> !!el && ((/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !/^(checkbox|radio|button|submit|reset|range|file|color|image)$/i.test(el.type||'')) || el.isContentEditable);
+    const update = ()=>{
+      if(!isField(document.activeElement)) base = Math.max(window.innerHeight, vv.height);
+      const open = window.innerWidth<=900 && isField(document.activeElement) && (base - vv.height) > 140;
+      const was = document.body.classList.contains('kb-open');
+      document.body.classList.toggle('kb-open', open);
+      if(open && !was){ const el = document.activeElement; setTimeout(()=>{ try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(_){} }, 120); }
+    };
+    vv.addEventListener('resize', update);
+    document.addEventListener('focusin', ()=>setTimeout(update,200));
+    document.addEventListener('focusout', ()=>setTimeout(update,200));
+    window.addEventListener('orientationchange', ()=>setTimeout(()=>{ base = window.innerHeight; update(); },300));
+  });
+
+  /* lazy images, input hints, dialog roles — applied to existing DOM and to anything added later */
+  const noLazy = img=> img.closest('.topbar,.sidebar,.bottom-nav,.brand,.auth-top-actions,#sidebarLogo,.stamp-badge');
+  const lazy = img=>{ if(!img.hasAttribute('loading') && !noLazy(img)) img.setAttribute('loading','lazy'); if(!img.hasAttribute('decoding')) img.setAttribute('decoding','async'); };
+  const SKIP_T = ['checkbox','radio','button','submit','reset','file','range','color','hidden','image','password'];
+  const hint = el=>{
+    const t = (el.type||'text').toLowerCase(); if(SKIP_T.includes(t)) return;
+    const key = ((el.name||'')+' '+(el.id||'')+' '+(el.getAttribute('aria-label')||'')+' '+(el.placeholder||'')).toLowerCase();
+    const setIf = (a,v)=>{ if(!el.hasAttribute(a)) el.setAttribute(a,v); };
+    if(t==='email' || /e-?mail/.test(key)){ setIf('inputmode','email'); setIf('autocomplete','email'); setIf('autocapitalize','off'); return; }
+    if(t==='tel' || /phone|mobile|\btel\b|whatsapp/.test(key)){ setIf('inputmode','tel'); setIf('autocomplete','tel'); return; }
+    if(t==='number'){ setIf('inputmode', el.getAttribute('step')==='1' ? 'numeric' : 'decimal'); return; }
+    if(t==='search'){ setIf('enterkeyhint','search'); return; }
+    if(/isbn|barcode|accession|call.?no|card.?(no|number|id)|member.?id|trx|receipt/.test(key)){ setIf('autocomplete','off'); setIf('autocapitalize','off'); setIf('autocorrect','off'); setIf('spellcheck','false'); return; }
+    if(/(first|given).?name/.test(key)) setIf('autocomplete','given-name');
+    else if(/(last|family|sur).?name/.test(key)) setIf('autocomplete','family-name');
+    else if(/postal|zip/.test(key)) setIf('autocomplete','postal-code');
+  };
+  let dlgN = 0;
+  const dialog = bd=>{
+    const m = bd.querySelector('.modal'); if(!m || m.hasAttribute('role')) return;
+    m.setAttribute('role','dialog'); m.setAttribute('aria-modal','true');
+    const h = m.querySelector('.modal-head h3, h3, h2'); if(h){ if(!h.id) h.id = 'dlgTitle'+(++dlgN); m.setAttribute('aria-labelledby', h.id); }
+  };
+  const enhance = root=>{
+    if(!root || root.nodeType!==1) return;
+    if(root.tagName==='IMG') lazy(root); else if(root.tagName==='INPUT') hint(root);
+    if(root.querySelectorAll){
+      root.querySelectorAll('img').forEach(lazy); root.querySelectorAll('input').forEach(hint);
+      const bds = root.matches && root.matches('.modal-backdrop') ? [root] : Array.from(root.querySelectorAll('.modal-backdrop'));
+      bds.forEach(b=>{ dialog(b); setTimeout(()=>dialog(b),0); });
+    }
+  };
+  ready(()=>{
+    enhance(document.body);
+    new MutationObserver(muts=>{ muts.forEach(m=>m.addedNodes.forEach(enhance)); }).observe(document.body,{childList:true, subtree:true});
+    const more = document.getElementById('topMoreBtn'); if(more) more.setAttribute('aria-controls','topMoreMenu');
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ try{ closeTopMore(); }catch(_){} } });
+  });
+
+  /* theme-color follows the active palette / light-dark theme */
+  ready(()=>{
+    const meta = document.querySelector('meta[name="theme-color"]'); if(!meta) return;
+    let tmr = 0;
+    const sync = ()=>{
+      const c = getComputedStyle(document.documentElement).getPropertyValue('--sidebar-bg').trim();
+      if(c && !/gradient|var\(/i.test(c)) meta.setAttribute('content', c);
+    };
+    const later = ()=>{ clearTimeout(tmr); tmr = setTimeout(sync,60); };
+    new MutationObserver(later).observe(document.documentElement,{attributes:true, attributeFilter:['data-theme','data-palette','style','class']});
+    new MutationObserver(later).observe(document.body,{attributes:true, attributeFilter:['data-topbar-style','data-palette','class']});
+    sync(); setTimeout(sync,800);
+  });
+
+  /* apple-touch-icon taken from the real manifest icons (no guessed file names) */
+  ready(()=>{
+    if(document.querySelector('link[rel="apple-touch-icon"]')) return;
+    const ml = document.querySelector('link[rel="manifest"]'); if(!ml || !window.fetch) return;
+    const murl = new URL(ml.getAttribute('href'), location.href);
+    fetch(murl).then(r=>r.ok ? r.json() : null).then(m=>{
+      if(!m || !Array.isArray(m.icons)) return;
+      const px = i=> parseInt(String(i.sizes||'0').split(/[x ]/)[0],10) || 0;
+      const pngs = m.icons.filter(i=>/png/i.test((i.type||'')+(i.src||''))).sort((a,b)=>px(a)-px(b));
+      const pick = pngs.find(i=>px(i)>=180) || pngs[pngs.length-1]; if(!pick) return;
+      const l = document.createElement('link'); l.rel = 'apple-touch-icon'; l.href = new URL(pick.src, murl).href;
+      document.head.appendChild(l);
+    }).catch(()=>{});
+  });
+
+  /* service worker (sw.js sits next to index.html) + "update available" prompt */
+  window.addEventListener('load', ()=>{
+    if(!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
+    let updating = false;
+    const banner = worker=>{
+      if(document.getElementById('swUpdateBanner')) return;
+      const b = document.createElement('div'); b.id = 'swUpdateBanner'; b.setAttribute('role','alert');
+      b.innerHTML = '<span>A new version is available.</span><button type="button" data-a="later">Later</button><button type="button" data-a="go">Refresh</button>';
+      b.querySelector('[data-a="later"]').onclick = ()=> b.remove();
+      b.querySelector('[data-a="go"]').onclick = async ()=>{
+        updating = true; b.querySelector('span').textContent = 'Saving and updating\u2026';
+        try{ if(typeof saveNow==='function') await saveNow(); }catch(_){}   // never reload over unsaved changes
+        worker.postMessage({type:'SKIP_WAITING'});
+      };
+      document.body.appendChild(b);
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(updating) location.reload(); });
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      if(reg.waiting && navigator.serviceWorker.controller) banner(reg.waiting);
+      reg.addEventListener('updatefound', ()=>{
+        const w = reg.installing; if(!w) return;
+        w.addEventListener('statechange', ()=>{ if(w.state==='installed' && navigator.serviceWorker.controller) banner(w); });
+      });
+      const check = ()=> reg.update().catch(()=>{});
+      document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') check(); });
+      setInterval(check, 30*60*1000);
+    }).catch(e=>console.warn('Service worker registration failed', e));
+  });
 })();
 
 /* ================= Floating Quick Actions Panel ================= */
