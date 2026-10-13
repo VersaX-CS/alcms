@@ -12668,7 +12668,7 @@ function todaysClassScheduleRows(dateKey, weekday){
       const status = isNow ? '<span class="badge green">NOW</span>' : isPast ? '<span class="badge grey">PASSED</span>' : soon!=null ? `<span class="badge gold">IN ${soon} MIN</span>` : '';
       const gVisited = g.classes.length && g.classes.every(c=>visitedClasses.has(c));
       const indivBreak = (r[5] && typeof r[5]==='object') ? Object.fromEntries(Object.entries(r[5]).filter(([c])=>g.individual.includes(c) || g.classes.includes(c))) : null;
-      const individualHtml = renderIndividualFreeHtml(indivBreak, dateKey, r[1], r[2]);
+      const individualHtml = renderIndividualFreeHtml(indivBreak, dateKey, r[1], r[2], {checkin:true});
       const attendance = g.classes.length ? renderStudentAttendanceList(dateKey, r[1], g.classes, {checkin:true}) : '';
       const label = g.classes.length ? esc(g.classes.join(', ')) : '';
       const timeTxt = g.start ? (g.end ? fmtTime(g.start)+'–'+fmtTime(g.end) : fmtTime(g.start)) : '';
@@ -20117,6 +20117,10 @@ function excuseKey(id, dateKey, period){ return id+'|'+dateKey+'|'+String(period
 function excuseCb(id, dateKey, period, cls){
   return `<input type="checkbox" class="exc-cb" data-id="${esc(id)}" data-date="${esc(dateKey)}" data-period="${esc(period)}" data-cls="${esc(cls||'')}" ${excuseSel.has(excuseKey(id,dateKey,period))?'checked':''} onchange="toggleExcuseSel(this)" title="Tick to excuse several students at once" style="margin:0 4px 0 0;vertical-align:middle;cursor:pointer">`;
 }
+/* Matching small action buttons for a student row in Today's Schedule (Check in / Excuse / Absent). */
+function schedActBtn(label, js, title){
+  return `<button type="button" class="btn small sched-act" onclick="${js}" title="${esc(title)}" style="padding:1px 8px;font-size:11px;line-height:1.5;margin-left:4px">${label}</button>`;
+}
 function excuseToolbar(label, opts){
   return `<div class="exc-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 6px;font-size:11.5px">
     <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:var(--muted-label)"><input type="checkbox" class="exc-all" onchange="toggleExcuseGroup(this)" style="margin:0"> ${esc(label||'Select all unexplained')}</label>
@@ -20251,7 +20255,7 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses, opts){
   
   // One-tap "Check in" beside a student who isn't in yet (Quick Action Today's Schedule, today's periods only).
   const oneTapBtn = (s)=> (staff && canCheckIn && !s.absent && !s.checkedIn)
-    ? `<button type="button" class="btn small" onclick="checkInOneFromSchedule('${esc(s.id)}','${esc(period)}','${esc(s.cls)}')" title="Check ${esc(s.name)} in now (Private Reading)" style="padding:1px 8px;font-size:11px;line-height:1.5;margin-left:4px">Check in</button>` : '';
+    ? schedActBtn('Check in', `checkInOneFromSchedule('${esc(s.id)}','${esc(period)}','${esc(s.cls)}')`, `Check ${s.name} in now (Private Reading)`) : '';
   const pill = (s)=>{
     if(s.absent){
       return `<span title="Absent from school${s.absenceReason? ' — '+esc(s.absenceReason):''}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(127,140,141,0.12);border-radius:3px;border-left:3px solid #7f8c8d">
@@ -20280,7 +20284,7 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses, opts){
       ${staff? excuseCb(s.id, dateKey, period, s.cls) : ''}<span style="font-size:11px;color:#e67e22;font-weight:600">✗</span>
       <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
       ${oneTapBtn(s)}
-      ${staff? `<a href="#" onclick="markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px;margin-left:2px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(s.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px">absent</a>`:''}
+      ${staff? schedActBtn('Excuse', `markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}')`, 'Mark excused') + schedActBtn('Absent', `markAbsentQuick('${esc(s.id)}','${esc(dateKey)}')`, 'Absent from school — exempt') : ''}
     </span>`;
   };
   // Each status gets its own row so the three groups never run together visually — a librarian
@@ -22225,7 +22229,7 @@ function setMinPeriodOverlap(v){
   toast(n ? `Staying ${n}+ minutes into a period now counts as attending it` : 'Any overlap with a period now counts as attending it');
 }
 
-function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
+function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride, opts){
   if(!breakdown || typeof breakdown!=='object') return '';
   const parts = Object.entries(breakdown).filter(([,info])=>info && info.students && info.students.length);
   if(!parts.length) return '';
@@ -22234,6 +22238,8 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
   const day = dateKey ? weekdayForDateKey(dateKey) : '';
   const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride) : !!dateKey;
   const staff = isStaff();
+  // Quick-action Today's Schedule only: Check in buttons (today's periods only), as in the class-visit lists.
+  const canCheckIn = !!(opts && opts.checkin) && dateKey===todayISO();
   return parts.map(([cls,info])=>{
     // Each class is judged against its OWN period time, not the whole-school earliest start.
     const started = dateKey && period ? periodHasStarted(dateKey, day, period, startOverride, cls) : !!dateKey;
@@ -22263,17 +22269,22 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride){
           const title = `Excused${excuse.by? ' by '+excuse.by:''}${excuse.reason? ' — '+excuse.reason:''}`;
           badge = ` <span class="badge" title="${esc(title)}" style="font-size:9.5px;padding:1px 5px;margin-left:3px;background:rgba(74,144,226,0.15);color:#4a90e2">⚑ excused</span>`;
           if(staff && period) badge += ` <a href="#" onclick="unmarkStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none;font-size:9.5px">✕</a>`;
+          if(staff && period && canCheckIn) badge += schedActBtn('Check in', `checkInOneFromSchedule('${esc(u.id)}','${esc(period)}','${esc(cls)}')`, `Check ${u.name} in now (Private Reading)`);
         } else {
           badge = ' <span class="badge gold" style="font-size:9.5px;padding:1px 5px;margin-left:3px">skipped</span>';
           if(staff && period){ pre = excuseCb(u.id, dateKey, period, cls); skippedRows++; }
-          if(staff && period) badge += ` <a href="#" onclick="markStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}','${esc(cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(u.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:9.5px">absent</a>`;
+          if(staff && period){
+            if(canCheckIn) badge += schedActBtn('Check in', `checkInOneFromSchedule('${esc(u.id)}','${esc(period)}','${esc(cls)}')`, `Check ${u.name} in now (Private Reading)`);
+            badge += schedActBtn('Excuse', `markStudentExcused('${esc(u.id)}','${esc(dateKey)}','${esc(period)}','${esc(cls)}')`, 'Mark excused')
+                  + schedActBtn('Absent', `markAbsentQuick('${esc(u.id)}','${esc(dateKey)}')`, 'Absent from school — exempt');
+          }
         }
       }
       return `<span style="white-space:nowrap">${pre}${esc(name)}${badge}</span>`;
     });
     const unexplainedCount = info.students.length - checkedCount - excusedCount - absentCount;
     const summarySuffix = (dateKey && started) ? ` — <strong>${checkedCount}/${info.students.length-absentCount}</strong> checked in${excusedCount? ` · ${excusedCount} excused`:''}${unexplainedCount? ` · ${unexplainedCount} unexplained`:''}${absentCount? ` · ${absentCount} absent (exempt)`:''}` : '';
-    return `<details class="fp-details" style="margin-top:4px"><summary><span class="fp-chevron">▶</span>${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div data-exc-group style="margin:4px 0 0 10px">${skippedRows>1 ? excuseToolbar('Select all unexplained') : ''}<div style="font-size:12px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></div></details>`;
+    return `<details class="fp-details" style="margin-top:4px"><summary><span class="fp-chevron">▶</span>${esc(cls)}: ${info.students.length} student${info.students.length===1?'':'s'} free (not offering ${esc(info.subject)})${summarySuffix}</summary><div data-exc-group style="margin:4px 0 0 10px">${skippedRows>1 ? excuseToolbar('Select all unexplained', {checkin: canCheckIn}) : ''}<div style="font-size:12px;display:flex;flex-wrap:wrap;gap:4px 10px">${rows.join('')}</div></div></details>`;
   }).join('');
 }
 /* Shared by autoBuildLibrarySchedule (the explicit, confirm-then-apply admin action) and
