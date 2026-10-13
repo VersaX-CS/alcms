@@ -4755,6 +4755,37 @@ html[data-theme="dark"] .form-group select {
   .toast{ bottom:calc(var(--fab-bottom) + 56px + 12px); max-width:calc(100vw - 32px);}
   .cloud-indicator{ bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 12px); left:12px; max-width:calc(100vw - 100px);}
 }
+
+/* ===== Mobile round 2: Home + title menu lead the top bar, ⋮ is last, nav labels sit beside icons ===== */
+@media (max-width:900px){
+  .topbar #topHomeBtn{ display:flex !important; order:-2;}
+  .topbar #topHomeBtn[style*="display: none"]{ display:none !important;}
+  .topbar .topbar-title-btn{ order:-1;}
+  #navBackBtn{ display:none !important;}
+}
+
+/* Side panel (title menu): .dropdown-menu a{display:block} was overriding the flex row, which dropped each label under its icon */
+.dropdown-menu.topbar-nav-menu a{ display:flex; flex-direction:row; align-items:center; gap:10px; white-space:nowrap;}
+.dropdown-menu.topbar-nav-menu a .ico{ display:flex; align-items:center; justify-content:center; width:20px; flex:none;}
+.dropdown-menu.topbar-nav-menu a > span:not(.ico):not(.nav-badge){ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;}
+
+/* ===== Mobile round 3: action overflow menus + nothing hidden behind the bottom nav ===== */
+.mo-holder{ display:none !important;}
+.mo-trigger{ flex:none; white-space:nowrap;}
+.mo-trigger.mo-row{ min-width:44px; padding-left:10px; padding-right:10px; font-weight:700; letter-spacing:1px;}
+#moMenu{ position:fixed; display:none; min-width:200px; max-width:calc(100vw - 24px); max-height:min(60dvh,420px); overflow-y:auto;
+  background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); z-index:1200; padding:4px; box-sizing:border-box;}
+#moMenu.open{ display:flex; flex-direction:column; gap:2px;}
+#moMenu .btn, #moMenu button, #moMenu a.btn{ display:flex; align-items:center; justify-content:flex-start; gap:8px; width:100%; margin:0; border:none; border-radius:8px;
+  background:transparent; box-shadow:none; color:var(--ink); min-height:44px; padding:10px 14px; text-align:left; font-size:14px; white-space:normal; text-decoration:none;}
+#moMenu .btn:hover, #moMenu button:hover{ background:var(--parchment-dim);}
+#moMenu .btn.danger{ color:var(--terracotta);}
+@media (max-width:900px){
+  /* the scroll area ends clear of the bottom nav AND the floating button, so the last row is always reachable */
+  .content{ padding-bottom:calc(var(--fab-bottom) + 56px + 16px);}
+  .toolbar, .panel-head-actions{ flex-wrap:wrap; overflow:visible;}
+  .toolbar input[type=text]{ min-width:0; flex:1 1 160px;}
+}
 </style>
 </head>
 <body>
@@ -4882,8 +4913,6 @@ html[data-theme="dark"] .form-group select {
           🔔<span id="notifBellCount" class="nav-badge" style="position:absolute;top:-2px;right:-2px;display:none"></span>
           <div id="notifDropdown" style="display:none;position:absolute;right:0;top:100%;width:300px;max-width:min(88vw,320px);max-height:360px;overflow:hidden;z-index:1200;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:6px;text-align:left"></div>
         </button>
-        <button class="icon-btn" id="topMoreBtn" onclick="toggleTopMore(event)" title="More" aria-label="More actions" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
-        <div class="dropdown-menu" id="topMoreMenu" role="menu"></div>
         <button class="icon-btn" id="themeToggleMobile" onclick="cycleTheme()" title="Switch theme" aria-label="Switch theme">🌓</button>
         <div id="connectivityStatus" class="connectivity-status" title="Network status: Online" aria-label="Network status: Online"><span id="connectivityIcon">🌐</span><span id="connectivityText">Online</span></div>
         <div class="clock-chip" id="topClock"></div>
@@ -4894,6 +4923,8 @@ html[data-theme="dark"] .form-group select {
             <div class="rl" id="accountRole">—</div>
           </div>
         </div>
+        <button class="icon-btn" id="topMoreBtn" onclick="toggleTopMore(event)" title="More" aria-label="More actions" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+        <div class="dropdown-menu" id="topMoreMenu" role="menu"></div>
       </div>
     </div>
     <div class="content" id="content"></div>
@@ -27016,18 +27047,19 @@ function toggleTopMore(e){
   try{ closeNotificationCenter(); }catch(_){}
   const inst = document.getElementById('installAppBtn');
   const entries = [
+    ['\u2190','Back',()=>navGoBack(), !(typeof canGoBack==='function' && canGoBack())],
+    ['\u2192','Forward',()=>navGoForward(), !(typeof canGoForward==='function' && canGoForward())],
     ['\u21B6','Undo history',()=>toggleUndoMenu(), false],
     ['\uD83D\uDCDD','Quick notes',()=>openNoteModal(), false],
     ['\uD83C\uDF13','Switch theme',()=>cycleTheme(), false],
   ];
-  if(typeof canGoForward==='function' && canGoForward()) entries.push(['\u2192','Forward',()=>navGoForward(), false]);
   if(inst && inst.style.display!=='none') entries.push(['\u2B07\uFE0F','Install app',()=>promptInstallApp(), false]);
   m.innerHTML = '';
-  entries.forEach(([ic,label,fn])=>{
+  entries.forEach(([ic,label,fn,off])=>{
     const it = document.createElement('button'); it.type='button'; it.setAttribute('role','menuitem');
     it.innerHTML = '<span aria-hidden="true"></span><span></span>';
     it.children[0].textContent = ic; it.children[1].textContent = label;
-    it.onclick = ()=>{ closeTopMore(); setTimeout(fn,0); };
+    if(off){ it.disabled = true; } else { it.onclick = ()=>{ closeTopMore(); setTimeout(fn,0); }; }
     m.appendChild(it);
   });
   m.classList.add('open');
@@ -27035,6 +27067,83 @@ function toggleTopMore(e){
   b.setAttribute('aria-expanded','true');
   setTimeout(()=>document.addEventListener('click', closeTopMoreOutside),0);
 }
+
+
+/* ===== Mobile action overflow: surplus toolbar / row buttons move into a "⋯" menu ===== */
+(function(){
+  const BAR_SEL = '.panel-head-actions, .toolbar, .sac-toolbar, .stage-toolbar';
+  const isMobile = ()=> window.innerWidth <= 900;
+  let open = null; // {menu, trigger, nodes, holder}
+  function cands(box){
+    return Array.from(box.children).filter(el=> el.matches('button, a.btn') && !el.classList.contains('mo-trigger')
+      && !el.hasAttribute('data-keep') && !el.hasAttribute('data-dropdown-toggle') && !el.hasAttribute('aria-haspopup'));
+  }
+  function collapse(box, keepN, label, rowMode){
+    if(box.dataset.mo) return;
+    const all = cands(box);
+    const prim = all.filter(b=>!/\b(secondary|danger)\b/.test(b.className));
+    const keep = new Set();
+    for(const b of prim.concat(all)){ if(keep.size>=keepN) break; keep.add(b); }
+    const moving = all.filter(b=>!keep.has(b));
+    if(!moving.length) return;
+    box.dataset.mo = '1';
+    const holder = document.createElement('span'); holder.className = 'mo-holder';
+    const rec = moving.map(node=>{ const ph = document.createComment('mo'); node.replaceWith(ph); holder.appendChild(node); return {node, ph}; });
+    const t = document.createElement('button');
+    t.type = 'button'; t.className = 'btn secondary small mo-trigger' + (rowMode?' mo-row':'');
+    t.setAttribute('aria-haspopup','true'); t.setAttribute('aria-expanded','false'); t.setAttribute('aria-label','More actions');
+    t.textContent = label;
+    t.addEventListener('click', ev=>{ ev.stopPropagation(); toggle(t, holder); });
+    box.appendChild(holder); box.appendChild(t);
+    box._mo = {rec, holder, t};
+  }
+  function closeMenu(){
+    if(!open) return;
+    const {menu, trigger, holder} = open; open = null;
+    Array.from(menu.children).forEach(n=>{ if(holder && holder.isConnected) holder.appendChild(n); else n.remove(); });
+    menu.classList.remove('open'); trigger.setAttribute('aria-expanded','false');
+  }
+  function toggle(trigger, holder){
+    const same = open && open.trigger===trigger;
+    closeMenu(); if(same) return;
+    let menu = document.getElementById('moMenu');
+    if(!menu){ menu = document.createElement('div'); menu.id = 'moMenu'; menu.setAttribute('role','menu'); document.body.appendChild(menu); }
+    Array.from(holder.children).forEach(n=>menu.appendChild(n));
+    menu.classList.add('open'); trigger.setAttribute('aria-expanded','true');
+    open = {menu, trigger, holder};
+    try{ positionFloatingPanel(menu, trigger, {align:'right'}); }catch(_){}
+  }
+  function restoreAll(){
+    closeMenu();
+    document.querySelectorAll('[data-mo]').forEach(box=>{
+      const m = box._mo; if(m){ m.rec.forEach(r=>{ if(r.ph.parentNode) r.ph.replaceWith(r.node); }); m.holder.remove(); m.t.remove(); delete box._mo; }
+      delete box.dataset.mo;
+    });
+  }
+  function organize(){
+    const c = document.getElementById('content'); if(!c) return;
+    if(!isMobile()){ if(document.querySelector('[data-mo]')) restoreAll(); return; }
+    c.querySelectorAll(BAR_SEL).forEach(box=>{ if(!box.dataset.mo){ const n = cands(box).length; if(n>=3) collapse(box, Math.min(2, n-2), '\u22EF More', false); } });
+    const cells = new Set();
+    c.querySelectorAll('td > button, td > a.btn, td > div > button').forEach(b=>{ const td = b.closest('td'); if(td) cells.add(td); });
+    cells.forEach(td=>{
+      if(td.dataset.mo) return;
+      let group = td;
+      if(cands(td).length<2){
+        group = Array.from(td.children).find(d=>d.tagName==='DIV' && cands(d).length>=2);
+        if(!group || group.dataset.mo) return;
+      }
+      collapse(group, 0, '\u22EF', true);
+    });
+  }
+  let raf = 0; const sched = ()=>{ cancelAnimationFrame(raf); raf = requestAnimationFrame(organize); };
+  document.addEventListener('click', e=>{ if(open && !open.menu.contains(e.target) && !open.trigger.contains(e.target)) closeMenu(); });
+  document.addEventListener('click', e=>{ if(open && open.menu.contains(e.target)) setTimeout(closeMenu,0); }, true);
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeMenu(); });
+  window.addEventListener('resize', sched); window.addEventListener('orientationchange', sched);
+  const start = ()=>{ const c = document.getElementById('content'); if(c) new MutationObserver(sched).observe(c,{childList:true, subtree:true}); sched(); };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
 
 /* ================= Floating Quick Actions Panel ================= */
 
