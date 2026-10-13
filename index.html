@@ -8239,6 +8239,36 @@ function openCheckoutReminder(periods, endTime){
   paint();
 }
 
+/* Call up the "class ending soon" check-out list on demand (button at the top of Today's Schedule).
+   Uses the period(s) running right now - each class group's own bell times - and the same pop-up the
+   automatic reminder shows, so everyone still signed in can be ticked and checked out. Marks that
+   period end as already reminded so the automatic pop-up doesn't repeat it moments later. */
+function openClassEndingNow(){
+  if(!isStaff()) return requireStaff('check students out');
+  const today = todayISO();
+  if(isSchoolClosed(today)) return toast('No academic activities today — no periods are running');
+  if($('#checkoutRemBackdrop')) return;
+  const now = new Date();
+  const weekday = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][now.getDay()];
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const running = [];
+  (DB.scheduleDays||[]).filter(r=> r[0]===weekday && r[1]).forEach(r=>{
+    scheduleRowTimeGroups(weekday, r).forEach(g=>{
+      if(!g.start || !g.end) return;
+      const st = timeToMinutes(g.start), en = timeToMinutes(g.end);
+      if(st!=null && en!=null && nowMin>=st && nowMin<en) running.push({period:r[1], end:g.end, endMin:en});
+    });
+  });
+  if(!running.length) return toast('No library period is running right now');
+  const endMin = Math.min(...running.map(x=>x.endMin));
+  const soonest = running.filter(x=>x.endMin===endMin);
+  const endTime = soonest[0].end;
+  if(!currentlyInLibrary().length) return toast('Nobody is signed in to the library right now');
+  if(checkoutRemDayKey !== now.toDateString()){ checkoutRemDayKey = now.toDateString(); checkoutRemFired = new Set(); }
+  checkoutRemFired.add(endTime);
+  openCheckoutReminder([...new Set(soonest.map(x=>x.period))], endTime);
+}
+
 let outstandingSummaryTimer = null;
 function restartOutstandingSummaryTimer(){
   clearInterval(outstandingSummaryTimer);
@@ -20145,6 +20175,14 @@ function checkInSelectedPrivate(btn){
   const g = btn.closest('[data-exc-group]'); if(!g) return;
   const items = [...g.querySelectorAll('.exc-cb:checked')].map(c=>({id:c.dataset.id, dateKey:c.dataset.date, period:c.dataset.period, cls:c.dataset.cls}));
   if(!items.length) return toast('Tick at least one student first');
+  scheduleCheckIn(items);
+}
+// One-tap check-in beside a single student in Today's Schedule (same Private Reading entry as the batch button).
+function checkInOneFromSchedule(id, period, cls){
+  if(!isStaff()) return requireStaff('check students in');
+  scheduleCheckIn([{id, dateKey:todayISO(), period:period||'', cls:cls||''}]);
+}
+function scheduleCheckIn(items){
   const today = todayISO(), timeIn = new Date().toTimeString().slice(0,5), stamp = new Date().toISOString();
   const newIds = [], periods = new Set(), already = [], blocked = [];
   items.forEach(i=>{
@@ -20211,6 +20249,9 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses, opts){
   // Quick-action Today's Schedule only: a "Check in selected" button beside "Excuse selected" (today's periods only).
   const canCheckIn = !!(opts && opts.checkin) && dateKey===todayISO();
   
+  // One-tap "Check in" beside a student who isn't in yet (Quick Action Today's Schedule, today's periods only).
+  const oneTapBtn = (s)=> (staff && canCheckIn && !s.absent && !s.checkedIn)
+    ? `<button type="button" class="btn small" onclick="checkInOneFromSchedule('${esc(s.id)}','${esc(period)}','${esc(s.cls)}')" title="Check ${esc(s.name)} in now (Private Reading)" style="padding:1px 8px;font-size:11px;line-height:1.5;margin-left:4px">Check in</button>` : '';
   const pill = (s)=>{
     if(s.absent){
       return `<span title="Absent from school${s.absenceReason? ' — '+esc(s.absenceReason):''}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(127,140,141,0.12);border-radius:3px;border-left:3px solid #7f8c8d">
@@ -20231,12 +20272,14 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses, opts){
         <span style="font-size:11px;color:#4a90e2;font-weight:600">⚑</span>
         <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
         ${staff? `<a href="#" onclick="unmarkStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}');return false;" title="Remove excuse" style="color:#4a90e2;text-decoration:none;margin-left:2px">✕</a>`:''}
+        ${oneTapBtn(s)}
       </span>`;
     }
     // Not checked in and not excused — a genuine no-show, distinct from a permitted skip.
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(243,156,18,0.08);border-radius:3px;border-left:3px solid #e67e22">
       ${staff? excuseCb(s.id, dateKey, period, s.cls) : ''}<span style="font-size:11px;color:#e67e22;font-weight:600">✗</span>
       <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
+      ${oneTapBtn(s)}
       ${staff? `<a href="#" onclick="markStudentExcused('${esc(s.id)}','${esc(dateKey)}','${esc(period)}','${esc(s.cls)}');return false;" title="Mark excused" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px;margin-left:2px">excuse</a> <a href="#" onclick="markAbsentQuick('${esc(s.id)}','${esc(dateKey)}');return false;" title="Absent from school — exempt" style="color:var(--muted-label);text-decoration:underline;font-size:10.5px">absent</a>`:''}
     </span>`;
   };
@@ -27703,6 +27746,7 @@ function openScheduleModal(keepTop) {
           <button class="close-btn" onclick="closeQuickActionModal()">✕</button>
         </div>
         <div class="quick-modal-body">
+          ${isStaff()? `<div style="margin-bottom:10px"><button type="button" class="btn secondary" onclick="openClassEndingNow()" title="Open the check-out list for the period running now">🔔 Class ending soon — check out</button></div>`:''}
           <div id="todaySchedBox" style="max-height: 400px; overflow-y: auto; position: relative;">
             ${scheduleContent}
           </div>
