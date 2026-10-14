@@ -7190,6 +7190,13 @@ function migrateNewFeatureData(db){
     {condition:'MISSING', consequence:'Full replacement cost charged; borrowing suspended until resolved'},
   ];
   if(!Array.isArray(db.consequenceLog)) db.consequenceLog = [];
+  if(!Array.isArray(db.suspensionLog)) db.suspensionLog = [];
+  if(!Array.isArray(db.externalExams)) db.externalExams = [];
+  // A rule whose wording says "suspended" but was never given a Suspend setting (older/default rules) now
+  // actually suspends. A rule the admin has explicitly saved with the box ticked or unticked is left alone.
+  [db.setup.overdueConsequences, db.setup.itemConsequences].forEach(list=> (list||[]).forEach(r=>{
+    if(r && r.suspend===undefined && /suspend/i.test(r.consequence||'')) r.suspend = true;
+  }));
   if(db.setup.scanWebhookUrl===undefined) db.setup.scanWebhookUrl = '';
   if(db.setup.stationId===undefined) db.setup.stationId = '';
   if(!db.setup.notifTypes) db.setup.notifTypes = {};
@@ -7541,7 +7548,7 @@ function buildSeedDB(){
       {id:'ST-3', day:'MONDAY', time:'14:30', category:'Staff Meeting', title:'', leadMinutes:15, notes:'', active:true},
       {id:'ST-4', day:'EVERYDAY', time:'15:30', category:'Closing', title:'', leadMinutes:10, notes:'', active:true},
     ],
-    setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], archive: {users:[], catalogue:[]}, consequenceLog: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
+    setup, reminders: [], reservations: [], notifications: [], versions: [], trash: [], archive: {users:[], catalogue:[]}, consequenceLog: [], suspensionLog: [], externalExams: [], equipment: [], activityLog: [], meta:{seededAt: new Date().toISOString()}
   };
 }
 
@@ -7983,7 +7990,7 @@ function processOverdueStrikes(){
     trx.strikeCounted = true; trx.strikeDate = todayISO();
     if(!Array.isArray(trx.history)) trx.history = [];
     if(!user){ return; }
-    user.strike = (user.strike||0) + 1;
+    user.strike = (user.strike||0) + 1; trx.strikeNo = user.strike;
     trx.history.unshift({date:trx.strikeDate, event:'OVERDUE', detail:`Became overdue — strike ${user.strike} added to ${user.name}`});
     logActivity('circulation', 'overdue', `Overdue: "${trx.title}" (${trx.acc}) by ${trx.name} — strike ${user.strike} added`);
     applyReturnConsequences(user, trx, null, true);
@@ -8276,7 +8283,7 @@ function restartOutstandingSummaryTimer(){
   outstandingSummaryTimer = setInterval(checkOutstandingSummaryAlert, ms);
 }
 restartOutstandingSummaryTimer();
-setInterval(()=>{ try{ processOverdueStrikes(); }catch(e){ console.warn('Overdue strike check failed', e); } checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); checkCheckoutReminderAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
+setInterval(()=>{ try{ processOverdueStrikes(); }catch(e){ console.warn('Overdue strike check failed', e); } try{ processSuspensionLifts(); }catch(e){ console.warn('Suspension lift check failed', e); } try{ checkExamReminders(); }catch(e){ console.warn('Exam reminder check failed', e); } checkScheduleAlerts(); checkStaffScheduleAlerts(); checkReminderAlerts(); checkNearOverdueAlerts(); checkFeedbackAlerts(); checkCheckoutReminderAlerts(); if(typeof updateCalendarFabAttention==='function') updateCalendarFabAttention(); }, 20000);
 
 /* ================= navigation ================= */
 const NAV = [
@@ -14637,6 +14644,8 @@ function openUserForm(id){
         const eligChanged = vals.eligibility!==existing.eligibility;
         Object.assign(existing, vals);
         if(statusChanged || clsChanged || eligChanged) touchMemberStatusDate(existing);
+        if(statusChanged && existing.status==='SUSPENDED') openManualSuspension(existing);
+        else if(existing.status!=='SUSPENDED' && (statusChanged || eligChanged)) closeSuspensionsManually(existing);
         logActivity('members', 'edit', `Updated member "${existing.name}" (${existing.id})`);
         toast('Member updated');
       } else {
@@ -15182,6 +15191,7 @@ function memberProfileBodyHtml(u){
       <tr><td style="font-weight:600">Eligibility</td><td>${esc(u.eligibility||'—')}</td></tr>
       <tr><td style="font-weight:600">Status</td><td>${esc(u.status||'—')}</td></tr>
       <tr><td style="font-weight:600">Status last updated</td><td>${u.statusUpdated? esc(fmtDate(u.statusUpdated)) : '—'}</td></tr>
+      ${suspensionRowHtml(u)}
       <tr><td style="font-weight:600">Notes</td><td>${esc(u.notes||'—')}</td></tr>
       ${DB.setup.fineEnabled? `<tr><td style="font-weight:600">Outstanding fines</td><td style="color:${outstanding?'var(--terracotta)':'inherit'};font-weight:${outstanding?'700':'400'}">${fmtCurrency(outstanding)}</td></tr>`:''}
     </table>
@@ -15920,9 +15930,9 @@ function viewTransaction(trxId){
   
   let receiptHtml = '';
   if(isReturn){
-    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+    receiptHtml = waReturnCardHtml({notes:trxReceiptNotes(trx,'RETURNED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
   } else {
-    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+    receiptHtml = waBorrowCardHtml({notes:trxReceiptNotes(trx,'BORROWED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
   }
   
   const receiptActionBtns = `
@@ -15965,9 +15975,9 @@ function openTransactionReceiptModal(trxId){
   let receiptHtml = '';
   
   if(isReturn){
-    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+    receiptHtml = waReturnCardHtml({notes:trxReceiptNotes(trx,'RETURNED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
   } else {
-    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+    receiptHtml = waBorrowCardHtml({notes:trxReceiptNotes(trx,'BORROWED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
   }
   
   openWaCardModal({
@@ -15985,9 +15995,9 @@ function printTransactionReceipt(trxId){
   let receiptHtml = '';
   
   if(isReturn){
-    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+    receiptHtml = waReturnCardHtml({notes:trxReceiptNotes(trx,'RETURNED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
   } else {
-    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+    receiptHtml = waBorrowCardHtml({notes:trxReceiptNotes(trx,'BORROWED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
   }
   
   // Render and print
@@ -16015,9 +16025,9 @@ function sendTransactionReceiptWhatsApp(trxId){
   let receiptHtml = '';
   
   if(isReturn){
-    receiptHtml = waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
+    receiptHtml = waReturnCardHtml({notes:trxReceiptNotes(trx,'RETURNED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(trx.returnDate), accountName:SESSION?.fullName});
   } else {
-    receiptHtml = waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+    receiptHtml = waBorrowCardHtml({notes:trxReceiptNotes(trx,'BORROWED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
   }
   
   openWaCardModal({
@@ -16071,7 +16081,11 @@ function deleteTransaction(trxId){
 function memberBorrowBlockReason(user){
   if(!user) return 'Member not found';
   const status = String(user.status||'').toUpperCase();
-  if(status==='SUSPENDED') return `${user.name} is SUSPENDED and cannot borrow items`;
+  if(status==='SUSPENDED'){
+    const ends = activeSuspensions(user.id).map(e=>e.endDate);
+    const until = ends.length && ends.every(d=>d) ? ` until ${fmtDate(ends.sort().slice(-1)[0])}` : '';
+    return `${user.name} is SUSPENDED${until} and cannot borrow items`;
+  }
   if(status==='INACTIVE') return `${user.name} is INACTIVE and cannot borrow items`;
   if(String(user.eligibility||'YES').toUpperCase()==='NO') return `${user.name} is marked ineligible to borrow`;
   return null;
@@ -16151,6 +16165,7 @@ function doIssueOne(user, book, opts={}){
   const nominalDue = trx.dueDate, effDue = rollDueDatesOn() ? nextOperationalDay(nominalDue) : nominalDue;
   if(effDue!==nominalDue){ trx.dueDateOrig = nominalDue; trx.dueDate = effDue; }
   trx.history = [{date:trx.dateBorrowed, event:'ISSUED', detail:`Issued to ${user.name} — due ${fmtDate(trx.dueDate)}${effDue!==nominalDue?` (moved from ${fmtDate(nominalDue)} — ${dueShiftReason(nominalDue)})`:''}`}];
+  trx.borrowStanding = {strikes:user.strike||0, discipline:user.discipline||'', otherOverdue:liveOverdueCount(user.id)};
   DB.circulation.unshift(trx);
   book.available = 'ISSUED';
   if(!Array.isArray(book.history)) book.history = [];
@@ -16243,6 +16258,91 @@ function issueStagedBooks(){
   setTimeout(()=>{ bindCirculationPickers(); issuePicker && issuePicker.clear(); renderIssueStaging(); renderReturnStaging(); }, 0);
   toast(`${issued} item(s) issued to ${user.name}`);
 }
+/* ---- Suspensions: how long they last, the record of each, and automatic lifting ----
+   Each rule's "Suspend for (days)" sets the length; 0 means "until lifted by staff" (e.g. a missing
+   title, suspended until resolved). A rule with no number saved falls back to the length written in its
+   wording ("for 2 weeks" = 14 days), else until lifted. Every suspension - and its end - is kept in
+   DB.suspensionLog, shown on the member's profile, and noted in the Register. */
+function suspensionDaysForRule(rule){
+  if(rule && rule.suspendDays!==undefined && rule.suspendDays!==null && rule.suspendDays!=='') return Math.max(0, parseInt(rule.suspendDays,10)||0);
+  const t = String((rule&&rule.consequence)||'');
+  if(/until/i.test(t)) return 0;
+  const m = t.match(/(\d+)\s*(day|week|month)/i);
+  if(!m) return 0;
+  const n = +m[1], u = m[2].toLowerCase();
+  return u==='day' ? n : u==='week' ? n*7 : n*30;
+}
+function recordSuspension(user, trx, ev){
+  if(!Array.isArray(DB.suspensionLog)) DB.suspensionLog = [];
+  const days = suspensionDaysForRule(ev.rule);
+  const entry = {id:uid('SUS'), userId:user.id, userName:user.name, cls:user.cls||'', start:todayISO(), days,
+    endDate: days ? dateToKey(addDays(new Date(), days)) : '', offense:ev.offense||'', detail:ev.detail||'',
+    consequence:(ev.rule&&ev.rule.consequence)||'', trxId: trx&&trx.trxId ? trx.trxId : '', status:'ACTIVE', liftedOn:'', liftedBy:''};
+  DB.suspensionLog.unshift(entry);
+  return entry;
+}
+function activeSuspensions(userId){ return (DB.suspensionLog||[]).filter(e=>e.userId===userId && e.status==='ACTIVE'); }
+// Staff set a member back to Active by hand (Members → Edit): close any open suspension records as lifted by staff.
+function closeSuspensionsManually(user){
+  const open = activeSuspensions(user.id); if(!open.length) return;
+  open.forEach(e=>{ e.status='LIFTED'; e.liftedOn=todayISO(); e.liftedBy='Lifted by '+(actorName()||'staff'); });
+  logActivity('members','suspension-lifted',`Suspension lifted by staff for ${user.name} (${user.id})`);
+}
+// Staff set a member to Suspended by hand with no rule behind it: keep a record, open-ended until lifted.
+function openManualSuspension(user){
+  if(activeSuspensions(user.id).length) return;
+  if(!Array.isArray(DB.suspensionLog)) DB.suspensionLog = [];
+  DB.suspensionLog.unshift({id:uid('SUS'), userId:user.id, userName:user.name, cls:user.cls||'', start:todayISO(), days:0, endDate:'',
+    offense:'MANUAL', detail:'Suspended by staff', consequence:'Suspended until lifted', trxId:'', status:'ACTIVE', liftedOn:'', liftedBy:''});
+}
+/* Runs with the other 20-second checks (staff sessions). Lifts every suspension whose end date has
+   arrived: the member goes back to Active/eligible, the discipline status is cleared if it was this
+   suspension's, and the lift is logged (suspension record, activity log, Register note, bell). A member
+   with another suspension still running stays suspended until that one ends too. */
+function processSuspensionLifts(){
+  if(!SESSION || !DB || !Array.isArray(DB.suspensionLog) || !Array.isArray(DB.users)) return;
+  if(typeof isStaff==='function' && !isStaff()) return;
+  const today = todayISO(), done = [];
+  DB.suspensionLog.forEach(e=>{
+    if(e.status!=='ACTIVE' || !e.endDate || e.endDate>today) return;
+    e.status = 'LIFTED'; e.liftedOn = today; e.liftedBy = 'Automatic — suspension period served';
+    done.push(e);
+  });
+  if(!done.length) return;
+  const lines = [];
+  [...new Set(done.map(e=>e.userId))].forEach(uid_=>{
+    const user = DB.users.find(u=>u.id===uid_); if(!user) return;
+    if(activeSuspensions(uid_).length) return;               // another suspension is still running
+    if(String(user.status||'').toUpperCase()==='SUSPENDED') user.status = 'ACTIVE';
+    if(String(user.eligibility||'').toUpperCase()==='NO' && !String(user.status||'').toUpperCase().match(/SUSPENDED|INACTIVE/)) user.eligibility = 'YES';
+    const served = done.filter(e=>e.userId===uid_);
+    if(served.some(e=>e.consequence && e.consequence===user.discipline)) user.discipline = 'CLEARED';
+    touchMemberStatusDate(user);
+    const e0 = served[0];
+    const note = `Suspension lifted — ${e0.days? e0.days+' day'+(e0.days===1?'':'s')+' served' : 'period ended'} (suspended ${fmtDate(e0.start)})`;
+    DB.registerLog.unshift({
+      entryId: uid('CSQ'), source:'DESK', date: today, timeIn:'', timeOut:'', period:'',
+      id:user.id, name:user.name, category:user.category, cls:user.cls, purpose:'CIRCULATION',
+      conduct:'NONE', action:'NONE', borrow:'NO', verifiedBy:'System',
+      note, offense:'', offenseOther:'', consequence:'', consequenceOther:''
+    });
+    logActivity('members','suspension-lifted',`${note}: ${user.name} (${user.id}) can borrow again`);
+    lines.push(user.name);
+  });
+  if(lines.length){
+    pushNotification({type:'info', title:`${lines.length} suspension${lines.length>1?'s':''} lifted`, body:`${lines.slice(0,4).join(', ')}${lines.length>4?` +${lines.length-4} more`:''} can borrow again`, route:'members'});
+  } else saveDB('Suspension records updated');
+}
+function suspensionRowHtml(u){
+  const act = activeSuspensions(u.id);
+  const past = (DB.suspensionLog||[]).filter(e=>e.userId===u.id && e.status==='LIFTED');
+  if(!act.length && !past.length) return '';
+  const ends = act.map(e=>e.endDate);
+  const until = !act.length ? '' : (ends.some(d=>!d) ? 'until lifted by staff' : 'until '+fmtDate(ends.sort().slice(-1)[0]));
+  const cur = act.length ? `<div style="color:var(--terracotta);font-weight:700">Suspended ${esc(until)}</div>` : '';
+  const hist = past.slice(0,5).map(e=>`<div style="font-size:12px;color:var(--muted)">${esc(fmtDate(e.start))} → ${esc(fmtDate(e.liftedOn))} · ${esc(e.offense||'Suspension')}${e.liftedBy? ' · '+esc(e.liftedBy):''}</div>`).join('');
+  return `<tr><td style="font-weight:600">Suspensions</td><td>${cur}${hist}${past.length>5? `<div style="font-size:12px;color:var(--muted)">+${past.length-5} earlier</div>`:''}</td></tr>`;
+}
 /* Evaluates the school's configured discipline policy (Setup → Discipline & consequences)
    after a return, and — if a rule is triggered — updates the member's discipline status,
    optionally suspends borrowing eligibility, and logs a discipline entry to the Register (so
@@ -16261,10 +16361,12 @@ function applyReturnConsequences(user, trx, condition, wasOverdue){
   if(itemRule) events.push({offense: condition==='MISSING'?'MISSING ITEM':'DAMAGED/MUTILATED ITEM', detail:`"${trx.title}" returned in ${condition} condition`, rule:itemRule});
   events.forEach(ev=>{
     user.discipline = ev.rule.consequence || user.discipline;
-    if(ev.rule.suspend){ user.eligibility = 'NO'; if(user.status==='ACTIVE') user.status = 'SUSPENDED'; }
+    if(ev.rule.suspend){ user.eligibility = 'NO'; if(user.status==='ACTIVE') user.status = 'SUSPENDED'; ev._susp = recordSuspension(user, trx, ev); }
     touchMemberStatusDate(user);
     if(!Array.isArray(DB.consequenceLog)) DB.consequenceLog = [];
     DB.consequenceLog.unshift({ id: uid('CSQ'), date: todayISO(), userId:user.id, userName:user.name, offense: ev.offense, detail: ev.detail, consequence: ev.rule.consequence });
+    if(!Array.isArray(trx.consequenceNotes)) trx.consequenceNotes = [];
+    trx.consequenceNotes.push({date:todayISO(), offense:ev.offense, text:ev.rule.consequence||ev.detail, suspend:!!ev.rule.suspend, until: ev._susp ? ev._susp.endDate : ''});
     DB.registerLog.unshift({
       entryId: uid('CSQ'), source:'DESK', date: todayISO(), timeIn:'', timeOut:'', period:'',
       id:user.id, name:user.name, category:user.category, cls:user.cls, purpose:'CIRCULATION',
@@ -16290,7 +16392,7 @@ function doReturnOne(trx, condition, opts={}){
     if(!Array.isArray(book.history)) book.history = [];
     book.history.unshift({date:trx.returnDate, condition, shelf:book.shelf, available:book.available, note: isMissing? 'Returned — recorded MISSING' : `Returned by ${trx.name}${wasOverdue?' (was overdue)':''}`});
   }
-  if(user){ user.borrowed = Math.max(0, user.borrowed-1); if(strikeNow){ user.strike = (user.strike||0)+1; trx.strikeCounted = true; trx.strikeDate = trx.returnDate; } }
+  if(user){ user.borrowed = Math.max(0, user.borrowed-1); if(strikeNow){ user.strike = (user.strike||0)+1; trx.strikeNo = user.strike; trx.strikeCounted = true; trx.strikeDate = trx.returnDate; } }
   logActivity('circulation', isMissing?'missing':'return', `${isMissing?'Recorded MISSING':'Returned'}: "${trx.title}" (${trx.acc}) by ${trx.name}${wasOverdue?' — was overdue':''}`);
   const consequences = applyReturnConsequences(user, trx, condition, strikeNow);
   sendScanWebhook('return', {acc:trx.acc, title:trx.title, memberId:trx.userId, condition, wasOverdue});
@@ -16360,6 +16462,59 @@ function returnStagedBooks(){
   toast(`${count} item(s) returned${csqCount? ` — ⚠ ${csqCount} consequence(s) triggered, see Register`:''}`);
 }
 /* ================= FINES ================= */
+/* What a loan's receipt should flag, built from what is recorded on the transaction so a receipt
+   reprinted later still shows what happened at the time: late return / current overdue, fine, strike,
+   suspension or other consequence, item condition, due-date shift, the member's standing when the
+   title was borrowed, and any note on the loan. Older loans without the newer snapshots fall back to
+   what their records and the consequence log still hold. Returns [{tone,label,text}]. */
+function trxReceiptNotes(trx, kind, audience){
+  const notes = [];
+  const who = audience && audience.student ? audience.student : '';
+  if(!trx) return notes;
+  const returned = !!trx.returnDate;
+  const due = parseAnyDate(trx.dueDate);
+  if(trx.finalStatus==='MISSING') notes.push({tone:'alert', label:'Missing', text:'This title was recorded as MISSING.'});
+  const endD = returned ? parseAnyDate(trx.returnDate) : new Date();
+  const days = (due && endD) ? Math.max(0, daysBetween(due, endD)) : 0;
+  if(days>0 && due){
+    notes.push(returned
+      ? {tone:'alert', label:'Late return', text:`${who? who+' returned':'Returned'} ${who?'this ':''}${days} day${days===1?'':'s'} late — it was due ${fmtDate(trx.dueDate)}.`}
+      : {tone:'alert', label:'Overdue', text:`This loan is overdue by ${days} day${days===1?'':'s'} — it was due ${fmtDate(trx.dueDate)}.`});
+    if(DB.setup.fineEnabled){
+      const fs = fineStatus(trx);
+      if(fs.amount>0) notes.push({tone:'warn', label:returned?'Fine':'Fine so far', text:`${fmtCurrency(fs.amount)} for ${days} day${days===1?'':'s'} late${fs.waived?' (waived)':''}.`});
+    }
+  }
+  if(trx.strikeCounted){
+    const owner = (DB.users||[]).find(u=>u.id===trx.userId);
+    notes.push({tone:'alert', label:'Strike', text: who
+      ? `A strike was recorded on ${who}'s account for this overdue loan${trx.strikeNo? ` (strike ${trx.strikeNo} on the account)`:''}.`
+      : `A strike was recorded for this overdue loan${trx.strikeNo? ` (strike ${trx.strikeNo} on this account)`:''}.`});
+  }
+  let cons = Array.isArray(trx.consequenceNotes) ? trx.consequenceNotes.slice() : [];
+  if(!cons.length && Array.isArray(DB.consequenceLog)){
+    DB.consequenceLog.filter(c=> c.userId===trx.userId && (
+        (trx.strikeCounted && c.offense==='OVERDUE ITEMS' && c.date===trx.strikeDate) ||
+        (c.detail && trx.title && c.detail.includes(`"${trx.title}"`))
+      )).forEach(c=> cons.push({text:c.consequence||c.offense, suspend:/suspend/i.test(c.consequence||'')}));
+  }
+  cons.forEach(c=>{
+    notes.push({tone:'alert', label: c.suspend?'Suspension':'Consequence', text: `${who? 'Applied to '+who+"'s account: " : ''}${c.text||'Applied'}${c.suspend && !/suspend/i.test(c.text||'') ? ' — borrowing suspended':''}${c.suspend && c.until ? ` (until ${fmtDate(c.until)})` : ''}.`});
+  });
+  if(returned && trx.condition && trx.condition!=='GOOD' && trx.finalStatus!=='MISSING')
+    notes.push({tone:'warn', label:'Condition', text:`Returned in ${trx.condition} condition.`});
+  if(trx.dueDateOrig && trx.dueDateOrig!==trx.dueDate)
+    notes.push({tone:'info', label:'Due date', text:`Moved from ${fmtDate(trx.dueDateOrig)} — ${dueShiftReason(trx.dueDateOrig)}.`});
+  if(kind==='BORROWED' && trx.borrowStanding){
+    const b = trx.borrowStanding;
+    const acct = who ? `${who}'s account had` : 'This account had';
+    if(b.otherOverdue>0) notes.push({tone:'warn', label:'Account', text:`${acct} ${b.otherOverdue} other overdue title${b.otherOverdue===1?'':'s'} when this was borrowed.`});
+    if(b.strikes>0) notes.push({tone:'warn', label:'Account', text:`${acct} ${b.strikes} strike${b.strikes===1?'':'s'} when this was borrowed.`});
+    if(b.discipline && !['CLEARED','NONE','—'].includes(String(b.discipline).toUpperCase())) notes.push({tone:'warn', label:'Account', text:`${who? 'Discipline status of '+who : 'Discipline status'}: ${b.discipline}.`});
+  }
+  if(trx.note && String(trx.note).trim()) notes.push({tone:'info', label:'Note', text:String(trx.note).trim()});
+  return notes;
+}
 function fineForTxn(t){
   if(!DB.setup.fineEnabled || !DB.setup.fineRatePerDay) return {days:0, amount:0};
   const due = parseAnyDate(t.dueDate); if(!due) return {days:0, amount:0};
@@ -16937,7 +17092,7 @@ function fulfillReservationsForReturn(acc, book){
   const user = DB.users.find(u=>u.id===next.userId);
   const recipient = userRecipient(user);
   if(recipient && book){
-    const html = waReservationReadyCardHtml({name:next.name, title:next.title, acc, accountName:SESSION?.fullName});
+    const html = waReservationReadyCardHtml({name:next.name, title:next.title, acc, accountName:SESSION?.fullName, audience:waAudienceFor(next.userId)});
     openWaCardModal({html, filenameBase:`reservation-ready-${acc}`, phone:recipient.phone});
   }
 }
@@ -18320,7 +18475,40 @@ function waCardFooter(T){
 }
 /* Single-item card shell — one transaction, itemized as vertically-stacked label/value rows
    (receipt style) rather than a two-column table, so it reads naturally in a portrait frame. */
-function waCardShell({kind, name, rows, closingLine, daysOverdue, accountName}){
+/* Who a WhatsApp card is written to. Staff get their own cards (null, wording unchanged). A student's
+   card goes to their class teacher, who may forward it to a parent/guardian, so it is addressed to the
+   teacher, names the student and class up front, and describes the student in the third person so it
+   still reads correctly when forwarded. */
+function waAudienceFor(userId){
+  const u = (DB.users||[]).find(x=>x.id===userId);
+  if(!u || u.category!=='STUDENT') return null;
+  const ct = DB.setup.classTeachers && DB.setup.classTeachers[u.cls];
+  const t = (ct && ct.staffId) ? DB.users.find(x=>x.id===ct.staffId) : null;
+  return {student:u.name||'', cls:u.cls||'', teacher:t?(t.name||''):''};
+}
+function waSalutationHtml(T, name, audience, mb){
+  if(!audience) return `<div style="font-size:15px;font-weight:${T.headWeight};font-family:${T.headFont};margin-bottom:${mb};">Dear ${esc(String(name||'').toUpperCase())},</div>`;
+  return `<div style="font-size:15px;font-weight:${T.headWeight};font-family:${T.headFont};margin-bottom:2px;">Dear ${esc(String(audience.teacher||'Class Teacher').toUpperCase())},</div>`
+    + `<div style="font-size:11.5px;color:${T.muted};margin-bottom:8px;">Class teacher${audience.cls? ' · '+esc(audience.cls):''}</div>`;
+}
+function waSubjectHtml(T, audience, label){
+  if(!audience) return '';
+  return `<div style="margin:2px 0 8px;padding:8px 10px;border-radius:8px;background:${T.parchment};border:1px solid ${T.line};font-size:12.5px;line-height:1.5;color:${T.ink};"><span style="font-size:10.5px;color:${T.mutedLabel};font-weight:700;letter-spacing:.03em;">${esc(String(label).toUpperCase())}</span><br><b>${esc(String(audience.student).toUpperCase())}${audience.cls? ' · '+esc(audience.cls):''}</b></div>`;
+}
+function waForwardLineHtml(T, audience){
+  if(!audience) return '';
+  return `<div style="margin-top:8px;font-size:12.5px;line-height:1.6;color:${T.muted};">Please share this with the parent or guardian of ${esc(audience.student)} where appropriate.</div>`;
+}
+/* Flags printed on a loan receipt (late return, fine, strike, suspension/consequence, item condition,
+   notes). notes: [{tone:'alert'|'warn'|'info', label, text}] from trxReceiptNotes(). */
+function waReceiptNotesHtml(T, notes){
+  if(!Array.isArray(notes) || !notes.length) return '';
+  return `<div style="margin:12px 0 6px;">` + notes.map(n=>{
+    const color = n.tone==='alert' ? T.terracotta : n.tone==='warn' ? T.brass : T.muted;
+    return `<div style="margin:6px 0;padding:8px 10px;border-radius:8px;border-left:3px solid ${color};background:${T.parchment};font-size:12px;line-height:1.5;color:${T.ink};"><b style="color:${color};letter-spacing:.03em;">${esc(String(n.label||'').toUpperCase())}</b> ${esc(n.text)}</div>`;
+  }).join('') + `</div>`;
+}
+function waCardShell({kind, name, rows, closingLine, daysOverdue, accountName, notes, audience}){
   const T = waResolveTheme();
   const signingName = accountName || SESSION?.fullName || 'Librarian';
   const rowsHtml = rows.map(r=>`
@@ -18332,48 +18520,55 @@ function waCardShell({kind, name, rows, closingLine, daysOverdue, accountName}){
   <div style="width:380px;background:${T.card};font-family:${T.bodyFont};font-weight:${T.bodyWeight};color:${T.ink};border-radius:18px;overflow:hidden;border:1px solid ${T.line};">
     ${waCardHeader(T, kind, daysOverdue)}
     <div style="padding:22px 24px 4px;">
-      <div style="font-size:15px;font-weight:${T.headWeight};font-family:${T.headFont};margin-bottom:6px;">Dear ${esc(String(name||'').toUpperCase())},</div>
+      ${waSalutationHtml(T, name, audience, '6px')}
+      ${waSubjectHtml(T, audience, ({borrowed:'Library borrow receipt', returned:'Library return receipt', reminder:'Library reminder', ready:'Reservation ready'})[kind]||'Library')}
       <div>${rowsHtml}</div>
+      ${waReceiptNotesHtml(T, notes)}
     </div>
     <div style="padding:16px 24px 6px;">
       <div style="font-size:13px;line-height:1.6;color:${T.ink};">${esc(closingLine)}</div>
+      ${waForwardLineHtml(T, audience)}
       <div style="margin-top:14px;font-size:13px;">Best Regards,<br><b>${esc(signingName)}</b></div>
     </div>
     ${waCardFooter(T)}
   </div>`;
 }
-function waReminderCardHtml({name, title, acc, dateBorrowed, dueDate, daysOverdue, accountName}){
+function waReminderCardHtml({name, title, acc, dateBorrowed, dueDate, daysOverdue, accountName, audience}){
   const rows = [
     {label:'Title', value:title}, {label:'Accession No', value:acc},
     {label:'Date Borrowed', value:dateBorrowed}, {label:'Due Date', value:dueDate},
   ];
-  const closing = daysOverdue>0
-    ? `This title is now overdue by ${daysOverdue} day(s). Kindly return it to the library at your earliest convenience.`
-    : `This title is due back soon. Kindly return it to the library by the due date.`;
-  return waCardShell({kind:'reminder', name, rows, closingLine:closing, daysOverdue, accountName});
+  const closing = audience
+    ? (daysOverdue>0
+        ? `This title borrowed by ${name} is now overdue by ${daysOverdue} day(s). Kindly ensure it is returned to the library at the earliest convenience.`
+        : `This title borrowed by ${name} is due back soon. Kindly ensure it is returned to the library by the due date.`)
+    : (daysOverdue>0
+        ? `This title is now overdue by ${daysOverdue} day(s). Kindly return it to the library at your earliest convenience.`
+        : `This title is due back soon. Kindly return it to the library by the due date.`);
+  return waCardShell({kind:'reminder', name, rows, closingLine:closing, daysOverdue, accountName, audience});
 }
-function waBorrowCardHtml({name, title, acc, dateBorrowed, dueDate, accountName}){
+function waBorrowCardHtml({name, title, acc, dateBorrowed, dueDate, accountName, notes, audience}){
   const rows = [
     {label:'Title', value:title}, {label:'Accession No', value:acc},
     {label:'Date Borrowed', value:dateBorrowed}, {label:'Due Date', value:dueDate},
   ];
-  return waCardShell({kind:'borrowed', name, rows, closingLine:'Kindly return this title to the library by the due date.', accountName});
+  return waCardShell({kind:'borrowed', name, rows, closingLine: audience? `Kindly ensure ${name} returns this title to the library by the due date.` : 'Kindly return this title to the library by the due date.', accountName, notes, audience});
 }
-function waReturnCardHtml({name, title, acc, dateBorrowed, dateReturned, accountName}){
+function waReturnCardHtml({name, title, acc, dateBorrowed, dateReturned, accountName, notes, audience}){
   const rows = [
     {label:'Title', value:title}, {label:'Accession No', value:acc},
     {label:'Date Borrowed', value:dateBorrowed}, {label:'Date Returned', value:dateReturned},
   ];
-  return waCardShell({kind:'returned', name, rows, closingLine:'Thank you for returning this title to the library.', accountName});
+  return waCardShell({kind:'returned', name, rows, closingLine: audience? `This confirms that ${name} has returned this title to the library.` : 'Thank you for returning this title to the library.', accountName, notes, audience});
 }
-function waReservationReadyCardHtml({name, title, acc, accountName}){
+function waReservationReadyCardHtml({name, title, acc, accountName, audience}){
   const rows = [{label:'Title', value:title}].concat(acc?[{label:'Accession No', value:acc}]:[]);
-  return waCardShell({kind:'ready', name, rows, closingLine:'Kindly come by the library to pick up your reserved title.', accountName});
+  return waCardShell({kind:'ready', name, rows, closingLine: audience? `Kindly ensure ${name} comes by the library to pick up the reserved title.` : 'Kindly come by the library to pick up your reserved title.', accountName, audience});
 }
 /* Bulk reminder card — every currently-borrowed title for one member on a single receipt, each
    itemized with its own status pill, rather than one card per loan. Used by the "WhatsApp
    reminder — all borrowed" action on a member's profile. */
-function waBulkReminderCardHtml({name, loans, accountName}){
+function waBulkReminderCardHtml({name, loans, accountName, audience}){
   const T = waResolveTheme();
   const signingName = accountName || SESSION?.fullName || 'Librarian';
   const overdueCount = loans.filter(l=>l.overdue).length;
@@ -18390,19 +18585,25 @@ function waBulkReminderCardHtml({name, loans, accountName}){
       <div style="font-size:11px;color:${T.muted};margin-top:3px;">Acc: ${esc(l.acc)} · Borrowed ${esc(l.dateBorrowed)} · Due ${esc(l.dueDate)}</div>
     </div>`;
   }).join('');
-  const closing = overdueCount>0
-    ? `You currently have ${loans.length} title(s) on loan, ${overdueCount} of them overdue. Kindly return the overdue title(s) to the library at your earliest convenience, and the rest by their due dates.`
-    : `You currently have ${loans.length} title(s) on loan. Kindly return each by its due date.`;
+  const closing = audience
+    ? (overdueCount>0
+        ? `${name} currently has ${loans.length} title(s) on loan, ${overdueCount} of them overdue. Kindly ensure the overdue title(s) are returned to the library at the earliest convenience, and the rest by their due dates.`
+        : `${name} currently has ${loans.length} title(s) on loan. Kindly ensure each is returned by its due date.`)
+    : (overdueCount>0
+        ? `You currently have ${loans.length} title(s) on loan, ${overdueCount} of them overdue. Kindly return the overdue title(s) to the library at your earliest convenience, and the rest by their due dates.`
+        : `You currently have ${loans.length} title(s) on loan. Kindly return each by its due date.`);
   return `
   <div style="width:380px;background:${T.card};font-family:${T.bodyFont};font-weight:${T.bodyWeight};color:${T.ink};border-radius:18px;overflow:hidden;border:1px solid ${T.line};">
     ${waCardHeader(T, 'bulkReminder', overdueCount>0?1:0)}
     <div style="padding:22px 24px 4px;">
-      <div style="font-size:15px;font-weight:${T.headWeight};font-family:${T.headFont};margin-bottom:2px;">Dear ${esc(String(name||'').toUpperCase())},</div>
-      <div style="font-size:12px;color:${T.muted};margin-bottom:8px;">This is a reminder covering all titles currently on loan to you:</div>
+      ${waSalutationHtml(T, name, audience, '2px')}
+      ${waSubjectHtml(T, audience, 'Library reminder — all titles on loan')}
+      <div style="font-size:12px;color:${T.muted};margin-bottom:8px;">${audience? `This is a reminder covering all titles currently on loan to ${esc(name)}:` : 'This is a reminder covering all titles currently on loan to you:'}</div>
       <div>${itemsHtml}</div>
     </div>
     <div style="padding:16px 24px 6px;">
       <div style="font-size:13px;line-height:1.6;color:${T.ink};">${esc(closing)}</div>
+      ${waForwardLineHtml(T, audience)}
       <div style="margin-top:14px;font-size:13px;">Best Regards,<br><b>${esc(signingName)}</b></div>
     </div>
     ${waCardFooter(T)}
@@ -18580,7 +18781,7 @@ function sendReminderViaWhatsApp(trxId, kind){
   const html = waReminderCardHtml({
     name:trx.name, title:trx.title, acc:trx.acc,
     dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), daysOverdue,
-    accountName:SESSION?.fullName,
+    accountName:SESSION?.fullName, audience:waAudienceFor(trx.userId),
   });
   openWaCardModal({html, filenameBase:`reminder-${trx.acc||trx.trxId}`, phone:recipient.phone});
   sendReminder(trxId, {channel:'WHATSAPP'});
@@ -18600,7 +18801,7 @@ function sendBulkReminderViaWhatsApp(userId){
     const daysOverdue = Math.max(0, daysBetween(parseAnyDate(t.dueDate), new Date()));
     return {trxId:t.trxId, title:t.title, acc:t.acc, dateBorrowed:fmtDate(t.dateBorrowed), dueDate:fmtDate(t.dueDate), daysOverdue, overdue: txnStatus(t)==='OVERDUE'};
   });
-  const html = waBulkReminderCardHtml({name:u.name, loans, accountName:SESSION?.fullName});
+  const html = waBulkReminderCardHtml({name:u.name, loans, accountName:SESSION?.fullName, audience:waAudienceFor(u.id)});
   openWaCardModal({html, filenameBase:`reminders-${u.id}`, phone:recipient.phone});
   active.forEach(t=> logReminderEntry(t.trxId, {channel:'WHATSAPP'}));
   saveDB(`Reminders logged for ${active.length} loan(s)`); render(); toast(`Reminder logged for ${active.length} loan(s)`);
@@ -19661,6 +19862,7 @@ function openSkippedStudentsModal(prefill){
       </div>
       <div class="modal-foot">
         <button class="btn secondary" onclick="closeSkippedStudentsModal(true);openAbsentStudentsModal()">🙋 Absent students</button>
+        <button class="btn secondary" onclick="closeSkippedStudentsModal(true);openExternalExamsModal()">📝 External exams</button>
         <button class="btn secondary" onclick="printSkippedStudents()">🖨 Print report</button>
         <button class="btn secondary" onclick="exportSkippedStudents()">⭳ Export</button>
         ${isAdmin()? `<button class="btn secondary" onclick="recomputeSkipLedger()" title="Re-check the selected dates against the register and current schedule">↻ Recheck period</button>`:''}
@@ -19822,7 +20024,7 @@ function analyticsSkipSections(){
    fresh everywhere, like excuses, so adding or removing an absence corrects past reports too. */
 function findSchoolAbsence(userId, dateKey){
   if(!userId || !dateKey) return null;
-  return (DB.schoolAbsences||[]).find(a=> a.id===userId && a.dateKey===dateKey) || null;
+  return (DB.schoolAbsences||[]).find(a=> a.id===userId && a.dateKey===dateKey) || findExamExemption(userId, dateKey) || null;
 }
 function isAbsentFromSchool(userId, dateKey){ return !!findSchoolAbsence(userId, dateKey); }
 function schoolDayKeys(fromKey, toKey){
@@ -19865,11 +20067,176 @@ function markAbsentQuick(userId, dateKey){
 }
 function unmarkAbsent(userId, dateKey){
   if(!isStaff()) return requireStaff('remove an absence');
+  if(!(DB.schoolAbsences||[]).some(a=> a.id===userId && a.dateKey===dateKey) && findExamExemption(userId, dateKey)){
+    toast('This is from External exams — use "Back at school" there'); openExternalExamsModal(); return;
+  }
   DB.schoolAbsences = (DB.schoolAbsences||[]).filter(a=> !(a.id===userId && a.dateKey===dateKey));
   afterAbsenceChange('Absence removed');
   toast('Absence removed');
 }
 
+/* ===== Students writing external exams =====
+   Some students sit external exams (WAEC, NECO, …) earlier than their classmates, in school or elsewhere,
+   for days or weeks nobody can plan exactly. A student is marked as writing exams FROM a start date with
+   no end date; they stay exempt from library obligations (never counted as skipping, left out of batch
+   check-ins and attendance totals) every day until staff mark them back at school, which sets the last
+   exempt day. Like absences, this is looked up fresh, so past skip reports correct themselves, and a
+   bell reminder fires every 14 days while a student is still marked so nobody is forgotten.
+   Stored in DB.externalExams: {id, userId, userName, cls, name, venue:'IN_SCHOOL'|'OUTSIDE', start, end:'' = ongoing, note, by, at, lastReminded}. */
+function examVenueLabel(v){ return v==='OUTSIDE' ? 'outside school' : 'in school'; }
+function findExamExemption(userId, dateKey){
+  if(!userId || !dateKey) return null;
+  const rec = (DB.externalExams||[]).find(e=> e.userId===userId && e.start<=dateKey && (!e.end || dateKey<=e.end));
+  if(!rec) return null;
+  return {id:userId, dateKey, exam:true, examId:rec.id, by:rec.by||'',
+    reason:`Writing external exam${rec.name? ' — '+rec.name:''} (${examVenueLabel(rec.venue)})`};
+}
+function openExamFor(userId){ return (DB.externalExams||[]).find(e=> e.userId===userId && !e.end) || null; }
+let examState = {q:'', checked:{}, name:'', venue:'IN_SCHOOL', start:'', end:'', note:''};
+function afterExamChange(msg){
+  saveDB(msg); render();
+  refreshOpenScheduleModal();
+  if(document.getElementById('examModal')) refreshExamModal();
+}
+function openExternalExamsModal(preUserId){
+  if(!isStaff()) return promptAccess('STAFF','record external exams', ()=>openExternalExamsModal(preUserId));
+  closeExternalExamsModal(true);
+  examState = {q:'', checked: preUserId? {[preUserId]:true} : {}, name:'', venue:'IN_SCHOOL', start:todayISO(), end:'', note:''};
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop'; wrap.id = 'examModal';
+  wrap.innerHTML = `
+    <div class="modal wide" style="max-width:900px;width:100%">
+      <div class="modal-head"><h3>📝 Students writing external exams</h3><button id="exClose" aria-label="Close">✕</button></div>
+      <div class="modal-body" style="max-height:72vh;overflow:auto">
+        <p class="field-hint" style="margin-top:0">Students marked here are exempt from the library schedule every school day, from the start date until you mark them back at school. They never appear as skipped. An end date is optional: leave it blank if you don't know it, and set the last day later with "Set last day".</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:10px">
+          <div class="field" style="margin:0"><label>Exam (optional)</label><input type="text" list="examNameList" placeholder="e.g. WAEC" oninput="examState.name=this.value"><datalist id="examNameList"><option>WAEC</option><option>NECO</option><option>BECE</option><option>JAMB</option><option>GCE</option><option>IGCSE</option><option>Cambridge</option></datalist></div>
+          <div class="field" style="margin:0"><label>Held</label><select onchange="examState.venue=this.value"><option value="IN_SCHOOL">In school</option><option value="OUTSIDE">Outside school</option></select></div>
+          <div class="field" style="margin:0"><label>Starting from</label><input type="date" value="${esc(examState.start)}" onchange="examState.start=this.value"></div>
+          <div class="field" style="margin:0"><label>Last day (optional)</label><input type="date" value="" onchange="examState.end=this.value" title="Leave blank if you don't know when the exams end"></div>
+          <div class="field" style="margin:0;flex:1;min-width:150px"><label>Note (optional)</label><input type="text" placeholder="e.g. centre, papers" oninput="examState.note=this.value"></div>
+        </div>
+        <div class="field"><label>Find students</label><input type="text" id="exSearch" placeholder="Search by name, ID or class" oninput="examState.q=this.value;refreshExamSearch()"></div>
+        <div id="exSearchList"></div>
+        <div id="exActive"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn secondary" onclick="closeExternalExamsModal(true);openAbsentStudentsModal()">🙋 Absent students</button>
+        <button class="btn" onclick="examMarkSelected()">Mark selected as writing exams (<span id="exCount">0</span>)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.onclick = e=>{ if(e.target===wrap) closeExternalExamsModal(); };
+  wrap.querySelector('#exClose').onclick = ()=> closeExternalExamsModal();
+  const m = wrap.querySelector('.modal');
+  try{ setFocusToModal(m); m.addEventListener('keydown', e=> trapFocusInModal(e, m)); }catch(e){}
+  refreshExamModal();
+}
+function closeExternalExamsModal(instant){
+  const w = document.getElementById('examModal'); if(!w) return;
+  if(instant) w.remove(); else animatedCloseModal(w, ()=> w.remove());
+}
+function examToggle(id, on){
+  if(on) examState.checked[id]=true; else delete examState.checked[id];
+  const c = document.getElementById('exCount'); if(c) c.textContent = Object.keys(examState.checked).length;
+}
+function refreshExamModal(){ refreshExamSearch(); refreshExamActive(); }
+function refreshExamSearch(){
+  const host = document.getElementById('exSearchList'); if(!host) return;
+  const cnt = document.getElementById('exCount'); if(cnt) cnt.textContent = Object.keys(examState.checked).length;
+  const q = (examState.q||'').trim().toLowerCase();
+  const students = DB.users.filter(u=>u.category==='STUDENT' && String(u.status||'').toUpperCase()!=='INACTIVE');
+  const picked = students.filter(u=>examState.checked[u.id]);
+  const matches = q ? students.filter(u=> u.name.toLowerCase().includes(q) || String(u.id).toLowerCase().includes(q) || String(u.cls||'').toLowerCase().includes(q)).slice(0,30) : [];
+  const shown = [...picked, ...matches.filter(u=>!examState.checked[u.id])];
+  host.innerHTML = shown.length ? `<div class="table-wrap" style="max-height:220px;overflow:auto;margin-bottom:12px"><table class="datatable"><tbody>${shown.map(u=>{
+      const open = openExamFor(u.id);
+      return `<tr><td style="width:32px"><input type="checkbox" ${examState.checked[u.id]?'checked':''} ${open?'disabled':''} onchange="examToggle('${esc(u.id)}',this.checked)"></td><td>${esc(u.name)}</td><td>${esc(u.cls||'')}</td><td>${open? `<span class="badge grey">already marked since ${esc(fmtDate(open.start))}</span>`:''}</td></tr>`;
+    }).join('')}</tbody></table></div>`
+    : `<div class="field-hint" style="margin-bottom:12px">${q? 'No students match that search.' : 'Search for a student, tick them, then choose Mark selected. Ticked students stay listed while you search for more.'}</div>`;
+}
+function refreshExamActive(){
+  const host = document.getElementById('exActive'); if(!host) return;
+  const today = todayISO(), yesterday = isoAddDays(today,-1);
+  const all = (DB.externalExams||[]).slice().sort((a,b)=> (b.start||'').localeCompare(a.start||''));
+  const active = all.filter(e=> !e.end || e.end>=today);
+  const ended = all.filter(e=> e.end && e.end<today).slice(0,10);
+  const row = (e, isActive)=>{
+    const days = Math.max(0, daysBetween(parseAnyDate(e.start), parseAnyDate(isActive? today : e.end)));
+    return `<tr><td>${esc(e.userName||'')}</td><td>${esc(e.cls||'')}</td><td>${esc(e.name||'—')} <span style="font-size:11px;color:var(--muted)">(${esc(examVenueLabel(e.venue))})</span>${e.note? `<div style="font-size:11px;color:var(--muted)">${esc(e.note)}</div>`:''}</td>
+      <td>${esc(fmtDate(e.start))}</td>
+      <td>${isActive? (e.end? `until ${esc(fmtDate(e.end))}` : `<b>ongoing</b> · day ${days+1}`) : `${esc(fmtDate(e.end))}`}</td>
+      <td style="white-space:nowrap">${isActive? `<input type="date" id="exEnd_${esc(e.id)}" value="${esc(e.end || (yesterday<e.start? e.start : yesterday))}" title="Last day they are exempt" style="width:140px"> <button class="btn small" onclick="examBackAtSchool('${esc(e.id)}')" title="Set the last day they are exempt — yesterday if they are back now, or a future date to plan the end">Set last day</button> ${e.end? `<button class="btn secondary small" onclick="examClearEnd('${esc(e.id)}')" title="Remove the end date — exempt until you set one">Ongoing</button> `:''}`:''}<button class="btn danger small" onclick="examRemove('${esc(e.id)}')" aria-label="Remove record">✕</button></td></tr>`;
+  };
+  host.innerHTML = `
+    <h4 style="margin:6px 0">Currently writing (${active.length})</h4>
+    ${active.length? `<div class="table-wrap"><table class="datatable"><thead><tr><th>Student</th><th>Class</th><th>Exam</th><th>From</th><th>Status</th><th>Last exempt day</th></tr></thead><tbody>${active.map(e=>row(e,true)).join('')}</tbody></table></div>` : '<div class="field-hint">Nobody is currently marked as writing external exams.</div>'}
+    ${ended.length? `<h4 style="margin:16px 0 6px">Recently ended</h4><div class="table-wrap"><table class="datatable"><thead><tr><th>Student</th><th>Class</th><th>Exam</th><th>From</th><th>Last exempt day</th><th></th></tr></thead><tbody>${ended.map(e=>row(e,false)).join('')}</tbody></table></div>`:''}`;
+}
+function examMarkSelected(){
+  if(!isStaff()) return requireStaff('record external exams');
+  const ids = Object.keys(examState.checked);
+  if(!ids.length) return toast('Tick at least one student first');
+  const start = examState.start || todayISO();
+  const endKey = examState.end || '';
+  if(endKey && endKey < start) return toast('The last day cannot be before the starting date');
+  let added = 0;
+  ids.forEach(id=>{
+    const u = DB.users.find(x=>x.id===id); if(!u || openExamFor(id)) return;
+    DB.externalExams.unshift({id:uid('EXM'), userId:id, userName:u.name, cls:u.cls||'', name:(examState.name||'').trim().toUpperCase(),
+      venue:examState.venue||'IN_SCHOOL', start, end:endKey, note:(examState.note||'').trim(), by:actorLabel(), at:new Date().toISOString(), lastReminded:''});
+    added++;
+  });
+  examState.checked = {};
+  afterExamChange(`${added} student${added===1?'':'s'} marked as writing external exams`);
+  toast(`${added} student${added===1?'':'s'} marked as writing external exams — exempt from ${fmtDate(start)}${endKey? ' to '+fmtDate(endKey) : ' until you set a last day'}`);
+}
+function examBackAtSchool(examId){
+  if(!isStaff()) return requireStaff('update external exams');
+  const e = (DB.externalExams||[]).find(x=>x.id===examId); if(!e) return;
+  const inp = document.getElementById('exEnd_'+examId);
+  const endKey = (inp && inp.value) || isoAddDays(todayISO(),-1);
+  if(endKey < e.start){
+    DB.externalExams = DB.externalExams.filter(x=>x.id!==examId);
+    afterExamChange(`External exam record removed for ${e.userName}`); return toast(`${e.userName}: that is before the start date, so the record was removed`);
+  }
+  e.end = endKey;
+  e.lastReminded = '';
+  afterExamChange(`${e.userName}: external exam last day set to ${fmtDate(endKey)}`);
+  toast(endKey >= todayISO()
+    ? `${e.userName} is exempt through ${fmtDate(endKey)}, then counted normally`
+    : `${e.userName} is back — exempt through ${fmtDate(endKey)}, counted normally after that`);
+}
+function examClearEnd(examId){
+  if(!isStaff()) return requireStaff('update external exams');
+  const e = (DB.externalExams||[]).find(x=>x.id===examId); if(!e) return;
+  e.end = ''; e.lastReminded = todayISO();
+  afterExamChange(`${e.userName}: external exam set to ongoing`);
+  toast(`${e.userName} is marked as ongoing — exempt until you set a last day`);
+}
+function examRemove(examId){
+  if(!isStaff()) return requireStaff('update external exams');
+  const e = (DB.externalExams||[]).find(x=>x.id===examId); if(!e) return;
+  confirmModal(`Remove the external exam record for ${e.userName}? Their days in that period go back to counting normally.`, ()=>{
+    DB.externalExams = DB.externalExams.filter(x=>x.id!==examId);
+    afterExamChange(`External exam record removed for ${e.userName}`); toast('Record removed');
+  }, {confirmLabel:'Remove', danger:true});
+}
+// Gentle bell reminder so a student is never left marked as writing exams after they are back.
+function checkExamReminders(){
+  if(!SESSION || !DB || !Array.isArray(DB.externalExams) || !DB.externalExams.length) return;
+  if(typeof isStaff==='function' && !isStaff()) return;
+  const today = todayISO(), td = parseAnyDate(today), due = [];
+  DB.externalExams.forEach(e=>{
+    if(e.end) return;
+    const sd = parseAnyDate(e.lastReminded || e.start);
+    if(sd && td && daysBetween(sd, td) >= 14) due.push(e);
+  });
+  if(!due.length) return;
+  due.forEach(e=>{ e.lastReminded = today; });
+  pushNotification({type:'info', title:`${due.length} student${due.length>1?'s':''} still marked as writing external exams`,
+    body:`${due.slice(0,4).map(e=>e.userName).join(', ')}${due.length>4?` +${due.length-4} more`:''} — mark them back at school once they return so their library schedule counts again`, route:''});
+}
 let absState = {date:'', to:'', cls:'', q:'', checked:{}};
 function openAbsentStudentsModal(){
   if(!isStaff()) return promptAccess('STAFF','record school absences', openAbsentStudentsModal);
@@ -19896,6 +20263,7 @@ function openAbsentStudentsModal(){
       <div class="modal-foot">
         <button class="btn secondary" onclick="printAbsentStudents()">🖨 Print absentees</button>
         <button class="btn secondary" onclick="closeAbsentStudentsModal(true);openSkippedStudentsModal()">🚫 Skipped students</button>
+        <button class="btn secondary" onclick="closeAbsentStudentsModal(true);openExternalExamsModal()">📝 External exams</button>
         <button class="btn" onclick="absMarkSelected()">Mark selected absent (<span id="abCount">0</span>)</button>
       </div>
     </div>`;
@@ -19970,9 +20338,10 @@ function absenceReportSection(absences, withStudent){
 }
 function memberAbsenceRowHtml(u){
   const today = todayISO(), ab = findSchoolAbsence(u.id, today), staff = isStaff();
+  if(ab && ab.exam) return `<tr><td style="font-weight:600">School attendance today</td><td><span class="badge grey">Writing external exam — exempt from library obligations</span> <span style="font-size:12px;color:var(--muted)">${esc(ab.reason)}</span>${staff?` <button class="btn secondary small" onclick="openExternalExamsModal()">Manage</button>`:''}</td></tr>`;
   return `<tr><td style="font-weight:600">School attendance today</td><td>${ab
     ? `<span class="badge grey">Absent — exempt from library obligations</span>${ab.reason?` <span style="font-size:12px;color:var(--muted)">${esc(ab.reason)}</span>`:''}${staff?` <button class="btn secondary small" onclick="unmarkAbsent('${esc(u.id)}','${today}')">Remove absence</button>`:''}`
-    : `Not marked absent${staff?` <button class="btn secondary small" onclick="markAbsentQuick('${esc(u.id)}','${today}')">Mark absent today</button>`:''}`}</td></tr>`;
+    : `Not marked absent${staff?` <button class="btn secondary small" onclick="markAbsentQuick('${esc(u.id)}','${today}')">Mark absent today</button> <button class="btn secondary small" onclick="openExternalExamsModal('${esc(u.id)}')">Writing external exam…</button>`:''}`}</td></tr>`;
 }
 function memberAbsencesListHtml(u){
   const list = (DB.schoolAbsences||[]).filter(a=>a.id===u.id).sort((a,b)=>b.dateKey.localeCompare(a.dateKey));
@@ -20067,6 +20436,7 @@ function getStudentsInClassesForPeriod(dateKey, period, onlyClasses){
         excuseReason: excuse ? excuse.reason : '',
         excuseBy: excuse ? excuse.by : '',
         absent: !!absence,
+        absenceExam: !!(absence && absence.exam),
         absenceReason: absence ? absence.reason : ''
       });
     });
@@ -20258,7 +20628,7 @@ function renderStudentAttendanceList(dateKey, period, onlyClasses, opts){
     ? schedActBtn('Check in', `checkInOneFromSchedule('${esc(s.id)}','${esc(period)}','${esc(s.cls)}')`, `Check ${s.name} in now (Private Reading)`) : '';
   const pill = (s)=>{
     if(s.absent){
-      return `<span title="Absent from school${s.absenceReason? ' — '+esc(s.absenceReason):''}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(127,140,141,0.12);border-radius:3px;border-left:3px solid #7f8c8d">
+      return `<span title="${s.absenceExam? 'Exempt' : 'Absent from school'}${s.absenceReason? ' — '+esc(s.absenceReason):''}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(127,140,141,0.12);border-radius:3px;border-left:3px solid #7f8c8d">
         <span style="font-size:11px;color:#7f8c8d;font-weight:600">⌂</span>
         <span style="color:var(--text);font-size:12px;font-weight:500">${esc(s.name)}</span>
         ${staff? `<a href="#" onclick="unmarkAbsent('${esc(s.id)}','${esc(dateKey)}');return false;" title="Remove absence" style="color:#7f8c8d;text-decoration:none;margin-left:2px">✕</a>`:''}
@@ -20352,6 +20722,7 @@ function pageSchedule(){
         <button class="btn secondary" onclick="printWeeklySchedule()">🖶 Print</button>
         <button class="btn secondary" onclick="openSkippedStudentsModal()">🚫 Skipped students</button>
         <button class="btn secondary" onclick="openAbsentStudentsModal()">🙋 Absent students</button>
+        <button class="btn secondary" onclick="openExternalExamsModal()">📝 External exams</button>
         ${isAdmin()? `<button class="btn" onclick="openScheduleForm()">+ Add period</button>`:''}
         ${isAdmin()? `<button class="btn" onclick="autoBuildLibrarySchedule()">🪄 Auto-build library schedule</button>`:''}
         ${isAdmin() && DB.scheduleDays.length? `<button class="btn danger" onclick="clearAllSchedule()">⚠ Clear all schedule</button>`:''}
@@ -22249,7 +22620,8 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride, opt
       const u = classStudents(cls).find(s=>s.name===name);
       // Use period-specific check if period is provided, otherwise check any check-in on that date.
       // Nothing is shown yet for a period that hasn't started today — there's no status to report.
-      const absent = !!(u && findSchoolAbsence(u.id, dateKey));
+      const absRec = u ? findSchoolAbsence(u.id, dateKey) : null;
+      const absent = !!absRec;
       if(absent) absentCount++;
       const checkedIn = (u && started && !absent) ? (period ? studentCheckedInForPeriod(u.id, dateKey, day, period, startOverride, cls) : studentCheckedInOnDate(u.id, dateKey)) : false;
       if(checkedIn) checkedCount++;
@@ -22260,7 +22632,7 @@ function renderIndividualFreeHtml(breakdown, dateKey, period, startOverride, opt
       if(excuse) excusedCount++;
       let badge = '', pre = '';
       if(absent){
-        badge = ' <span class="badge grey" title="Absent from school — exempt" style="font-size:9.5px;padding:1px 5px;margin-left:3px">absent</span>';
+        badge = ` <span class="badge grey" title="${esc(absRec.reason||'Absent from school')} — exempt" style="font-size:9.5px;padding:1px 5px;margin-left:3px">${absRec.exam? 'exam' : 'absent'}</span>`;
         if(staff) badge += ` <a href="#" onclick="unmarkAbsent('${esc(u.id)}','${esc(dateKey)}');return false;" title="Remove absence" style="color:#7f8c8d;text-decoration:none;font-size:9.5px">✕</a>`;
       } else if(u && started){
         if(checkedIn){
@@ -23783,6 +24155,7 @@ function pageSetup(){
           <div class="field" style="max-width:160px;margin:0"><label>After this many strikes</label><input type="number" min="1" step="1" class="ocCount" data-i="${i}" value="${r.count}"></div>
           <div class="field" style="flex:1;min-width:200px;margin:0"><label>Consequence</label><input type="text" class="ocText" data-i="${i}" value="${esc(r.consequence)}" placeholder="e.g. Written warning issued"></div>
           <div class="field" style="margin:0"><label><input type="checkbox" class="ocSuspend" data-i="${i}" ${r.suspend?'checked':''}> Suspend borrowing</label></div>
+          <div class="field" style="max-width:150px;margin:0"><label>Suspend for (days)</label><input type="number" min="0" step="1" class="ocDays" data-i="${i}" value="${suspensionDaysForRule(r)}" title="0 = until lifted by staff"></div>
           <button class="btn danger small" onclick="removeOverdueConsequence(${i})" aria-label="Remove this rule">✕</button>
         </div>`).join('') || `<div class="field-hint">No thresholds configured yet.</div>`}
     </div>
@@ -23797,6 +24170,7 @@ function pageSetup(){
           <div class="field" style="max-width:160px;margin:0"><label>Condition</label><select class="icCondition" data-i="${i}">${DB.setup.conditions.map(c=>`<option ${r.condition===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
           <div class="field" style="flex:1;min-width:200px;margin:0"><label>Consequence</label><input type="text" class="icText" data-i="${i}" value="${esc(r.consequence)}" placeholder="e.g. Replacement cost charged"></div>
           <div class="field" style="margin:0"><label><input type="checkbox" class="icSuspend" data-i="${i}" ${r.suspend?'checked':''}> Suspend borrowing</label></div>
+          <div class="field" style="max-width:150px;margin:0"><label>Suspend for (days)</label><input type="number" min="0" step="1" class="icDays" data-i="${i}" value="${suspensionDaysForRule(r)}" title="0 = until lifted by staff"></div>
           <button class="btn danger small" onclick="removeItemConsequence(${i})" aria-label="Remove this rule">✕</button>
         </div>`).join('') || `<div class="field-hint">No condition rules configured yet.</div>`}
     </div>
@@ -26330,6 +26704,7 @@ function saveOverdueConsequences(){
   $$('.ocCount').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.count = Math.max(1, +el.value||1); });
   $$('.ocText').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.consequence = el.value.trim(); });
   $$('.ocSuspend').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.suspend = el.checked; });
+  $$('.ocDays').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.overdueConsequences[i]; if(r) r.suspendDays = Math.max(0, parseInt(el.value,10)||0); });
   DB.setup.overdueConsequences.sort((a,b)=>a.count-b.count);
   saveDB('Overdue thresholds updated'); render(); toast('Overdue thresholds saved');
 }
@@ -26348,6 +26723,7 @@ function saveItemConsequences(){
   $$('.icCondition').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.condition = el.value; });
   $$('.icText').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.consequence = el.value.trim(); });
   $$('.icSuspend').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.suspend = el.checked; });
+  $$('.icDays').forEach(el=>{ const i=+el.dataset.i, r=DB.setup.itemConsequences[i]; if(r) r.suspendDays = Math.max(0, parseInt(el.value,10)||0); });
   saveDB('Item condition rules updated'); render(); toast('Item condition rules saved');
 }
 let pendingCodeType = null;
@@ -26430,8 +26806,8 @@ function sendTransactionReceiptIfEnabled(trx, kind){
   if(!recipient) return; // no phone on file — nothing to send
   const isReturn = kind==='RETURNED';
   const html = isReturn
-    ? waReturnCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(todayISO()), accountName:SESSION?.fullName})
-    : waBorrowCardHtml({name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
+    ? waReturnCardHtml({notes:trxReceiptNotes(trx,'RETURNED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dateReturned:fmtDate(todayISO()), accountName:SESSION?.fullName})
+    : waBorrowCardHtml({notes:trxReceiptNotes(trx,'BORROWED',waAudienceFor(trx.userId)), audience:waAudienceFor(trx.userId), name:trx.name, title:trx.title, acc:trx.acc, dateBorrowed:fmtDate(trx.dateBorrowed), dueDate:fmtDate(trx.dueDate), accountName:SESSION?.fullName});
   openWaCardModal({html, filenameBase:`${isReturn?'return':'borrow'}-receipt-${trx.acc||''}`, phone:recipient.phone});
 }
 function saveAcademicPeriod(){
