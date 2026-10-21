@@ -7143,6 +7143,7 @@ const DEFAULT_EQUIPMENT_CATEGORIES = ['Furniture','Computers & IT','Audio-Visual
 /* Fills in arrays/settings added after the original save format, so older saved libraries
    don't crash when opening reservations, fines, notifications, etc. for the first time. */
 function migrateNewFeatureData(db){
+  if(db.setup && !db.setup.lateCutoffTime) db.setup.lateCutoffTime = '08:00';
   if(!Array.isArray(db.reservations)) db.reservations = [];
   if(!Array.isArray(db.notifications)) db.notifications = [];
   if(!Array.isArray(db.trash)) db.trash = [];
@@ -10676,7 +10677,8 @@ function pdfSectionsBody(doc, sections, marginLeft, marginRight, startY){
         startY: y,
         head: [sec.columns.map(c=>c.label)],
         body,
-        styles:{fontSize:7, cellPadding:2},
+        styles:{fontSize:7, cellPadding:2, overflow:'linebreak'},
+        columnStyles: sec.columns.reduce((o,c,i)=>{ if(c.wide) o[i]={cellWidth:'auto', minCellWidth:60}; return o; }, {}),
         headStyles:{fillColor:forestRGB},
         margin:{left:marginLeft, right:marginRight, bottom:14},
       });
@@ -10751,9 +10753,9 @@ function printSectionsHtml(sections){
       html += `<div class="print-kpis">${sec.kpis.map(k=>`<div class="print-kpi"><strong>${esc(String(k.value))}</strong>${esc(k.label)}</div>`).join('')}</div>`;
     }
     const tableHtml = cols=>{
-      const thead = `<tr>${cols.map(c=>`<th>${esc(c.label)}</th>`).join('')}</tr>`;
+      const thead = `<tr>${cols.map(c=>`<th${c.wide?' style="width:40%"':''}>${esc(c.label)}</th>`).join('')}</tr>`;
       const rowsHtml = (sec.rows && sec.rows.length)
-        ? sec.rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(String(c.get(r)??''))}</td>`).join('')}</tr>`).join('')
+        ? sec.rows.map(r=>`<tr>${cols.map(c=>`<td${c.wide?' style="white-space:normal;word-break:break-word;overflow-wrap:anywhere"':''}>${esc(String(c.get(r)??''))}</td>`).join('')}</tr>`).join('')
         : `<tr><td colspan="${cols.length}">No records for this selection</td></tr>`;
       return `<table class="print-table"><thead>${thead}</thead><tbody>${rowsHtml}</tbody></table>`;
     };
@@ -10985,6 +10987,7 @@ function generateReport(periodLabel, from, to){
       {label:'…still not returned', value: overdueStillOut},
       {label:'…returned late', value: overdueInPeriod.length - overdueStillOut},
       {label:'Currently overdue', value: overdueNow.length},
+      {label:'Late check-ins', value: visits.filter(isLateEntry).length},
       {label:'Discipline entries', value: discipline.length},
       {label:'Reminders sent', value: reminders.length},
       {label:'Library skips (unexplained)', value: skipUnexplained},
@@ -10993,8 +10996,9 @@ function generateReport(periodLabel, from, to){
       {label:'Feedback received', value: feedbackInRange.length},
     ]},
     { heading:'Library visits', columns:[
-      {label:'Date', get:r=>fmtDate(r.date)}, {label:'Time in', get:r=>fmtTime(r.timeIn)}, {label:'ID', get:r=>r.id},
+      {label:'Date', get:r=>fmtDate(r.date)}, {label:'Time in', get:r=>fmtTime(r.timeIn)}, {label:'Late', get:r=>isLateEntry(r)?'LATE':''}, {label:'ID', get:r=>r.id},
       {label:'Name', get:r=>r.name}, {label:'Class', get:r=>r.cls}, {label:'Purpose', get:r=>r.purpose},
+      {label:'Notes', get:r=>r.note||'', wide:true},
     ], rows: visits.slice(0,300) },
     { heading:'Titles issued', columns:[
       {label:'Date', get:r=>fmtDate(r.dateBorrowed)}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title},
@@ -11019,7 +11023,7 @@ function generateReport(periodLabel, from, to){
       {label:'Member', get:r=>r.name}, {label:'Class', get:r=>r.cls}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title}, {label:'Due', get:r=>fmtDate(r.dueDate)},
       {label:'Days overdue', get:r=>Math.max(1, daysBetween(parseAnyDate(r.dueDate), new Date()))},
     ], rows: overdueNow.slice().sort((a,b)=>daysBetween(parseAnyDate(b.dueDate), parseAnyDate(a.dueDate))).slice(0,300) },
-  ]);
+  ], {orientation:'landscape'});
 }
 
 /* ================= export (CSV / Excel / PDF) ================= */
@@ -18822,7 +18826,7 @@ function pageRegister(){
     ],
     columns:[
       {key:'date', label:'Date', render:r=>fmtDate(r.date)},
-      {key:'timeIn', label:'Time in', render:r=>fmtTime(r.timeIn)},{key:'timeOut', label:'Time out', render:r=>fmtTime(r.timeOut)},
+      {key:'timeIn', label:'Time in', render:r=>fmtTime(r.timeIn)},{key:'late', label:'Late', render:r=>lateTagHtml(r)},{key:'timeOut', label:'Time out', render:r=>fmtTime(r.timeOut)},
       {key:'id', label:'ID'},{key:'name', label:'Name', render:r=>memberNameHtml(r.name, r.id)},{key:'cls', label:'Class'},
       {key:'purpose', label:'Purpose / reason'},
       {key:'borrow', label:'Borrowed?', render:r=>r.source==='DESK'?`<span class="badge ${r.borrow==='YES'?'gold':'grey'}">${esc(r.borrow)}</span>`:'—'},
@@ -18830,7 +18834,7 @@ function pageRegister(){
       {key:'note', label:'Note'},
     ],
     exportColumns:[
-      {label:'Date', get:r=>fmtDate(r.date)}, {label:'Time in', get:r=>fmtTime(r.timeIn)}, {label:'Time out', get:r=>fmtTime(r.timeOut)},
+      {label:'Date', get:r=>fmtDate(r.date)}, {label:'Time in', get:r=>fmtTime(r.timeIn)}, {label:'Late', get:r=>isLateEntry(r)?'LATE':''}, {label:'Time out', get:r=>fmtTime(r.timeOut)},
       {label:'ID', get:r=>r.id}, {label:'Name', get:r=>r.name}, {label:'Class', get:r=>r.cls},
       {label:'Purpose', get:r=>r.purpose}, {label:'Borrowed?', get:r=>r.source==='DESK'?r.borrow:'—'},
       {label:'Offense', get:r=>r.offense||'—'}, {label:'Note', get:r=>r.note},
@@ -18877,10 +18881,12 @@ function openRegisterEdit(entryId){
       {key:'offenseOther', label:'Custom offense (if "OTHER")', default:r.offenseOther||''},
       {key:'consequence', label:'Consequence', type:'select', options:['', 'VERBAL WARNING','WRITTEN WARNING','PARENT CONTACTED','DETENTION','SUSPENSION','OTHER'], default:r.consequence||''},
       {key:'consequenceOther', label:'Custom consequence (if "OTHER")', default:r.consequenceOther||''},
+      {key:'lateOverride', label:'Late tag (auto = time in after '+fmtTime(lateCutoffTime())+')', type:'select', options:['Auto','Late','On time'], default:r.lateOverride===true?'Late':r.lateOverride===false?'On time':'Auto'},
       {key:'note', label:'Notes', type:'textarea', default:r.note||''},
     ],
     onSave:(vals)=>{
       if(!admin) return;
+      vals.lateOverride = vals.lateOverride==='Late'?true : vals.lateOverride==='On time'?false : null;
       Object.assign(r, vals); saveDB('Register entry updated'); render(); toast('Entry updated');
     }
   });
@@ -18904,10 +18910,10 @@ function openRegisterPrintModal(){
       const subtitle = `${vals.source&&vals.source!=='ALL'? vals.source+' entries':'All entries'}${vals.from||vals.to? ' · '+(vals.from?fmtDate(vals.from):'earliest')+' to '+(vals.to?fmtDate(vals.to):'latest') : ' · full history'} — ${rows.length} record(s)`;
       printReport('Register', subtitle, [
         {label:'Date', get:r=>fmtDate(r.date)}, {label:'Type', get:r=>r.source},
-        {label:'Time in', get:r=>fmtTime(r.timeIn)}, {label:'Time out', get:r=>fmtTime(r.timeOut)},
+        {label:'Time in', get:r=>fmtTime(r.timeIn)}, {label:'Late', get:r=>isLateEntry(r)?'LATE':''}, {label:'Time out', get:r=>fmtTime(r.timeOut)},
         {label:'ID', get:r=>r.id}, {label:'Name', get:r=>r.name}, {label:'Class', get:r=>r.cls},
-        {label:'Purpose', get:r=>r.purpose}, {label:'Borrowed', get:r=>r.borrow}, {label:'Note', get:r=>r.note},
-      ], rows);
+        {label:'Purpose', get:r=>r.purpose}, {label:'Borrowed', get:r=>r.borrow}, {label:'Note', get:r=>r.note, wide:true},
+      ], rows, {orientation:'landscape'});
     }
   });
 }
@@ -20793,6 +20799,15 @@ const DEFAULT_STAFF_CATEGORIES = ['Fellowship','Assembly','Staff Meeting','Lunch
 const STAFF_TIMETABLE_DAYS = ['EVERYDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
 function staffEventLabel(e){ return (e.category==='Other' && e.title) ? e.title : (e.category||e.title||'Event'); }
 function staffEventCategories(){ return (DB.setup && DB.setup.staffEventCategories && DB.setup.staffEventCategories.length) ? DB.setup.staffEventCategories : DEFAULT_STAFF_CATEGORIES; }
+function lateCutoffTime(){ return (DB.setup && DB.setup.lateCutoffTime) || '08:00'; }
+/* Effective late status: a staff override (true/false) wins; otherwise automatic — time in after the Setup cutoff. */
+function isLateEntry(r){
+  if(!r) return false;
+  if(r.lateOverride===true || r.lateOverride===false) return r.lateOverride;
+  const t = timeToMinutes(r.timeIn), c = timeToMinutes(lateCutoffTime());
+  return t!=null && c!=null && t > c;
+}
+function lateTagHtml(r){ return isLateEntry(r)? `<span class="badge red" title="Checked in after ${esc(fmtTime(lateCutoffTime()))}${(r.lateOverride===true||r.lateOverride===false)?' (staff override)':''}">LATE</span>` : '—'; }
 function timeToMinutes(t){
   if(!t) return null;
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
@@ -24034,6 +24049,8 @@ function pageSetup(){
       </div>
     </div>
     <button class="btn secondary" onclick="saveInstitution()">Save</button>
+    <div class="field" style="margin-top:14px"><label>Late check-in cutoff time</label><input type="time" id="setLateCutoff" value="${esc(lateCutoffTime())}"><div class="sub" style="font-size:11.5px">Check-ins with a time in after this are tagged LATE automatically (staff can override per entry in the Register).</div></div>
+    <button class="btn secondary" onclick="saveLateCutoff()">Save cutoff</button>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Academic term &amp; session</h3></div>
@@ -26082,6 +26099,11 @@ async function saveClockPrefs(silent){
   clockPrefsPreviewOriginal = null;
   await savePrefs(); saveDB('Appearance preferences updated');
   if(!silent){ render(); toast('Preferences saved'); }
+}
+function saveLateCutoff(){
+  const v = ($('#setLateCutoff').value||'').trim();
+  if(!/^\d{1,2}:\d{2}$/.test(v)){ toast('Enter a valid time'); return; }
+  DB.setup.lateCutoffTime = v; saveDB(); render(); toast('Late cutoff saved: '+fmtTime(v));
 }
 function saveInstitution(){
   if(!isAdmin()) return requireAdmin('edit institution settings');
