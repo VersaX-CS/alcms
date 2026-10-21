@@ -10882,6 +10882,7 @@ function openReportModal(){
       </div>
       <div class="modal-foot">
         <button class="btn secondary" id="mCancel">Cancel</button>
+        <button class="btn secondary" id="mSkipList" title="Just the library skip list for this period">🚫 Skip list only</button>
         <button class="btn" id="mGen">Generate &amp; print</button>
       </div>
     </div>
@@ -10906,7 +10907,7 @@ function openReportModal(){
   }
   renderExtra();
   $('#repPeriod').onchange = renderExtra;
-  $('#mGen').onclick = ()=>{
+  const resolvePeriod = ()=>{
     const p = $('#repPeriod').value;
     let from=null, to=null, label='';
     if(p==='CUSTOM'){
@@ -10922,9 +10923,10 @@ function openReportModal(){
       const b = periodBounds(p); from=b.from; to=b.to;
       label = {DAY:'Today', WEEK:'This week', MONTH:'This month'}[p] + ` (${fmtDate(from)} – ${fmtDate(to)})`;
     }
-    close();
-    generateReport(label, from, to);
+    return {from, to, label};
   };
+  $('#mGen').onclick = ()=>{ const r = resolvePeriod(); close(); generateReport(r.label, r.from, r.to); };
+  $('#mSkipList').onclick = ()=>{ const r = resolvePeriod(); close(); generateSkipListReport(r.label, r.from, r.to); };
   
   // ✅ Set up focus management
   const modalElement = document.querySelector('.modal');
@@ -10959,6 +10961,39 @@ function loanOverdueInRange(t, from, to){
 function liveOverdueCount(userId){
   return (DB.circulation||[]).filter(t=> t.userId===userId && txnStatus(t)==='OVERDUE').length;
 }
+/* Public holidays and other non-operational days (own + automatic Nigerian holidays) that fall in a period,
+   one row per consecutive run of the same closure, clipped to the period. from/to are Dates (either may be open). */
+function closedDaysInRange(from, to){
+  const f = from ? dateToKey(from) : (skipTrackingStart() || todayISO().slice(0,4)+'-01-01');
+  const t = to ? dateToKey(to) : todayISO();
+  const out = []; let cur = null, k = f, guard = 0;
+  while(k <= t && guard++ < 1100){
+    const c = closedDayFor(k);
+    if(c && cur && cur.id===c.id){ cur.to = k; cur.days++; }
+    else if(c){ cur = {id:c.id, type:c.type, name:closedDayLabel(c), from:k, to:k, days:1}; out.push(cur); }
+    else cur = null;
+    k = isoAddDays(k,1);
+  }
+  return out;
+}
+function closedDaysReportSection(list){
+  return { heading:'Public holidays & non-operational days (exempt from library schedule)', columns:[
+    {label:'Date', get:r=> r.to!==r.from ? fmtDate(r.from)+' – '+fmtDate(r.to) : fmtDate(r.from)},
+    {label:'Day', get:r=> new Date(r.from+'T00:00:00Z').toLocaleDateString('en-GB',{weekday:'long', timeZone:'UTC'})},
+    {label:'Name', get:r=>r.name}, {label:'Type', get:r=>r.type.charAt(0)+r.type.slice(1).toLowerCase()},
+    {label:'Days', get:r=>r.days},
+  ], rows: list };
+}
+/* Stand-alone library skip list for any period (all skips, excused included, with the status shown). */
+function generateSkipListReport(periodLabel, from, to){
+  syncSkipLedger();
+  const fk = from ? dateToKey(from) : undefined, tk = to ? dateToKey(to) : undefined;
+  const recs = getSkipRecords({from:fk, to:tk});
+  const closed = closedDaysInRange(from, to);
+  const secs = skipReportSections(recs, {withKpis:true, note:skipTrackingNote(fk||'') || undefined});
+  secs.push(closedDaysReportSection(closed));
+  printMultiSection('Library Skip List', periodLabel, secs, {orientation:'landscape'});
+}
 function generateReport(periodLabel, from, to){
   const visits = DB.registerLog.filter(r=> inRange(r.date, from, to));
   const issued = DB.circulation.filter(t=> inRange(t.dateBorrowed, from, to));
@@ -10976,6 +11011,8 @@ function generateReport(periodLabel, from, to){
   const skipRecs = getSkipRecords({from: skipFrom||undefined, to: skipTo||undefined});
   const skipUnexplained = skipRecs.filter(r=>r.status==='UNEXPLAINED').length;
   const absencesInRange = (DB.schoolAbsences||[]).filter(a=> inRange(a.dateKey, from, to));
+  const closedInRange = closedDaysInRange(from, to);
+  const closedDayCount = closedInRange.reduce((n,c)=>n+c.days,0);
 
   printMultiSection('Comprehensive Library Report', periodLabel, [
     { heading:'Overview', kpis:[
@@ -10993,6 +11030,7 @@ function generateReport(periodLabel, from, to){
       {label:'Library skips (unexplained)', value: skipUnexplained},
       {label:'Library skips (excused)', value: skipRecs.length - skipUnexplained},
       {label:'Student absence days', value: absencesInRange.length},
+      {label:'Public holidays / non-operational days', value: closedDayCount},
       {label:'Feedback received', value: feedbackInRange.length},
     ]},
     { heading:'Library visits', columns:[
@@ -11014,6 +11052,7 @@ function generateReport(periodLabel, from, to){
     ], rows: discipline },
     ...skipReportSections(skipRecs, {note: skipTrackingNote(skipFrom) || undefined}),
     absenceReportSection(absencesInRange, true),
+    closedDaysReportSection(closedInRange),
     { heading:'Overdue in this period (returned or not)', columns:[
       {label:'Member', get:r=>r.name}, {label:'Class', get:r=>r.cls}, {label:'Acc. No', get:r=>r.acc}, {label:'Title', get:r=>r.title},
       {label:'Due', get:r=>fmtDate(r.dueDate)}, {label:'Returned', get:r=>r.returnDate? fmtDate(r.returnDate) : 'NOT RETURNED'},
