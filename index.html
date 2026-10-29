@@ -7228,6 +7228,7 @@ function migrateNewFeatureData(db){
   if(!db.skipLedger || typeof db.skipLedger!=='object' || Array.isArray(db.skipLedger)) db.skipLedger = {};
   if(typeof db.skipTrackingStart!=='string') db.skipTrackingStart = '';
   if(!db.skipSubjectSig || typeof db.skipSubjectSig!=='object' || Array.isArray(db.skipSubjectSig)) db.skipSubjectSig = {};
+  if(!db.earlyClosures || typeof db.earlyClosures!=='object' || Array.isArray(db.earlyClosures)) db.earlyClosures = {};   // 'Close for today' early closures by date
   if(!Array.isArray(db.schoolAbsences)) db.schoolAbsences = [];   // students absent from school on a given day (exempt from library obligations)
   (function normalizeActivitiesToUpperCase(){
     const caseMap = {}; // lowercased -> canonical UPPERCASE form
@@ -7945,7 +7946,7 @@ function openTimedAlert({title, bodyHtml, actions}){
 let scheduleAlertDayKey = null, scheduleAlertedSlots = new Set();
 function checkScheduleAlerts(){
   if(!SESSION || !DB || !Array.isArray(DB.scheduleDays) || $('#timedAlertBackdrop')) return;
-  if(isSchoolClosed(todayISO())) return;   // public holiday / no academic activities today
+  if(isSchoolClosed(todayISO()) || isEarlyClosedNow()) return;   // public holiday / no academic activities / closed early today
   if(!DB.setup.notifTypes.schedule) return;
   const now = new Date();
   const dayKey = now.toDateString();
@@ -8105,7 +8106,7 @@ function checkOutstandingSummaryAlert(){
    period times are set. Fires once per period end per day; skipped if nobody is in the library. */
 let checkoutRemDayKey = null, checkoutRemFired = new Set();
 function checkCheckoutReminderAlerts(){
-  if(DB && isSchoolClosed(todayISO())) return;   // no periods are running today
+  if(DB && (isSchoolClosed(todayISO()) || isEarlyClosedNow())) return;   // no periods are running today
   if(!SESSION || !DB || !Array.isArray(DB.scheduleDays) || $('#timedAlertBackdrop') || $('#checkoutRemBackdrop')) return;
   if(!DB.setup.notifTypes || !DB.setup.notifTypes.checkout || !isStaff()) return;
   const now = new Date();
@@ -8254,7 +8255,7 @@ function openCheckoutReminder(periods, endTime){
 function openClassEndingNow(){
   if(!isStaff()) return requireStaff('check students out');
   const today = todayISO();
-  if(isSchoolClosed(today)) return toast('No academic activities today — no periods are running');
+  if(isSchoolClosed(today) || isEarlyClosedNow()) return toast('No academic activities — no periods are running');
   if($('#checkoutRemBackdrop')) return;
   const now = new Date();
   const weekday = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][now.getDay()];
@@ -12797,6 +12798,11 @@ function renderTodaysScheduleMergedHtml(dateKey, weekday){
   const rows = [...todaysClassScheduleRows(dateKey, weekday), ...todaysStaffScheduleRows(weekday), ...todaysBellBreakRows(weekday)];
   if(!rows.length) return '<div class="empty">Nothing scheduled today</div>';
   rows.sort((a,b)=> a.sortKey - b.sortKey);
+  const cut = earlyCloseMinutes(dateKey);
+  if(cut!=null){
+    const kept = rows.filter(r=> r.sortKey < cut), hidden = rows.length - kept.length;
+    return kept.map(r=>r.html).join('') + `<div class="empty" style="padding:12px"><div class="big">🚪</div><strong>School closed early at ${esc(fmtTime(earlyClosureFor(dateKey).time))}</strong><br>${hidden} later schedule item(s) suspended</div>`;
+  }
   return rows.map(r=>r.html).join('');
 }
 /* Dashboard's "Members needing attention" card: suspended accounts and members carrying
@@ -19465,7 +19471,50 @@ function closedDayLabel(c){ return c ? (c.name ? c.name : c.type.charAt(0)+c.typ
 function closedDayRangeText(c){ return c.to && c.to!==c.from ? fmtDate(c.from)+' – '+fmtDate(c.to) : fmtDate(c.from); }
 /* Banner text for the Quick Action / Register / Schedule: today's closure, plus any starting in
    the next 7 days. Returns '' when there is nothing to say. */
+/* ---- Early closure: "Close for today" ----
+   DB.earlyClosures[dateKey] = {time:'HH:MM', by, at}. When the school closes before its normal time, every
+   schedule item (library periods, staff timetable events, breaks) starting at or after that time is suspended
+   for the day: hidden from Today's Schedule, never counted as a skip, and period / check-out alerts stop.
+   Admin only; can be reopened, which restores everything (skips are worked out fresh for today). */
+function earlyClosureFor(dateKey){
+  const m = DB && DB.earlyClosures;
+  return (m && typeof m==='object' && m[dateKey]) || null;
+}
+function earlyCloseMinutes(dateKey){ const e = earlyClosureFor(dateKey); return e ? timeToMinutes(e.time) : null; }
+function isEarlyClosedNow(){
+  const c = earlyCloseMinutes(todayISO()); if(c==null) return false;
+  const n = new Date(); return n.getHours()*60+n.getMinutes() >= c;
+}
+function closeForToday(){
+  if(!isAdmin()) return requireAdmin('close the school for today');
+  const today = todayISO();
+  if(isSchoolClosed(today)) return toast('Today is already a non-operational day');
+  confirmModal('Close the school for today at '+fmtTime(new Date().toTimeString().slice(0,5))+'? Every schedule item from now on is suspended and will not be counted as a skip. You can reopen it later today.', ()=>{
+    if(!DB.earlyClosures || typeof DB.earlyClosures!=='object') DB.earlyClosures = {};
+    const time = new Date().toTimeString().slice(0,5);
+    DB.earlyClosures[today] = {time, by:(typeof actorName==='function'?actorName():'')||'', at:new Date().toISOString()};
+    logActivity('setup','edit','School closed early for today at '+time);
+    saveDB('School closed early for today'); render(); toast('School closed for today — schedules suspended from '+fmtTime(time));
+  }, {confirmLabel:'Close for today', danger:true});
+}
+function reopenToday(){
+  if(!isAdmin()) return requireAdmin('reopen the school for today');
+  const today = todayISO();
+  if(DB.earlyClosures) delete DB.earlyClosures[today];
+  logActivity('setup','edit','Early closure for today undone — schedules restored');
+  saveDB('Early closure removed'); render(); toast('Schedules restored for today');
+}
+function earlyCloseBannerHtml(){
+  const today = todayISO(), e = earlyClosureFor(today);
+  if(e) return `<div class="card" style="padding:10px 14px;margin-bottom:12px;border-left:4px solid #B8863E;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="font-weight:600">🚪 School closed early today at ${esc(fmtTime(e.time))}</div><div style="font-size:12px;color:var(--muted)">Schedules from ${esc(fmtTime(e.time))} onward are suspended and are not counted as skips.</div></div>${isAdmin()?`<button class="btn secondary small" onclick="reopenToday()">Reopen today</button>`:''}</div>`;
+  if(isAdmin() && !isSchoolClosed(today)) return `<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn secondary small" onclick="closeForToday()" title="School is closing before normal time — suspend the rest of today's schedule">🚪 Close for today</button></div>`;
+  return '';
+}
 function closedDayNoticeHtml(){
+  if(!DB) return '';
+  return earlyCloseBannerHtml() + closedDayNoticeBaseHtml();
+}
+function closedDayNoticeBaseHtml(){
   if(!DB) return '';
   const today = todayISO();
   const now = closedDayFor(today);
@@ -19656,6 +19705,8 @@ function computeRawSkipsForDate(dateKey, onlyId){
       // A class only counts as having skipped once ITS period has started and it wasn't attended —
       // judged on that class's own bell-schedule time, never another level's.
       if(!periodHasStarted(dateKey, day, period, startOverride, c)) return;
+      const cutMin = earlyCloseMinutes(dateKey);
+      if(cutMin!=null){ const w = periodWindowMinutes(day, period, startOverride, c); if(w.start!=null && w.start >= cutMin) return; }   // suspended — school closed early
       const k = u.id+'|'+period;
       if(seen.has(k) || attended(u, c)) return;
       seen.add(k);
