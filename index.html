@@ -28989,16 +28989,34 @@ function ttTeacherClashes(){
 
 let ttTchClass = '';
 let ttTchView = '';
-async function ttTchAdd(){
-  if(!isAdmin()) return requireAdmin('edit teachers');
-  const el = document.getElementById('ttTchNew'); if(!el) return;
-  const names = el.value.split(/[,\n]/).map(x=> x.trim()).filter(Boolean);
-  if(!names.length) return;
-  DB.timetableTeachers = DB.timetableTeachers || [];
-  names.forEach(n=>{ if(!DB.timetableTeachers.some(x=> x.toLowerCase()===n.toLowerCase())) DB.timetableTeachers.push(n); });
-  DB.timetableTeachers.sort((a,b)=> a.localeCompare(b));
-  await saveDB('Teachers added'); render();
+/* Members who can be picked as teachers: everyone except students, minus those already added. */
+function ttTchCandidates(){
+  const have = (DB.timetableTeachers||[]).map(x=> x.toLowerCase());
+  const seen = {};
+  return (DB.users||[]).filter(u=> u.category!=='STUDENT' && u.name && !have.includes(u.name.trim().toLowerCase()))
+    .filter(u=>{ const k = u.name.trim().toLowerCase(); if(seen[k]) return false; seen[k] = 1; return true; })
+    .sort((a,b)=> a.name.localeCompare(b.name));
 }
+async function ttTchAddPicked(all){
+  if(!isAdmin()) return requireAdmin('edit teachers');
+  const boxes = Array.from(document.querySelectorAll('.ttTchPick'));
+  const chosen = (all ? boxes : boxes.filter(b=> b.checked)).map(b=> b.value);
+  if(!chosen.length) return toast('Tick at least one member to add.');
+  DB.timetableTeachers = DB.timetableTeachers || [];
+  chosen.forEach(id=>{
+    const u = (DB.users||[]).find(x=> x.id===id); if(!u) return;
+    const n = u.name.trim();
+    if(!DB.timetableTeachers.some(x=> x.toLowerCase()===n.toLowerCase())) DB.timetableTeachers.push(n);
+  });
+  DB.timetableTeachers.sort((a,b)=> a.localeCompare(b));
+  await saveDB('Teachers added from members'); render();
+  toast(`✓ Added ${chosen.length} teacher${chosen.length===1?'':'s'}`);
+}
+function ttTchFilter(q){
+  q = (q||'').trim().toLowerCase();
+  document.querySelectorAll('.ttTchPickRow').forEach(r=>{ r.style.display = (!q || r.dataset.text.includes(q)) ? '' : 'none'; });
+}
+
 function ttTchRemove(name){
   if(!isAdmin()) return requireAdmin('edit teachers');
   confirmModal(`Remove ${name}? Their subject assignments are cleared too.`, async ()=>{
@@ -29035,6 +29053,22 @@ document.addEventListener('click', e=>{
   if(r) ttTchRemove(r.dataset.name);
 });
 
+function ttTchPickerHtml(){
+  const cands = ttTchCandidates();
+  if(!cands.length){
+    return (DB.users||[]).some(u=> u.category!=='STUDENT')
+      ? '<p class="field-hint" style="margin:0 0 10px">Every non-student member is already on the teacher list.</p>'
+      : '<p class="field-hint" style="margin:0 0 10px">There are no staff in the member list yet — add them under Members first, then pick them here.</p>';
+  }
+  return `<div style="margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px">
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Add teachers from the member list</div>
+    <input placeholder="Search members…" oninput="ttTchFilter(this.value)" autocomplete="off" style="width:100%;margin-bottom:8px">
+    <div style="max-height:220px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">
+      ${cands.map(u=> `<label class="ttTchPickRow" data-text="${esc((u.name+' '+u.category+' '+(u.id||'')).toLowerCase())}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:13px;cursor:pointer"><input type="checkbox" class="ttTchPick" value="${esc(u.id)}"><span>${esc(u.name)} <span style="opacity:.55;font-size:11px">${esc(u.category)}</span></span></label>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn" onclick="ttTchAddPicked(false)">+ Add ticked</button><button class="btn secondary" onclick="ttTchAddPicked(true)">Add all ${cands.length}</button></div>
+  </div>`;
+}
 function pageTeachers(){
   const admin = isAdmin();
   const teachers = DB.timetableTeachers || [];
@@ -29053,8 +29087,8 @@ function pageTeachers(){
     }).join('')}</tr>`).join('')}</tbody></table></div>` : '';
   return `
   <div class="card panel">
-    <div class="panel-head"><div><h3>Teachers</h3><div class="hint">Name your teachers and say who teaches which subject in each class. This powers the “teacher absent” tool in Emergency fix.</div></div></div>
-    ${admin? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input id="ttTchNew" placeholder="Add teachers, separated by commas — e.g. Mr Ade, Mrs Bello" style="flex:1;min-width:220px" autocomplete="off"><button class="btn" onclick="ttTchAdd()">+ Add</button></div>`:''}
+    <div class="panel-head"><div><h3>Teachers</h3><div class="hint">Choose your teachers from the member list and say who teaches which subject in each class. This powers the “teacher absent” tool in Emergency fix.</div></div></div>
+    ${admin? ttTchPickerHtml() : ''}
     ${teachers.length? `<div style="display:flex;gap:6px;flex-wrap:wrap">${teachers.map(t=> `<span class="badge" style="display:inline-flex;align-items:center;gap:6px">${esc(t)}${admin? `<button class="ttTchDel" data-name="${esc(t)}" style="background:none;border:0;cursor:pointer;color:inherit" aria-label="Remove ${esc(t)}">×</button>`:''}</span>`).join('')}</div>` : '<div class="empty">No teachers yet.</div>'}
   </div>
   <div class="card panel" style="margin-top:12px">
