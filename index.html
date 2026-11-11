@@ -29069,6 +29069,91 @@ function ttTchPickerHtml(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn" onclick="ttTchAddPicked(false)">+ Add ticked</button><button class="btn secondary" onclick="ttTchAddPicked(true)">Add all ${cands.length}</button></div>
   </div>`;
 }
+/* ---- "Who teaches what": by teacher (fast) or by class ---- */
+let ttTchMode = 'teacher';
+let ttTchWho = '';
+function ttTchWhoCardHtml(teachers, admin, classes){
+  const cs = {}; classes.forEach(c=> cs[c] = ttClassSubjects(c));
+  let total = 0, done = 0; const missing = {};
+  classes.forEach(c=> cs[c].forEach(sub=>{ total++; if(ttTeacherOf(c, sub)) done++; else (missing[sub] = missing[sub]||[]).push(c); }));
+  const missKeys = Object.keys(missing).sort();
+  const progress = !total ? '' : `<p class="field-hint" style="margin:0 0 10px"><strong id="ttTchProg">${done} of ${total}</strong> class-subject pairs have a teacher.${missKeys.length? ` <details style="display:inline"><summary style="cursor:pointer;display:inline">Show the ${total-done} without one</summary><div style="margin-top:6px">${missKeys.map(k=> `<div><strong>${esc(k)}</strong>: ${missing[k].map(esc).join(', ')}</div>`).join('')}</div></details>`:' ✓ All covered.'}</p>`;
+  const modeBtn = (m, label)=> `<button class="btn ${ttTchMode===m?'':'secondary'} small" onclick="ttTchMode='${m}';render()">${label}</button>`;
+  let body = '';
+  if(!classes.length) body = '<div class="empty">No classes set up yet.</div>';
+  else if(!total) body = '<div class="empty">No class has subjects in its timetable yet — fill in the Class timetable first.</div>';
+  else if(!teachers.length) body = '<div class="empty">Add teachers above first.</div>';
+  else if(ttTchMode==='teacher'){
+    if(ttTchWho && !teachers.includes(ttTchWho)) ttTchWho = '';
+    const T = ttTchWho;
+    const allSubjects = Array.from(new Set([].concat(...classes.map(c=> cs[c])))).sort();
+    const rows = !T ? '' : allSubjects.map(sub=>{
+      const cl = classes.filter(c=> cs[c].includes(sub));
+      const mine = cl.filter(c=> ttTeacherOf(c, sub)===T).length;
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border,rgba(128,128,128,.2))">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><strong>${esc(sub)}</strong><span class="field-hint" style="margin:0">${(DB.setup.subjectNames||{})[sub]? esc(DB.setup.subjectNames[sub])+' · ':''}${mine} of ${cl.length} class${cl.length===1?'':'es'}</span>
+          ${admin? `<button class="btn secondary small ttTchRowAll" data-subject="${esc(sub)}">Tick all unassigned</button><button class="btn secondary small ttTchRowNone" data-subject="${esc(sub)}">Clear mine</button>`:''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${cl.map(c=>{
+          const owner = ttTeacherOf(c, sub);
+          return `<label style="display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;font-size:13px;cursor:pointer;background:${owner===T?'rgba(80,160,100,.18)':'var(--surface-1)'}"><input type="checkbox" class="ttTchChk" data-cls="${esc(c)}" data-subject="${esc(sub)}" ${owner===T?'checked':''} ${admin?'':'disabled'}>${esc(c)}<span class="ttTchOwner" style="font-size:10.5px;opacity:.65">${owner && owner!==T? esc(owner):''}</span></label>`;
+        }).join('')}</div></div>`;
+    }).join('');
+    body = `<div class="field" style="margin:0 0 6px"><label>Teacher</label><select onchange="ttTchWho=this.value;render()"><option value="">— pick a teacher —</option>${teachers.map(t=> `<option ${t===T?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      ${T? `<p class="field-hint" style="margin:0 0 4px">Tick every class ${esc(T)} teaches for each subject. A small name beside a class means someone else has it — ticking it moves it to ${esc(T)}.</p>${rows}` : '<p class="field-hint">Pick a teacher, then tick the classes they teach under each subject.</p>'}`;
+  } else {
+    if(!ttTchClass || !classes.includes(ttTchClass)) ttTchClass = classes[0];
+    const cls = ttTchClass, subjects = cs[cls] || [];
+    const opts = cur=> `<option value="">— none —</option>${teachers.map(t=> `<option ${t===cur?'selected':''}>${esc(t)}</option>`).join('')}`;
+    body = `<div class="field" style="margin:0 0 6px"><label>Class</label><select onchange="ttTchClass=this.value;render()">${classes.map(c=> `<option ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+      ${!subjects.length? `<div class="empty">${esc(cls)} has no subjects in its timetable yet.</div>` : `<div class="table-wrap"><table class="datatable"><thead><tr><th>Subject</th><th>Teacher for ${esc(cls)}</th></tr></thead><tbody>
+      ${subjects.map(sub=> `<tr><td>${esc(sub)}${(DB.setup.subjectNames||{})[sub]? ` <span style="opacity:.6">${esc(DB.setup.subjectNames[sub])}</span>`:''}</td>
+        <td><span style="display:inline-flex;gap:6px;align-items:center"><select class="ttTchSel" data-cls="${esc(cls)}" data-subject="${esc(sub)}" ${admin?'':'disabled'}>${opts(ttTeacherOf(cls, sub))}</select>${admin? `<button class="btn secondary small ttTchAll" title="Use this teacher for ${esc(sub)} in every class that has it">all classes</button>`:''}</span></td></tr>`).join('')}
+      </tbody></table></div>`}`;
+  }
+  return `<div class="card panel" style="margin-top:12px">
+    <div class="panel-head"><div><h3>Who teaches what</h3></div><div style="display:flex;gap:6px">${modeBtn('teacher','By teacher')}${modeBtn('class','By class')}</div></div>
+    ${progress}${body}</div>`;
+}
+async function ttTchToggle(el){
+  if(!isAdmin()){ el.checked = !el.checked; return requireAdmin('assign teachers'); }
+  const T = ttTchWho; if(!T) return;
+  const cls = el.dataset.cls, sub = el.dataset.subject;
+  if(!DB.subjectTeachers) DB.subjectTeachers = {};
+  if(!DB.subjectTeachers[cls]) DB.subjectTeachers[cls] = {};
+  if(el.checked) DB.subjectTeachers[cls][sub] = T;
+  else if(DB.subjectTeachers[cls][sub]===T) delete DB.subjectTeachers[cls][sub];
+  const lab = el.closest('label');
+  if(lab){
+    lab.style.background = el.checked ? 'rgba(80,160,100,.18)' : 'var(--surface-1)';
+    const o = lab.querySelector('.ttTchOwner'); if(o) o.textContent = '';
+  }
+  await saveDB('Teacher assigned: '+sub+' '+cls);
+  // refresh the progress count without re-rendering the page (keeps your scroll position)
+  const classes = sortedClasses(); let total = 0, done = 0;
+  classes.forEach(c=> ttClassSubjects(c).forEach(sb=>{ total++; if(ttTeacherOf(c, sb)) done++; }));
+  const p = document.getElementById('ttTchProg'); if(p) p.textContent = done+' of '+total;
+}
+async function ttTchRowBulk(sub, mode){
+  if(!isAdmin()) return requireAdmin('assign teachers');
+  const T = ttTchWho; if(!T) return;
+  if(!DB.subjectTeachers) DB.subjectTeachers = {};
+  sortedClasses().forEach(c=>{
+    if(!ttClassSubjects(c).includes(sub)) return;
+    const owner = ttTeacherOf(c, sub);
+    if(mode==='all' && !owner){ (DB.subjectTeachers[c] = DB.subjectTeachers[c]||{})[sub] = T; }
+    if(mode==='none' && owner===T) delete DB.subjectTeachers[c][sub];
+  });
+  await saveDB('Teacher assigned in bulk: '+sub); render();
+}
+document.addEventListener('change', e=>{
+  const c = e.target.closest && e.target.closest('.ttTchChk');
+  if(c) ttTchToggle(c);
+});
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('.ttTchRowAll, .ttTchRowNone');
+  if(b) ttTchRowBulk(b.dataset.subject, b.classList.contains('ttTchRowAll') ? 'all' : 'none');
+});
+
 function pageTeachers(){
   const admin = isAdmin();
   const teachers = DB.timetableTeachers || [];
@@ -29091,15 +29176,7 @@ function pageTeachers(){
     ${admin? ttTchPickerHtml() : ''}
     ${teachers.length? `<div style="display:flex;gap:6px;flex-wrap:wrap">${teachers.map(t=> `<span class="badge" style="display:inline-flex;align-items:center;gap:6px">${esc(t)}${admin? `<button class="ttTchDel" data-name="${esc(t)}" style="background:none;border:0;cursor:pointer;color:inherit" aria-label="Remove ${esc(t)}">×</button>`:''}</span>`).join('')}</div>` : '<div class="empty">No teachers yet.</div>'}
   </div>
-  <div class="card panel" style="margin-top:12px">
-    <div class="panel-head"><div><h3>Who teaches what</h3></div>
-      ${classes.length? `<select onchange="ttTchClass=this.value;render()">${classes.map(c=> `<option ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}</div>
-    ${!classes.length? '<div class="empty">No classes set up yet.</div>' : !subjects.length? `<div class="empty">${esc(cls)} has no subjects in its timetable yet — fill in its Class timetable first.</div>` : !teachers.length? '<div class="empty">Add teachers above first.</div>' : `
-    <div class="table-wrap"><table class="datatable"><thead><tr><th>Subject</th><th>Teacher for ${esc(cls)}</th></tr></thead><tbody>
-      ${subjects.map(s=> `<tr><td>${esc(s)}${(DB.setup.subjectNames||{})[s]? ` <span style="opacity:.6">${esc(DB.setup.subjectNames[s])}</span>`:''}</td>
-        <td><span style="display:inline-flex;gap:6px;align-items:center"><select class="ttTchSel" data-cls="${esc(cls)}" data-subject="${esc(s)}" ${admin?'':'disabled'}>${opts(ttTeacherOf(cls, s))}</select>${admin? `<button class="btn secondary small ttTchAll" title="Use this teacher for ${esc(s)} in every class that has it">all classes</button>`:''}</span></td></tr>`).join('')}
-    </tbody></table></div>`}
-  </div>
+  ${ttTchWhoCardHtml(teachers, admin, classes)}
   ${teachers.length? `<div class="card panel" style="margin-top:12px">
     <div class="panel-head"><div><h3>Teacher timetable</h3></div><select onchange="ttTchView=this.value;render()"><option value="">— pick a teacher —</option>${teachers.map(t=> `<option ${t===ttTchView?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
     ${clashes.length? `<div class="tt-fix-banner">⚠ ${clashes.length} double-booking${clashes.length===1?'':'s'} in the weekly timetable:<ul style="margin:6px 0 0 18px">${clashes.slice(0,8).map(c=> `<li>${esc(c.teacher)} — ${esc(c.day.slice(0,3))} ${esc(c.period)}: ${c.entries.map(esc).join(' and ')}</li>`).join('')}${clashes.length>8?`<li>…and ${clashes.length-8} more</li>`:''}</ul></div>` : '<p class="field-hint">No teacher is double-booked in the weekly timetable.</p>'}
