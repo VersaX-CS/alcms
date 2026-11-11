@@ -21643,6 +21643,9 @@ function ttResolveCellValue(raw){
   const key = ttLooseKey(text);
   if(TT_FREE_KEYS.includes(text.toUpperCase()) || key==='' || key==='FREE') return {kind:'free', value:''};
   if(key==='LIBRARY' || key==='LIB') return {kind:'library', value:'LIBRARY'};
+  const bid = bellSlotId(text);                      // "SHORT BREAK" → BREAK, "LUNCH BREAK" → LUNCH
+  if(bid==='LUNCH') return {kind:'known', value:'LUNCH'};
+  if(bid==='BREAK') return {kind:'known', value:'BREAK'};
   const activities = DB.scheduleActivities || DEFAULT_ACTIVITIES;
   const act = activities.find(a=> ttLooseKey(a)===key);
   if(act) return {kind:'known', value:act};
@@ -21694,15 +21697,25 @@ function ttIsBreakOrLunchLabel(label){
   if(id==='BREAK' || id==='LUNCH') return true;
   return bellSchedules().some(s=>{ const sl = bellSlot(s, label); return !!sl && sl.type!=='period'; });
 }
+/* Leave a BREAK/LUNCH row to the bell schedule ONLY when this class's own bell schedule really has that
+   slot AND the school hasn't made it a period row. Otherwise the file's row is imported like any other:
+   skipping it would leave a period that exists in the grid with nothing in it, which reads as a free
+   period (and the library auto-build used to offer it as a visit slot). */
+function ttSkipBreakRow(label, cls){
+  if(!ttIsBreakOrLunchLabel(label)) return false;
+  const id = bellSlotId(label);
+  if(timetablePeriods().some(p=> bellSlotId(p)===id)) return false;
+  return TIMETABLE_DAYS.some(d=>{ const sl = bellSlot(bellScheduleFor(cls, d), label); return !!sl && sl.type!=='period'; });
+}
 function ttNewImportContext(){
-  const periodByKey = {};
-  timetablePeriods().forEach(p=> periodByKey[ttLooseKey(p)] = p);
-  return {periodByKey, newPeriods:[]};
+  const periodByKey = {}, periodById = {};
+  timetablePeriods().forEach(p=>{ periodByKey[ttLooseKey(p)] = p; periodById[bellSlotId(p)] = p; });
+  return {periodByKey, periodById, newPeriods:[]};
 }
 /* Reads one sheet (as an array of rows). `ctx` is shared across the sheets of one import so a new
    period name is registered once. Returns {error} or
    {timetable, times, hasTimes, unknownValues, cellCount, foundDays, timeWarnings, skipped}. */
-function ttParseSheet(rows, ctx){
+function ttParseSheet(rows, ctx, cls){
   if(!rows || rows.length<2) return {error:'needs at least 2 rows (a header and data)'};
   const found = ttFindHeaderRow(rows);
   if(found.idx===-1) return {error:`no header row with day columns (${TIMETABLE_DAYS.join(', ')})`};
@@ -21731,7 +21744,7 @@ function ttParseSheet(rows, ctx){
   }
   if(periodColIdx===-1 || periodColIdx==null) return {error:'no "Period" column'};
 
-  const timetable = {}, times = {}, unknownValues = {}, timeWarnings = [], skipped = [];
+  const timetable = {}, times = {}, unknownValues = {}, timeWarnings = [], skipped = [], kept = [];
   let cellCount = 0;
   for(let i=found.idx+1; i<rows.length; i++){
     const row = rows[i] || [];
@@ -21740,11 +21753,16 @@ function ttParseSheet(rows, ctx){
     const rawPeriod = String(period).trim();
     const pKey = ttLooseKey(rawPeriod);
     if(!pKey) continue;
-    if(ttIsBreakOrLunchLabel(rawPeriod)){ if(!skipped.includes(rawPeriod)) skipped.push(rawPeriod); continue; }
-    let periodStr = ctx.periodByKey[pKey];
+    if(ttIsBreakOrLunchLabel(rawPeriod)){
+      const hasContent = foundDays.some(day=> ttSplitCellText(row[dayColumns[day]]).some(tok=> ttResolveCellValue(tok).kind!=='free'));
+      if(ttSkipBreakRow(rawPeriod, cls) || !hasContent){ if(!skipped.includes(rawPeriod)) skipped.push(rawPeriod); continue; }
+      if(!kept.includes(rawPeriod)) kept.push(rawPeriod);
+    }
+    let periodStr = ctx.periodByKey[pKey] || ctx.periodById[bellSlotId(rawPeriod)];
     if(!periodStr){
       periodStr = rawPeriod.toUpperCase();
       ctx.periodByKey[pKey] = periodStr;
+      ctx.periodById[bellSlotId(rawPeriod)] = periodStr;
       ctx.newPeriods.push(periodStr);
     }
 
@@ -21786,7 +21804,7 @@ function ttParseSheet(rows, ctx){
     });
   }
   if(!cellCount) return {error:'no subjects found — check the day columns have entries'};
-  return {timetable, times, hasTimes, unknownValues, cellCount, foundDays, timeWarnings, skipped};
+  return {timetable, times, hasTimes, unknownValues, cellCount, foundDays, timeWarnings, skipped, kept};
 }
 /* Which of a parsed sheet's times actually differ from the class's bell schedule, so the confirm box
    can say exactly what will be overridden. Times equal to the bell schedule are not stored. */
@@ -21815,7 +21833,8 @@ function ttImportLines(cls, parsed){
     else lines.push(`   ⏱ Times in the file match the bell schedule already — nothing overridden.`);
     if(parsed.timeWarnings.length) lines.push(`   ⚠ ${parsed.timeWarnings.length} time(s) skipped: ${parsed.timeWarnings.slice(0,2).join('; ')}${parsed.timeWarnings.length>2?'…':''}`);
   }
-  if(parsed.skipped.length) lines.push(`   Break/lunch rows skipped (they come from the bell schedule): ${parsed.skipped.join(', ')}`);
+  if(parsed.kept && parsed.kept.length) lines.push(`   ✔ ${parsed.kept.join(', ')} imported as real timetable rows, exactly as in your file (they're in your period list, or this class's bell schedule has no matching break/lunch slot).`);
+  if(parsed.skipped.length) lines.push(`   Skipped (empty, or already provided by this class's bell schedule): ${parsed.skipped.join(', ')}`);
   return lines;
 }
 async function ttApplyImports(items, ctx){
@@ -21827,6 +21846,11 @@ async function ttApplyImports(items, ctx){
     if(!DB.setup.periods || !DB.setup.periods.length) DB.setup.periods = [...PERIOD_OPTIONS];
     ctx.newPeriods.forEach(p=>{ if(!DB.setup.periods.includes(p)) DB.setup.periods.push(p); });
   }
+  // BREAK and LUNCH are known activities, so they never show up as "not in Setup" flags.
+  if(!Array.isArray(DB.scheduleActivities)) DB.scheduleActivities = [...DEFAULT_ACTIVITIES];
+  const usedVals = new Set();
+  items.forEach(({parsed})=> Object.values(parsed.timetable).forEach(dm=> Object.values(dm).forEach(v=> ttCellValues(v).forEach(x=> usedVals.add(x)))));
+  ['BREAK','LUNCH'].forEach(a=>{ if(usedVals.has(a) && !DB.scheduleActivities.includes(a)) DB.scheduleActivities.push(a); });
   items.forEach(({cls, parsed})=>{
     DB.classTimetable[cls] = parsed.timetable;
     if(parsed.hasTimes){
@@ -21884,7 +21908,7 @@ async function importFullTimetableFromExcel(){
 
   ttPickSpreadsheet(async (workbook)=>{
     const ctx = ttNewImportContext();
-    const parsed = ttParseSheet(ttSheetRows(workbook, workbook.SheetNames[0]), ctx);
+    const parsed = ttParseSheet(ttSheetRows(workbook, workbook.SheetNames[0]), ctx, selectedClass);
     if(parsed.error){ toast('Couldn\'t import: '+parsed.error); return; }
     const unknownList = Object.keys(parsed.unknownValues);
     const lines = [`Import this timetable into "${selectedClass}"? It replaces that class's current timetable.`, ...ttImportLines(selectedClass, parsed)];
@@ -21922,7 +21946,7 @@ async function importTimetableWorkbookFromExcel(){
       const cls = ttMatchSheetToClass(name, classes);
       if(!cls){ skippedSheets.push(`“${name}” — no matching class`); return; }
       if(used.has(cls)){ skippedSheets.push(`“${name}” — ${cls} already has a sheet`); return; }
-      const parsed = ttParseSheet(ttSheetRows(workbook, name), ctx);
+      const parsed = ttParseSheet(ttSheetRows(workbook, name), ctx, cls);
       if(parsed.error){ skippedSheets.push(`“${name}” — ${parsed.error}`); return; }
       used.add(cls); items.push({cls, parsed, sheet:name});
     });
@@ -22808,7 +22832,7 @@ function computeLibraryScheduleProposals(){
       timetablePeriodsFor(cls).forEach(period=>{
         const vals = ttEffective(cls, day, period).values;
         if(vals.includes('LIBRARY')) librarySlots.push([day,period]);
-        else if(!vals.length) freeSlots.push([day,period]);
+        else if(!vals.length){ if(!ttIsBreakLikePeriod(cls, day, period)) freeSlots.push([day,period]); }
         else {
           // A period may run several subjects at once — senior classes split and each student
           // sits whichever one their own combination includes. A student is personally free
@@ -29276,6 +29300,14 @@ document.addEventListener('click', e=>{
   const bk = t.closest('.ttEmBack');
   if(bk) ttEmBackAtSchool(bk.dataset.name);
 });
+
+/* A break or lunch slot is never a "free period", even when nothing is typed into it. */
+function ttIsBreakLikePeriod(cls, day, period){
+  const id = bellSlotId(period);
+  if(id==='BREAK' || id==='LUNCH') return true;
+  const sl = bellSlot(bellScheduleFor(cls, day), period);
+  return !!sl && sl.type!=='period';
+}
 
 /* ================= Note Modal Functions ================= */
 let noteHasChanges = false;
