@@ -4861,6 +4861,14 @@ a, button, input, select, textarea, label, summary, [role="button"], .btn, .icon
 #swUpdateBanner button{ min-height:36px; border-radius:8px; border:1px solid rgba(255,255,255,.6); background:transparent; color:#fff; padding:6px 12px; cursor:pointer; font:inherit; font-weight:600;}
 #swUpdateBanner button[data-a="go"]{ background:rgba(255,255,255,.18);}
 @media (max-width:900px){ #swUpdateBanner{ left:12px; right:84px; max-width:none; bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 12px);} body.kb-open #swUpdateBanner{ display:none;} }
+
+.tt-fix{color:var(--amber);font-weight:700;margin-left:4px;cursor:help}
+.tt-was{font-size:10.5px;color:var(--muted-label);text-decoration:line-through;margin-top:2px}
+.tt-fix-banner{background:rgba(184,134,62,.16);border:1px solid var(--amber);border-radius:8px;padding:8px 12px;margin:0 0 10px;font-size:13px}
+td.tt-em-changed{background-color:rgba(184,134,62,.18)}
+.tt-cover{font-size:10.5px;color:var(--amber);font-weight:600;margin-top:2px}
+.ttEmCell{width:100%;text-align:left;min-height:30px;white-space:normal;padding:4px 6px}
+.tt-saved-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;margin-bottom:8px;background:var(--surface-1);border-radius:8px}
 </style>
 </head>
 <body>
@@ -7218,6 +7226,11 @@ function migrateNewFeatureData(db){
   if(db.setup.periods && !Array.isArray(db.setup.periods)) db.setup.periods = [];
   if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
   if(!db.classTimings || typeof db.classTimings!=='object' || Array.isArray(db.classTimings)) db.classTimings = {};
+  if(!Array.isArray(db.savedTimetables)) db.savedTimetables = [];          // named snapshots you can deploy later
+  if(typeof db.activeTimetableId!=='string') db.activeTimetableId = '';     // which saved snapshot is currently live
+  if(!db.timetableOverrides || typeof db.timetableOverrides!=='object' || Array.isArray(db.timetableOverrides)) db.timetableOverrides = {};  // emergency per-date fixes
+  if(!Array.isArray(db.timetableTeachers)) db.timetableTeachers = [];       // teacher names used by the timetable
+  if(!db.subjectTeachers || typeof db.subjectTeachers!=='object' || Array.isArray(db.subjectTeachers)) db.subjectTeachers = {};  // { class: { subject: teacher } }
   if(!db.scheduleActivities || !Array.isArray(db.scheduleActivities)) db.scheduleActivities = [...DEFAULT_ACTIVITIES];
   ensureBellSchedules(db);   // seeds bell schedules the first time only; the school's own edits are never overwritten
   // Librarian-recorded excuses for students who skip a library period for a genuine, permitted
@@ -7544,6 +7557,7 @@ function buildSeedDB(){
     schoolAbsences: [],
     classTimetable: {},
     classTimings: {},
+    savedTimetables: [], activeTimetableId: '', timetableOverrides: {}, timetableTeachers: [], subjectTeachers: {},
     staffTimetable: [
       {id:'ST-1', day:'EVERYDAY', time:'07:45', category:'Assembly', title:'', leadMinutes:10, notes:'', active:true},
       {id:'ST-2', day:'EVERYDAY', time:'12:30', category:'Lunch Break', title:'', leadMinutes:5, notes:'', active:true},
@@ -8162,7 +8176,7 @@ function nextPeriodFreeInfo(entry, nowDate){
     return {label: sl.label, start: t ? timeToMinutes(t.start) : null, startStr: t ? t.start : ''};
   }).filter(x=> x.start!=null && x.start > nowMin).sort((a,b)=> a.start-b.start)[0];
   if(!next) return {free:false, state:'over', label:'No more periods today', period:null};
-  const vals = ttEffective(u.cls, day, next.label).values;
+  const vals = ttEffective(u.cls, day, next.label, ttLocalDateKey(now)).values;
   const at = ` at ${fmtTime(next.startStr)}`;
   if(!vals.length) return {free:true, state:'free', label:`Free — no class ${next.label}`+at, period:next.label};
   if(vals.includes('LIBRARY')) return {free:true, state:'library', label:`Library period ${next.label}`+at, period:next.label};
@@ -20787,12 +20801,20 @@ function pageSchedule(){
     <button class="profile-tab-btn ${scheduleSubview==='weekly'?'active':''}" onclick="setScheduleSubview('weekly')">Weekly schedule</button>
     <button class="profile-tab-btn ${scheduleSubview==='timetable'?'active':''}" onclick="setScheduleSubview('timetable')">Class timetable</button>
     <button class="profile-tab-btn ${scheduleSubview==='staff'?'active':''}" onclick="setScheduleSubview('staff')">Staff timetable</button>
+    <button class="profile-tab-btn ${scheduleSubview==='teachers'?'active':''}" onclick="setScheduleSubview('teachers')">Teachers</button>
+    <button class="profile-tab-btn ${scheduleSubview==='emergency'?'active':''}" onclick="setScheduleSubview('emergency')">Emergency fix</button>
   </div>`;
   if(scheduleSubview==='timetable'){
     return tabsHtml + pageClassTimetable() + '<div id="mod_roster" style="display:none"></div>';
   }
   if(scheduleSubview==='staff'){
     return tabsHtml + pageStaffTimetable();
+  }
+  if(scheduleSubview==='teachers'){
+    return tabsHtml + pageTeachers();
+  }
+  if(scheduleSubview==='emergency'){
+    return tabsHtml + pageEmergencyFix();
   }
   const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'];
   const byDay = {};
@@ -21094,7 +21116,7 @@ function bellDaysLabel(sch){
 /* What a class actually has in a period: its own entry, or — when that cell is empty — the fixed
    entry its bell schedule sets for that day/slot (Assembly, Fellowship…). `fixed:true` marks the
    latter so screens can style it as a school-wide fixture rather than a lesson. */
-function ttEffective(cls, day, period){
+function ttEffectiveBase(cls, day, period){
   const own = ttCellAt(cls, day, period);
   if(own.length) return {values:own, fixed:false};
   const slot = bellSlot(bellScheduleFor(cls, day), period);
@@ -21104,6 +21126,10 @@ function ttEffective(cls, day, period){
 
 /* One cell of a "today" grid. An empty break/lunch cell says so instead of showing a dash. */
 function todayTimetableCellHtml(eff, blLabel){
+  const h = todayTimetableCellHtmlBase(eff, blLabel);
+  return eff && eff.overridden ? h + (eff.cover? `<div class="tt-cover">cover: ${esc(eff.cover)}</div>`:'') + `<span class="tt-fix" title="Emergency change for today${eff.was&&eff.was.length?' (normally '+esc(eff.was.join(' / '))+')':' (normally free)'}">✎</span>` : h;
+}
+function todayTimetableCellHtmlBase(eff, blLabel){
   const vals = eff.values;
   if(!vals.length){
     if(blLabel) return `<span class="tt-bl-label">${esc(String(blLabel).toUpperCase())}</span>`;
@@ -21127,7 +21153,8 @@ function todayTimetableCellHtml(eff, blLabel){
    when nothing is entered for `weekday`. Shared by the Dashboard panel and the Quick Actions modal. */
 function renderTodayTimetableHtml(weekday){
   const classes = sortedClasses();
-  const eff = (c,p)=> ttEffective(c, weekday, p);
+  const dk = ttTodayKeyFor(weekday);          // today's date when `weekday` is today, so emergency fixes apply
+  const eff = (c,p)=> ttEffective(c, weekday, p, dk);
   const order = [...bellSchedules().filter(s=> bellRunsOn(s, weekday)), null];
   const segments = order
     .map(sch=> ({sch, cls: classes.filter(c=> bellScheduleFor(c, weekday)===sch)}))
@@ -21180,7 +21207,7 @@ function renderTodayTimetableHtml(weekday){
   if(anyDiff && timed.length>1) legendBits.push("Tinted times differ between the bell schedules — hover a header to see the other schedule's time.");
   if(anyOvr) legendBits.push('An amber time inside a cell is a custom time for that class (from its imported timetable).');
   const legend = legendBits.length ? `<p class="field-hint tt-legend">${legendBits.join(' ')}</p>` : '';
-  return html + legend;
+  return ttEmBannerHtml(dk) + html + legend;
 }
 
 /* ------------------------------------------------------------------ management UI */
@@ -22439,6 +22466,7 @@ function pageClassTimetable(){
     <div class="panel-head">
       <div><h3>Class subject timetable</h3></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${isAdmin() ? ttSaveButtonsHtml() : ''}
         ${isAdmin() && classes.length? `<button class="btn" onclick="importFullTimetableFromExcel()">📥 Import for ${esc(cls)} (Excel)</button><button class="btn secondary" onclick="importTimetableWorkbookFromExcel()" title="One workbook, one sheet per class — each sheet named after its class">📥 Import all classes (Excel)</button>`:''}
         ${classes.length? `<div class="dropdown-wrap">
           <button class="btn secondary small" data-dropdown-toggle="moremenu_classtt">⋯ More</button>
@@ -28431,6 +28459,712 @@ function restoreFocusFromModal() {
     setTimeout(() => previousFocusElement.focus(), 0);
   }
 }
+
+/* ======================================================================================
+   SAVED TIMETABLES (save now, deploy later)  +  EMERGENCY DAY-BY-DAY FIXES
+   --------------------------------------------------------------------------------------
+   DB.savedTimetables  = [{id, name, note, at, by, auto, snapshot:{classTimetable, classTimings,
+                           bellSchedules, periods, periodTimes}}]
+   DB.activeTimetableId = id of the saved timetable most recently saved/deployed ('' = none)
+   DB.timetableOverrides = { 'YYYY-MM-DD': { note, followDay, cells:{[class]:{[period]: value|[values]|''}}, by, at } }
+       - cells: a one-day change to a single class/period ('' means "free period that day").
+       - followDay: run another weekday's normal timetable on that date (e.g. a holiday shift).
+   The normal weekly timetable is NEVER touched by an emergency fix — it only changes what that
+   one date shows (Today's timetable, Quick Actions, and the "next period free?" check).
+   ====================================================================================== */
+const TT_SAVE_MAX = 25;
+const TT_WEEKDAY_NAMES = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+function ttLocalDateKey(d){
+  d = d || new Date();
+  const p = n=> String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function ttWeekdayOfKey(key){
+  const a = String(key||'').split('-').map(Number);
+  if(a.length!==3 || a.some(isNaN)) return '';
+  return TT_WEEKDAY_NAMES[new Date(a[0], a[1]-1, a[2]).getDay()];
+}
+function ttAddDaysKey(key, n){
+  const a = key.split('-').map(Number);
+  return ttLocalDateKey(new Date(a[0], a[1]-1, a[2]+n));
+}
+function ttNiceDate(key){
+  const a = String(key||'').split('-').map(Number);
+  if(a.length!==3) return key;
+  const d = new Date(a[0], a[1]-1, a[2]);
+  return d.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short', year:'numeric'});
+}
+/* The date key for "today" when `weekday` is today's weekday, else '' (no override applies). */
+function ttTodayKeyFor(weekday){
+  const k = ttLocalDateKey();
+  return ttWeekdayOfKey(k)===weekday ? k : '';
+}
+function ttOverrideFor(dateKey){
+  return (dateKey && DB && DB.timetableOverrides && DB.timetableOverrides[dateKey]) || null;
+}
+
+/* What a class has in a period. With a dateKey, that date's emergency fix is applied on top of the
+   normal timetable. `overridden` + `was` are set only when the result really differs from normal. */
+function ttEffective(cls, day, period, dateKey){
+  const ov = ttOverrideFor(dateKey);
+  if(!ov) return ttEffectiveBase(cls, day, period);
+  const normal = ttEffectiveBase(cls, day, period);
+  let res = (ov.followDay && ov.followDay!==day) ? ttEffectiveBase(cls, ov.followDay, period) : normal;
+  const cell = ov.cells && ov.cells[cls];
+  if(cell && Object.prototype.hasOwnProperty.call(cell, period)){
+    res = {values: ttCellValues(cell[period]), fixed:false};
+  }
+  // Teacher-absence plan for this class/period: either drop the absent teacher's subject (free
+  // period) or keep the lesson and name a cover teacher.
+  const plan = ov.teacherPlan && ov.teacherPlan[cls] && ov.teacherPlan[cls][period];
+  let cover = '';
+  if(plan){
+    if(plan.mode==='free') res = {values: res.values.filter(v=> v!==plan.subject), fixed:res.fixed};
+    else if(plan.mode==='cover') cover = plan.cover || '';
+  }
+  const changed = JSON.stringify(res.values) !== JSON.stringify(normal.values);
+  return (changed || cover) ? {values:res.values, fixed:res.fixed, overridden:true, was:normal.values, cover} : res;
+}
+
+function ttEmBannerHtml(dateKey){
+  const ov = ttOverrideFor(dateKey);
+  if(!ov) return '';
+  const n = Object.keys(ov.cells||{}).reduce((s,c)=> s + Object.keys(ov.cells[c]||{}).length, 0);
+  const bits = [];
+  if(ov.followDay) bits.push('running the '+esc(ov.followDay.slice(0,1)+ov.followDay.slice(1).toLowerCase())+' timetable');
+  if(n) bits.push(n+' period change'+(n===1?'':'s'));
+  if((ov.absent||[]).length) bits.push('absent: '+ov.absent.map(esc).join(', '));
+  return `<div class="tt-fix-banner">⚠ <strong>Emergency timetable in force today</strong>${ov.note? ' — '+esc(ov.note):''}${bits.length? ' <span style="opacity:.75">('+bits.join(', ')+')</span>':''}. Changed periods are marked <span class="tt-fix">✎</span>.</div>`;
+}
+
+/* ------------------------------------------------------------------ shared modal shell */
+function ttModal(title, bodyHtml, footHtml, opts){
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.innerHTML = `<div class="modal" ${opts&&opts.wide?'style="max-width:760px"':''}>
+    <div class="modal-head"><h3>${esc(title)}</h3><button class="ttModalClose" aria-label="Close">✕</button></div>
+    <div class="modal-body">${bodyHtml}</div>
+    ${footHtml? `<div class="modal-foot">${footHtml}</div>`:''}
+  </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> animatedCloseModal(wrap, ()=> wrap.remove());
+  wrap.onclick = e=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('.ttModalClose').onclick = close;
+  return {wrap, close};
+}
+
+/* ================================================================ SAVED TIMETABLES */
+function ttSnapshotNow(){
+  const s = DB.setup || {};
+  const snap = {
+    classTimetable: DB.classTimetable || {},
+    classTimings: DB.classTimings || {},
+    bellSchedules: s.bellSchedules || [],
+    periodTimes: s.periodTimes || {},
+    timetableTeachers: DB.timetableTeachers || [],
+    subjectTeachers: DB.subjectTeachers || {}
+  };
+  if(Array.isArray(s.periods)) snap.periods = s.periods;
+  return JSON.parse(JSON.stringify(snap));
+}
+function ttSnapshotSummary(sn){
+  const tt = (sn && sn.classTimetable) || {};
+  const classes = Object.keys(tt).filter(c=> tt[c] && Object.keys(tt[c]).length);
+  let cells = 0;
+  classes.forEach(c=> Object.keys(tt[c]).forEach(d=> cells += Object.keys(tt[c][d]||{}).length));
+  return {classes: classes.length, cells};
+}
+function ttSnapshotKey(sn){ return JSON.stringify([sn.classTimetable, sn.classTimings, sn.subjectTeachers||{}]); }
+function ttSaveButtonsHtml(){
+  const n = (DB.savedTimetables||[]).length;
+  return `<button class="btn secondary" onclick="ttSaveCurrentTimetable()" title="Save the timetable as it is now, so you can deploy it again later">💾 Save timetable</button>`
+       + `<button class="btn secondary" onclick="ttOpenSavedPanel()" title="Deploy, rename or delete saved timetables">📂 Saved timetables${n? ' ('+n+')':''}</button>`;
+}
+
+/* Adds a snapshot of the live timetable to DB.savedTimetables. Resolves true/false. */
+async function ttPushSave(name, note, auto){
+  const snapshot = ttSnapshotNow();
+  const entry = {id: uid('TT'), name, note: note||'', at: new Date().toISOString(), by: (actorName()||'—'), auto: !!auto, snapshot};
+  DB.savedTimetables = DB.savedTimetables || [];
+  DB.savedTimetables.unshift(entry);
+  // Keep the list bounded: drop the oldest automatic backups first, then the oldest of anything else
+  // (never the live one).
+  while(DB.savedTimetables.length > TT_SAVE_MAX){
+    let idx = -1;
+    for(let i=DB.savedTimetables.length-1;i>=0;i--){ const x = DB.savedTimetables[i]; if(x.auto && x.id!==DB.activeTimetableId){ idx = i; break; } }
+    if(idx<0) for(let i=DB.savedTimetables.length-1;i>=0;i--){ if(DB.savedTimetables[i].id!==DB.activeTimetableId && DB.savedTimetables[i].id!==entry.id){ idx = i; break; } }
+    if(idx<0) break;
+    DB.savedTimetables.splice(idx,1);
+  }
+  let ok = await saveDB('Timetable saved: '+name);
+  while(!ok && DB.savedTimetables.length > 1){
+    const j = DB.savedTimetables.map((x,i)=>({x,i})).reverse().find(o=> o.x.id!==entry.id && o.x.id!==DB.activeTimetableId);
+    if(!j) break;
+    DB.savedTimetables.splice(j.i,1);
+    ok = await saveDB('Timetable saved (retry): '+name);
+  }
+  if(!ok){
+    DB.savedTimetables = DB.savedTimetables.filter(x=> x.id!==entry.id);
+    toast('⚠ Could not save — browser storage is full. Delete some saved timetables or checkpoints, or download a backup.');
+    return null;
+  }
+  return entry;
+}
+
+function ttSaveCurrentTimetable(){
+  if(!isAdmin()) return requireAdmin('save the timetable');
+  const sum = ttSnapshotSummary(ttSnapshotNow());
+  if(!sum.classes) return toast('There is no class timetable to save yet — enter or import one first.');
+  const def = 'Timetable — ' + new Date().toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+  const {wrap, close} = ttModal('Save current timetable', `
+    <p class="field-hint" style="margin:0 0 12px">Saves a copy of the live timetable — ${sum.classes} class${sum.classes===1?'':'es'}, ${sum.cells} filled periods — along with its bell schedules and period list. You can deploy it again whenever you like.</p>
+    <div class="field"><label>Name</label><input id="ttSaveName" value="${esc(def)}" autocomplete="off" placeholder="e.g. Term 2 timetable"></div>
+    <div class="field"><label>Note (optional)</label><input id="ttSaveNote" autocomplete="off" placeholder="e.g. After Mr Ade left; exam week version"></div>`,
+    `<button class="btn secondary" id="ttSaveCancel">Cancel</button><button class="btn" id="ttSaveGo">Save</button>`);
+  wrap.querySelector('#ttSaveCancel').onclick = close;
+  wrap.querySelector('#ttSaveGo').onclick = async ()=>{
+    const name = wrap.querySelector('#ttSaveName').value.trim();
+    if(!name) return toast('Give this timetable a name.');
+    const entry = await ttPushSave(name, wrap.querySelector('#ttSaveNote').value.trim(), false);
+    if(!entry) return;
+    DB.activeTimetableId = entry.id;
+    await saveDB('Timetable marked live: '+name);
+    close(); render(); toast('✓ Saved “'+name+'”');
+  };
+}
+
+function ttOpenSavedPanel(){
+  const list = DB.savedTimetables || [];
+  const liveKey = ttSnapshotKey(ttSnapshotNow());
+  const rows = list.length ? list.map(e=>{
+    const sum = ttSnapshotSummary(e.snapshot);
+    const isLive = e.id===DB.activeTimetableId;
+    const edited = isLive && ttSnapshotKey(e.snapshot)!==liveKey;
+    const same = !isLive && ttSnapshotKey(e.snapshot)===liveKey;
+    return `<div class="tt-saved-row" data-id="${esc(e.id)}">
+      <div style="flex:1;min-width:200px">
+        <strong>${esc(e.name)}</strong>
+        ${isLive? ' <span class="badge green">LIVE</span>':''}${edited? ' <span class="badge amber" title="The live timetable has been edited since this was saved">edited since</span>':''}${same? ' <span class="badge" title="Identical to the live timetable">matches live</span>':''}${e.auto? ' <span class="badge" title="Created automatically before a deploy">auto-backup</span>':''}
+        <div class="field-hint" style="margin:2px 0 0">${esc(new Date(e.at).toLocaleString('en-GB'))} · ${esc(e.by||'—')} · ${sum.classes} class${sum.classes===1?'':'es'}, ${sum.cells} periods${e.note? ' · '+esc(e.note):''}</div>
+      </div>
+      <button class="btn small" data-act="deploy">Deploy</button>
+      <button class="btn secondary small" data-act="update" title="Replace this saved copy with the live timetable">Update</button>
+      <button class="btn secondary small" data-act="rename">Rename</button>
+      <button class="btn secondary small" data-act="download" title="Download as a file you can import on another device">⭳</button>
+      <button class="btn danger small" data-act="delete">Delete</button>
+    </div>`;
+  }).join('') : '<div class="empty">Nothing saved yet. Use “💾 Save timetable” to keep the current one.</div>';
+  const {wrap, close} = ttModal('Saved timetables', `
+    <p class="field-hint" style="margin:0 0 12px">Deploying replaces the live class timetable, class timings, bell schedules and period list. Your current timetable is saved automatically first, so you can always switch back. Emergency day fixes are separate and are kept.</p>
+    ${rows}`,
+    `<button class="btn secondary" id="ttImportFile">📥 Import from file</button><button class="btn" id="ttSaveNow">💾 Save current timetable</button>`, {wide:true});
+  wrap.querySelector('#ttSaveNow').onclick = ()=>{ close(); ttSaveCurrentTimetable(); };
+  wrap.querySelector('#ttImportFile').onclick = ()=>{ close(); ttImportSavedFromFile(); };
+  wrap.addEventListener('click', e=>{
+    const b = e.target.closest('button[data-act]'); if(!b) return;
+    const id = b.closest('.tt-saved-row').dataset.id;
+    const act = b.dataset.act;
+    if(act==='deploy'){ close(); ttDeploySaved(id); }
+    else if(act==='update'){ close(); ttUpdateSaved(id); }
+    else if(act==='rename'){ close(); ttRenameSaved(id); }
+    else if(act==='download'){ ttDownloadSaved(id); }
+    else if(act==='delete'){ close(); ttDeleteSaved(id); }
+  });
+}
+
+function ttDeploySaved(id){
+  if(!isAdmin()) return requireAdmin('deploy a saved timetable');
+  const e = (DB.savedTimetables||[]).find(x=> x.id===id);
+  if(!e) return toast('Saved timetable not found');
+  confirmModal(`Deploy “${e.name}”?\n\nThis replaces the live class timetable, class timings, bell schedules and period list. Your current timetable is saved first as an automatic backup.`, async ()=>{
+    // Auto-backup the current timetable unless an identical copy already exists.
+    const cur = ttSnapshotNow();
+    if(ttSnapshotSummary(cur).classes && !(DB.savedTimetables||[]).some(x=> ttSnapshotKey(x.snapshot)===ttSnapshotKey(cur) && JSON.stringify(x.snapshot.bellSchedules)===JSON.stringify(cur.bellSchedules))){
+      const bk = await ttPushSave('Auto-backup before deploying “'+e.name+'”', '', true);
+      if(!bk) return;   // couldn't back up — don't overwrite the only copy
+    }
+    const sn = JSON.parse(JSON.stringify(e.snapshot));
+    DB.classTimetable = sn.classTimetable || {};
+    DB.classTimings = sn.classTimings || {};
+    DB.setup.bellSchedules = sn.bellSchedules || DB.setup.bellSchedules;
+    DB.setup.periodTimes = sn.periodTimes || {};
+    if(Array.isArray(sn.periods)) DB.setup.periods = sn.periods;
+    if(sn.subjectTeachers){ DB.subjectTeachers = sn.subjectTeachers; DB.timetableTeachers = sn.timetableTeachers || DB.timetableTeachers; }
+    DB.activeTimetableId = e.id;
+    const ok = await saveDB('Timetable deployed: '+e.name);
+    render();
+    toast(ok ? '✓ Deployed “'+e.name+'”' : '⚠ Deployed, but saving failed — browser storage may be full');
+  }, {confirmLabel:'Deploy'});
+}
+function ttUpdateSaved(id){
+  if(!isAdmin()) return requireAdmin('update a saved timetable');
+  const e = (DB.savedTimetables||[]).find(x=> x.id===id); if(!e) return;
+  confirmModal(`Replace the saved copy “${e.name}” with the timetable as it is now?`, async ()=>{
+    e.snapshot = ttSnapshotNow(); e.at = new Date().toISOString(); e.by = actorName()||'—';
+    DB.activeTimetableId = e.id;
+    await saveDB('Saved timetable updated: '+e.name); render(); toast('✓ Updated “'+e.name+'”');
+  }, {confirmLabel:'Update'});
+}
+async function ttRenameSaved(id){
+  if(!isAdmin()) return requireAdmin('rename a saved timetable');
+  const e = (DB.savedTimetables||[]).find(x=> x.id===id); if(!e) return;
+  const name = prompt('Rename saved timetable:', e.name);
+  if(name===null) return;
+  if(!name.trim()) return toast('Name cannot be empty.');
+  e.name = name.trim();
+  await saveDB('Saved timetable renamed'); render(); ttOpenSavedPanel();
+}
+function ttDeleteSaved(id){
+  if(!isAdmin()) return requireAdmin('delete a saved timetable');
+  const e = (DB.savedTimetables||[]).find(x=> x.id===id); if(!e) return;
+  confirmModal(`Delete the saved timetable “${e.name}”? This cannot be undone.`, async ()=>{
+    DB.savedTimetables = DB.savedTimetables.filter(x=> x.id!==id);
+    if(DB.activeTimetableId===id) DB.activeTimetableId = '';
+    await saveDB('Saved timetable deleted'); render(); toast('Deleted');
+  }, {confirmLabel:'Delete', danger:true});
+}
+function ttDownloadSaved(id){
+  const e = (DB.savedTimetables||[]).find(x=> x.id===id); if(!e) return;
+  const blob = new Blob([JSON.stringify({format:'alcms-timetable-v1', name:e.name, note:e.note, savedAt:e.at, snapshot:e.snapshot})], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'timetable-'+e.name.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()+'.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function ttImportSavedFromFile(){
+  if(!isAdmin()) return requireAdmin('import a saved timetable');
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async ()=>{
+    const f = inp.files && inp.files[0]; if(!f) return;
+    try{
+      const data = JSON.parse(await f.text());
+      if(!data || data.format!=='alcms-timetable-v1' || !data.snapshot || typeof data.snapshot.classTimetable!=='object') throw new Error('bad format');
+      const entry = await ttPushSave((data.name||'Imported timetable')+' (imported)', data.note||'', false);
+      if(!entry) return;
+      entry.snapshot = data.snapshot;          // ttPushSave snapshotted the live one; swap in the file's
+      await saveDB('Saved timetable imported'); render(); toast('✓ Imported — open “Saved timetables” to deploy it');
+    }catch(err){ toast('That file is not a saved timetable from this app.'); }
+  };
+  inp.click();
+}
+
+/* ================================================================ EMERGENCY DAY-BY-DAY FIX */
+let ttEmDate = '';
+let ttEmClassFilter = '';
+function ttEmDateKey(){ if(!ttEmDate) ttEmDate = ttLocalDateKey(); return ttEmDate; }
+function ttEmSetDate(v){ if(v){ ttEmDate = v; render(); } }
+function ttEmSetFilter(v){ ttEmClassFilter = v; render(); }
+function ttEmCleanup(dk){
+  const ov = DB.timetableOverrides && DB.timetableOverrides[dk]; if(!ov) return;
+  Object.keys(ov.cells||{}).forEach(c=>{ if(!Object.keys(ov.cells[c]).length) delete ov.cells[c]; });
+  Object.keys(ov.teacherPlan||{}).forEach(c=>{ if(!Object.keys(ov.teacherPlan[c]).length) delete ov.teacherPlan[c]; });
+  if(!ov.followDay && !Object.keys(ov.cells||{}).length && !Object.keys(ov.teacherPlan||{}).length && !(ov.absent||[]).length && !(ov.note||'').trim()) delete DB.timetableOverrides[dk];
+}
+function ttEmEnsure(dk){
+  if(!DB.timetableOverrides) DB.timetableOverrides = {};
+  if(!DB.timetableOverrides[dk]) DB.timetableOverrides[dk] = {note:'', followDay:'', cells:{}, by:actorName()||'', at:new Date().toISOString()};
+  const ov = DB.timetableOverrides[dk];
+  if(!ov.cells) ov.cells = {};
+  if(!ov.teacherPlan) ov.teacherPlan = {};
+  if(!Array.isArray(ov.absent)) ov.absent = [];
+  ov.by = actorName()||ov.by||''; ov.at = new Date().toISOString();
+  return ov;
+}
+async function ttEmSetNote(v){
+  if(!isAdmin()) return requireAdmin('change the timetable for a day');
+  const dk = ttEmDateKey();
+  if(!v.trim() && !ttOverrideFor(dk)) return;
+  ttEmEnsure(dk).note = v.trim(); ttEmCleanup(dk);
+  await saveDB('Emergency timetable note '+dk); render();
+}
+async function ttEmSetFollow(v){
+  if(!isAdmin()) return requireAdmin('change the timetable for a day');
+  const dk = ttEmDateKey();
+  if(!v && !ttOverrideFor(dk)) return;
+  ttEmEnsure(dk).followDay = v; ttEmCleanup(dk);
+  await saveDB('Emergency timetable: run '+(v||'normal')+' timetable on '+dk); render();
+  if(v) toast('✓ '+ttNiceDate(dk)+' will run the '+v.charAt(0)+v.slice(1).toLowerCase()+' timetable');
+}
+function ttEmReset(){
+  if(!isAdmin()) return requireAdmin('reset a day');
+  const dk = ttEmDateKey();
+  confirmModal(`Remove every emergency change for ${ttNiceDate(dk)} and go back to the normal timetable?`, async ()=>{
+    delete DB.timetableOverrides[dk];
+    await saveDB('Emergency timetable reset '+dk); render(); toast('Back to the normal timetable');
+  }, {confirmLabel:'Reset day', danger:true});
+}
+function ttEmOpenDay(dk){ ttEmDate = dk; render(); }
+function ttEmDeleteDay(dk){
+  if(!isAdmin()) return requireAdmin('delete an emergency fix');
+  confirmModal(`Delete the emergency fix for ${ttNiceDate(dk)}?`, async ()=>{
+    delete DB.timetableOverrides[dk];
+    await saveDB('Emergency timetable deleted '+dk); render();
+  }, {confirmLabel:'Delete', danger:true});
+}
+function ttEmClearPast(){
+  if(!isAdmin()) return requireAdmin('clear past emergency fixes');
+  const today = ttLocalDateKey();
+  const past = Object.keys(DB.timetableOverrides||{}).filter(k=> k<today);
+  if(!past.length) return toast('No past emergency fixes to clear.');
+  confirmModal(`Delete ${past.length} past emergency fix${past.length===1?'':'es'}? Today and future ones are kept.`, async ()=>{
+    past.forEach(k=> delete DB.timetableOverrides[k]);
+    await saveDB('Past emergency timetables cleared'); render();
+  }, {confirmLabel:'Clear', danger:true});
+}
+
+/* Set one class/period on one date. If the new value equals what that date would show anyway
+   (the normal timetable, or the followDay's), the override is removed instead of stored. */
+function ttEmSetCell(dk, day, cls, period, values){
+  const ov = ttEmEnsure(dk);
+  const baseDay = (ov.followDay && ov.followDay!==day) ? ov.followDay : day;
+  const base = ttEffectiveBase(cls, baseDay, period).values;
+  const vals = ttCellValues(values);
+  if(!ov.cells[cls]) ov.cells[cls] = {};
+  if(JSON.stringify(vals)===JSON.stringify(base)) delete ov.cells[cls][period];
+  else ov.cells[cls][period] = vals.length ? ttCellStore(vals) : '';
+}
+
+function ttEmEditCell(cls, period){
+  if(!isAdmin()) return requireAdmin('change the timetable for a day');
+  const dk = ttEmDateKey(), day = ttWeekdayOfKey(dk);
+  if(!TIMETABLE_DAYS.includes(day)) return toast('Pick a weekday (Mon–Fri) first.');
+  const eff = ttEffective(cls, day, period, dk);
+  const cur = eff.values;
+  const subjects = DB.setup.subjects || [], names = DB.setup.subjectNames || {};
+  const acts = DB.scheduleActivities || DEFAULT_ACTIVITIES;
+  const extras = cur.filter(v=> v!=='LIBRARY' && !subjects.includes(v) && !acts.includes(v));
+  const box = (val, label, note)=> `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--surface-1);font-size:13px"><input type="checkbox" class="ttEmPick" value="${esc(val)}" ${cur.includes(val)?'checked':''}><span>${esc(label)}${note? ` <span style="opacity:.6">${esc(note)}</span>`:''}</span></label>`;
+  const group = (title, html)=> html ? `<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted-label);margin-bottom:6px">${esc(title)}</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">${html}</div></div>` : '';
+  const others = timetablePeriodsFor(cls).filter(p=> p!==period);
+  const {wrap, close} = ttModal(`${cls} — ${period} · ${ttNiceDate(dk)}`, `
+    <p class="field-hint" style="margin:0 0 12px">Normal timetable: <strong>${esc(ttEffective(cls, day, period).values.join(' / ') || 'free')}</strong>. This change applies to <strong>${esc(ttNiceDate(dk))} only</strong>.</p>
+    ${group('Library', box('LIBRARY','📚 LIBRARY'))}
+    ${group('Subjects', subjects.map(c=> box(c, c, names[c]||'')).join(''))}
+    ${group('Activities', acts.map(a=> box(a, a)).join(''))}
+    ${group('Not in setup', extras.map(v=> box(v, v, '⚠')).join(''))}
+    <div class="field"><label>Add something else</label><input id="ttEmCustom" placeholder="e.g. COVER, EXTRA MATHS" autocomplete="off"><p class="field-hint">Separate several with commas.</p></div>
+    ${others.length? `<div class="field"><label>…or swap with another period today</label><select id="ttEmSwap"><option value="">— Don't swap —</option>${others.map(p=> `<option value="${esc(p)}">${esc(p)} (${esc(ttEffective(cls, day, p, dk).values.join(' / ')||'free')})</option>`).join('')}</select><p class="field-hint">Swapping exchanges the two periods for this class; it overrides the ticks above.</p></div>`:''}`,
+    `<button class="btn secondary" id="ttEmRevert">Revert to normal</button><button class="btn secondary" id="ttEmFree">Make free</button><button class="btn" id="ttEmApply">Apply</button>`);
+  const commit = async (fn)=>{
+    fn(); ttEmCleanup(dk);
+    close(); await saveDB(`Emergency timetable change: ${cls} ${period} ${dk}`); render();
+  };
+  wrap.querySelector('#ttEmRevert').onclick = ()=> commit(()=>{
+    const ov = ttEmEnsure(dk); if(ov.cells[cls]) delete ov.cells[cls][period];
+  });
+  wrap.querySelector('#ttEmFree').onclick = ()=> commit(()=> ttEmSetCell(dk, day, cls, period, []));
+  wrap.querySelector('#ttEmApply').onclick = ()=> commit(()=>{
+    const swapEl = wrap.querySelector('#ttEmSwap');
+    const swapWith = swapEl ? swapEl.value : '';
+    if(swapWith){
+      const mine = cur.slice();
+      const theirs = ttEffective(cls, day, swapWith, dk).values;
+      ttEmSetCell(dk, day, cls, period, theirs);
+      ttEmSetCell(dk, day, cls, swapWith, mine);
+      return;
+    }
+    const picked = Array.from(wrap.querySelectorAll('.ttEmPick:checked')).map(x=> x.value);
+    const custom = (wrap.querySelector('#ttEmCustom').value||'').split(',').map(s=> s.trim().toUpperCase()).filter(Boolean);
+    ttEmSetCell(dk, day, cls, period, [...picked, ...custom]);
+  });
+}
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('.ttEmCell');
+  if(b) ttEmEditCell(b.dataset.cls, b.dataset.period);
+});
+
+function pageEmergencyFix(){
+  const dk = ttEmDateKey(), day = ttWeekdayOfKey(dk);
+  const ov = ttOverrideFor(dk);
+  const isSchoolDay = TIMETABLE_DAYS.includes(day);
+  const classes = sortedClasses();
+  const shown = (ttEmClassFilter && classes.includes(ttEmClassFilter)) ? [ttEmClassFilter] : classes;
+  const periods = timetablePeriods();
+  const todayKey = ttLocalDateKey();
+  const admin = isAdmin();
+  const hasAnyTimetable = Object.keys(DB.classTimetable||{}).some(c=> Object.keys(DB.classTimetable[c]||{}).length);
+
+  const rows = shown.map(cls=>{
+    const mine = timetablePeriodsFor(cls);
+    const cells = periods.map(p=>{
+      if(!mine.includes(p)) return '<td class="tt-bl" style="color:var(--muted-label)">·</td>';
+      const eff = ttEffective(cls, day, p, dk);
+      const was = (eff.overridden && JSON.stringify(eff.was)!==JSON.stringify(eff.values)) ? `<div class="tt-was">${esc(eff.was.join(' / ')||'free')}</div>` : '';
+      const cov = eff.cover ? `<div class="tt-cover">cover: ${esc(eff.cover)}</div>` : '';
+      return `<td class="${eff.overridden?'tt-em-changed':''}"><button type="button" class="ttEmCell btn secondary small" data-cls="${esc(cls)}" data-period="${esc(p)}" ${admin&&isSchoolDay?'':'disabled'}>${todayTimetableCellHtmlBase(eff,'')}${eff.overridden?'<span class="tt-fix">✎</span>':''}${was}${cov}</button></td>`;
+    }).join('');
+    return `<tr><td class="frozen-col">${esc(cls)}</td>${cells}</tr>`;
+  }).join('');
+
+  const history = Object.keys(DB.timetableOverrides||{}).sort().reverse().map(k=>{
+    const o = DB.timetableOverrides[k];
+    const n = Object.keys(o.cells||{}).reduce((s,c)=> s + Object.keys(o.cells[c]||{}).length, 0);
+    const bits = [];
+    if(o.followDay) bits.push('runs '+o.followDay.slice(0,3)+' timetable');
+    if(n) bits.push(n+' period change'+(n===1?'':'s'));
+    if((o.absent||[]).length) bits.push('absent: '+o.absent.join(', '));
+    return `<div class="tt-saved-row"><div style="flex:1;min-width:180px"><strong>${esc(ttNiceDate(k))}</strong>${k===todayKey?' <span class="badge green">TODAY</span>':k<todayKey?' <span class="badge">past</span>':''}
+      <div class="field-hint" style="margin:2px 0 0">${esc(o.note||'No reason noted')}${bits.length? ' · '+esc(bits.join(', ')):''}</div></div>
+      <button class="btn secondary small" onclick="ttEmOpenDay('${k}')">Open</button>
+      ${admin? `<button class="btn danger small" onclick="ttEmDeleteDay('${k}')">Delete</button>`:''}</div>`;
+  }).join('');
+
+  return `
+  <div class="card panel">
+    <div class="panel-head"><div><h3>Emergency timetable fix</h3>
+      <div class="hint">Change one specific day without touching the normal weekly timetable.</div></div></div>
+    ${!hasAnyTimetable? '<div class="empty">No class timetable yet — enter or import one under Class timetable first.</div>' : `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+      <div class="field" style="margin:0"><label>Date</label><input type="date" value="${esc(dk)}" onchange="ttEmSetDate(this.value)"></div>
+      <button class="btn secondary small" onclick="ttEmSetDate('${todayKey}')">Today</button>
+      <button class="btn secondary small" onclick="ttEmSetDate('${ttAddDaysKey(todayKey,1)}')">Tomorrow</button>
+      <div class="field" style="margin:0"><label>Class</label><select onchange="ttEmSetFilter(this.value)"><option value="">All classes</option>${classes.map(c=> `<option ${c===ttEmClassFilter?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    </div>
+    <p style="margin:0 0 10px"><strong>${esc(ttNiceDate(dk))}</strong>${ov? ' <span class="badge amber">emergency fix active</span>':''}</p>
+    ${!isSchoolDay? '<div class="empty">That date is a weekend — pick a weekday (Mon–Fri).</div>' : `
+    ${admin? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px">
+      <div class="field" style="margin:0;flex:1;min-width:200px"><label>Reason (optional)</label><input value="${esc((ov&&ov.note)||'')}" placeholder="e.g. Public holiday shift, staff training" onchange="ttEmSetNote(this.value)" autocomplete="off"></div>
+      <div class="field" style="margin:0"><label>Run another day's timetable</label><select onchange="ttEmSetFollow(this.value)"><option value="">— Normal ${esc(day.slice(0,3))} timetable —</option>${TIMETABLE_DAYS.filter(d=> d!==day).map(d=> `<option value="${d}" ${ov&&ov.followDay===d?'selected':''}>${d.charAt(0)+d.slice(1).toLowerCase()}'s timetable</option>`).join('')}</select></div>
+      ${ov? `<button class="btn danger small" onclick="ttEmReset()">Reset this day</button>`:''}
+    </div>` : '<p class="field-hint">Only an admin can change a day.</p>'}
+    ${ttEmAbsentPanelHtml(dk, day, ov, admin)}
+    <div class="table-wrap"><table class="datatable timetable-frozen">
+      <thead><tr><th class="frozen-col">Class</th>${periods.map(p=> `<th>${esc(p)}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="field-hint" style="margin-top:8px">Click a cell to change what that class does in that period on this date — or swap it with another period. Changed periods are shaded amber with the normal entry struck through. The change appears in Today's timetable and Quick Actions on the day; the normal weekly timetable and the library schedule are not altered.</p>`}`}
+  </div>
+  ${history? `<div class="card panel" style="margin-top:12px"><div class="panel-head"><div><h3>Emergency fixes on record</h3></div>${admin? `<button class="btn secondary small" onclick="ttEmClearPast()">Clear past</button>`:''}</div>${history}</div>`:''}`;
+}
+
+/* ================================================================ TEACHERS (subject → teacher per class) */
+function ttTeacherOf(cls, subject){
+  return (DB.subjectTeachers && DB.subjectTeachers[cls] && DB.subjectTeachers[cls][subject]) || '';
+}
+/* Subjects a class actually has in its timetable (real subject codes only — activities and LIBRARY aren't taught by a named teacher). */
+function ttClassSubjects(cls){
+  const subj = DB.setup.subjects || [], tt = (DB.classTimetable||{})[cls] || {}, out = [];
+  Object.keys(tt).forEach(d=> Object.keys(tt[d]||{}).forEach(p=> ttCellValues(tt[d][p]).forEach(v=>{ if(subj.includes(v) && !out.includes(v)) out.push(v); })));
+  return out.sort();
+}
+/* Everything a teacher teaches on `day` (optionally as changed by date `dk`): [{cls, period, subject}] */
+function ttTeacherLessons(teacher, day, dk){
+  const out = [];
+  sortedClasses().forEach(cls=>{
+    timetablePeriodsFor(cls).forEach(period=>{
+      ttEffective(cls, day, period, dk||null).values.forEach(s=>{ if(ttTeacherOf(cls, s)===teacher) out.push({cls, period, subject:s}); });
+    });
+  });
+  return out;
+}
+/* The class a teacher is busy with in this period (or ''), counting lessons and cover duties. */
+function ttTeacherBusy(teacher, day, period, dk, ignorePlanOf){
+  const ov = ttOverrideFor(dk);
+  const classes = sortedClasses();
+  for(let i=0;i<classes.length;i++){
+    const cls = classes[i];
+    if(!timetablePeriodsFor(cls).includes(period)) continue;
+    if(ttEffective(cls, day, period, dk||null).values.some(s=> ttTeacherOf(cls, s)===teacher)) return cls;
+    const pl = ov && ov.teacherPlan && ov.teacherPlan[cls] && ov.teacherPlan[cls][period];
+    if(pl && pl.mode==='cover' && pl.cover===teacher && pl.teacher!==ignorePlanOf) return cls;
+  }
+  return '';
+}
+/* Teachers double-booked in the normal weekly timetable: [{teacher, day, period, entries:[cls·subject]}] */
+function ttTeacherClashes(){
+  const out = [];
+  (DB.timetableTeachers||[]).forEach(t=>{
+    TIMETABLE_DAYS.forEach(day=> timetablePeriods().forEach(period=>{
+      const hits = [];
+      sortedClasses().forEach(cls=>{
+        if(!timetablePeriodsFor(cls).includes(period)) return;
+        ttCellAt(cls, day, period).forEach(s=>{ if(ttTeacherOf(cls, s)===t) hits.push(cls+' · '+s); });
+      });
+      if(hits.length>1) out.push({teacher:t, day, period, entries:hits});
+    }));
+  });
+  return out;
+}
+
+let ttTchClass = '';
+let ttTchView = '';
+async function ttTchAdd(){
+  if(!isAdmin()) return requireAdmin('edit teachers');
+  const el = document.getElementById('ttTchNew'); if(!el) return;
+  const names = el.value.split(/[,\n]/).map(x=> x.trim()).filter(Boolean);
+  if(!names.length) return;
+  DB.timetableTeachers = DB.timetableTeachers || [];
+  names.forEach(n=>{ if(!DB.timetableTeachers.some(x=> x.toLowerCase()===n.toLowerCase())) DB.timetableTeachers.push(n); });
+  DB.timetableTeachers.sort((a,b)=> a.localeCompare(b));
+  await saveDB('Teachers added'); render();
+}
+function ttTchRemove(name){
+  if(!isAdmin()) return requireAdmin('edit teachers');
+  confirmModal(`Remove ${name}? Their subject assignments are cleared too.`, async ()=>{
+    DB.timetableTeachers = (DB.timetableTeachers||[]).filter(x=> x!==name);
+    Object.keys(DB.subjectTeachers||{}).forEach(c=> Object.keys(DB.subjectTeachers[c]).forEach(s=>{ if(DB.subjectTeachers[c][s]===name) delete DB.subjectTeachers[c][s]; }));
+    if(ttTchView===name) ttTchView = '';
+    await saveDB('Teacher removed'); render();
+  }, {confirmLabel:'Remove', danger:true});
+}
+async function ttTchAssign(cls, subject, teacher, allClasses){
+  if(!isAdmin()) return requireAdmin('assign teachers');
+  if(!DB.subjectTeachers) DB.subjectTeachers = {};
+  const targets = allClasses ? sortedClasses().filter(c=> ttClassSubjects(c).includes(subject)) : [cls];
+  targets.forEach(c=>{
+    if(!DB.subjectTeachers[c]) DB.subjectTeachers[c] = {};
+    if(teacher) DB.subjectTeachers[c][subject] = teacher; else delete DB.subjectTeachers[c][subject];
+  });
+  await saveDB('Teacher assigned: '+subject); render();
+  if(allClasses) toast(`✓ ${teacher||'No teacher'} set for ${subject} in ${targets.length} class${targets.length===1?'':'es'}`);
+}
+document.addEventListener('change', e=>{
+  const sel = e.target.closest && e.target.closest('.ttTchSel');
+  if(sel) ttTchAssign(sel.dataset.cls, sel.dataset.subject, sel.value, false);
+});
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('.ttTchAll');
+  if(b){
+    const sel = b.parentElement.querySelector('.ttTchSel');
+    if(!sel.value) return toast('Pick a teacher first.');
+    ttTchAssign(sel.dataset.cls, sel.dataset.subject, sel.value, true);
+    return;
+  }
+  const r = e.target.closest && e.target.closest('.ttTchDel');
+  if(r) ttTchRemove(r.dataset.name);
+});
+
+function pageTeachers(){
+  const admin = isAdmin();
+  const teachers = DB.timetableTeachers || [];
+  const classes = sortedClasses();
+  if(!ttTchClass || !classes.includes(ttTchClass)) ttTchClass = classes[0] || '';
+  const cls = ttTchClass;
+  const subjects = cls ? ttClassSubjects(cls) : [];
+  const opts = cur=> `<option value="">— none —</option>${teachers.map(t=> `<option ${t===cur?'selected':''}>${esc(t)}</option>`).join('')}`;
+  const clashes = ttTeacherClashes();
+  if(ttTchView && !teachers.includes(ttTchView)) ttTchView = '';
+  const week = ttTchView ? `<div class="table-wrap" style="margin-top:8px"><table class="datatable"><thead><tr><th style="width:64px">Period</th>${TIMETABLE_DAYS.map(d=> `<th>${esc(d.slice(0,3))}</th>`).join('')}</tr></thead><tbody>${
+    timetablePeriods().map(p=> `<tr><td>${esc(p)}</td>${TIMETABLE_DAYS.map(d=>{
+      const hits = [];
+      classes.forEach(c=>{ if(timetablePeriodsFor(c).includes(p)) ttCellAt(c, d, p).forEach(s=>{ if(ttTeacherOf(c,s)===ttTchView) hits.push(`${esc(c)} · ${esc(s)}`); }); });
+      return `<td${hits.length>1?' style="background:rgba(200,80,60,.18)"':''}>${hits.length? hits.join('<br>') : '<span style="color:var(--muted-label)">—</span>'}</td>`;
+    }).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+  return `
+  <div class="card panel">
+    <div class="panel-head"><div><h3>Teachers</h3><div class="hint">Name your teachers and say who teaches which subject in each class. This powers the “teacher absent” tool in Emergency fix.</div></div></div>
+    ${admin? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input id="ttTchNew" placeholder="Add teachers, separated by commas — e.g. Mr Ade, Mrs Bello" style="flex:1;min-width:220px" autocomplete="off"><button class="btn" onclick="ttTchAdd()">+ Add</button></div>`:''}
+    ${teachers.length? `<div style="display:flex;gap:6px;flex-wrap:wrap">${teachers.map(t=> `<span class="badge" style="display:inline-flex;align-items:center;gap:6px">${esc(t)}${admin? `<button class="ttTchDel" data-name="${esc(t)}" style="background:none;border:0;cursor:pointer;color:inherit" aria-label="Remove ${esc(t)}">×</button>`:''}</span>`).join('')}</div>` : '<div class="empty">No teachers yet.</div>'}
+  </div>
+  <div class="card panel" style="margin-top:12px">
+    <div class="panel-head"><div><h3>Who teaches what</h3></div>
+      ${classes.length? `<select onchange="ttTchClass=this.value;render()">${classes.map(c=> `<option ${c===cls?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}</div>
+    ${!classes.length? '<div class="empty">No classes set up yet.</div>' : !subjects.length? `<div class="empty">${esc(cls)} has no subjects in its timetable yet — fill in its Class timetable first.</div>` : !teachers.length? '<div class="empty">Add teachers above first.</div>' : `
+    <div class="table-wrap"><table class="datatable"><thead><tr><th>Subject</th><th>Teacher for ${esc(cls)}</th></tr></thead><tbody>
+      ${subjects.map(s=> `<tr><td>${esc(s)}${(DB.setup.subjectNames||{})[s]? ` <span style="opacity:.6">${esc(DB.setup.subjectNames[s])}</span>`:''}</td>
+        <td><span style="display:inline-flex;gap:6px;align-items:center"><select class="ttTchSel" data-cls="${esc(cls)}" data-subject="${esc(s)}" ${admin?'':'disabled'}>${opts(ttTeacherOf(cls, s))}</select>${admin? `<button class="btn secondary small ttTchAll" title="Use this teacher for ${esc(s)} in every class that has it">all classes</button>`:''}</span></td></tr>`).join('')}
+    </tbody></table></div>`}
+  </div>
+  ${teachers.length? `<div class="card panel" style="margin-top:12px">
+    <div class="panel-head"><div><h3>Teacher timetable</h3></div><select onchange="ttTchView=this.value;render()"><option value="">— pick a teacher —</option>${teachers.map(t=> `<option ${t===ttTchView?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+    ${clashes.length? `<div class="tt-fix-banner">⚠ ${clashes.length} double-booking${clashes.length===1?'':'s'} in the weekly timetable:<ul style="margin:6px 0 0 18px">${clashes.slice(0,8).map(c=> `<li>${esc(c.teacher)} — ${esc(c.day.slice(0,3))} ${esc(c.period)}: ${c.entries.map(esc).join(' and ')}</li>`).join('')}${clashes.length>8?`<li>…and ${clashes.length-8} more</li>`:''}</ul></div>` : '<p class="field-hint">No teacher is double-booked in the weekly timetable.</p>'}
+    ${week || '<p class="field-hint">Pick a teacher to see their week. Double-booked slots are shaded red.</p>'}
+  </div>`:''}`;
+}
+
+/* ================================================================ TEACHER ABSENT (inside Emergency fix) */
+let ttEmAbsentTeacher = '';
+function ttEmAbsentPanelHtml(dk, day, ov, admin){
+  if(!admin) return '';
+  const teachers = DB.timetableTeachers || [];
+  const hasLink = Object.keys(DB.subjectTeachers||{}).some(c=> Object.keys(DB.subjectTeachers[c]||{}).length);
+  const absentChips = ((ov && ov.absent) || []).map(t=> `<span class="badge amber" style="display:inline-flex;align-items:center;gap:6px">${esc(t)} absent <button class="btn secondary small ttEmBack" data-name="${esc(t)}" style="padding:0 6px">Back at school</button></span>`).join(' ');
+  let body = '';
+  if(!teachers.length || !hasLink){
+    body = `<p class="field-hint" style="margin:0">To use this, add your teachers and set who teaches each subject under <a href="javascript:void(0)" onclick="setScheduleSubview('teachers')">Schedule → Teachers</a>.</p>`;
+  } else {
+    const T = ttEmAbsentTeacher && teachers.includes(ttEmAbsentTeacher) ? ttEmAbsentTeacher : '';
+    const absentNow = (ov && ov.absent) || [];
+    let table = '';
+    if(T){
+      const lessons = ttTeacherLessons(T, day, dk);
+      // Lessons already handed to a cover teacher still show (their subject stays in the cell).
+      if(!lessons.length){
+        table = `<p class="field-hint">${esc(T)} has no lessons on ${esc(ttNiceDate(dk))}.</p>`;
+      } else {
+        const rows = lessons.map(l=>{
+          const pl = ov && ov.teacherPlan && ov.teacherPlan[l.cls] && ov.teacherPlan[l.cls][l.period];
+          const curVal = pl ? (pl.mode==='free' ? '__FREE__' : pl.cover) : '';
+          const free = teachers.filter(t=> t!==T && !absentNow.includes(t) && !ttTeacherBusy(t, day, l.period, dk, T));
+          const optList = [`<option value="">Leave as is</option>`, `<option value="__FREE__" ${curVal==='__FREE__'?'selected':''}>Free period (no lesson)</option>`]
+            .concat(free.map(t=> `<option value="${esc(t)}" ${curVal===t?'selected':''}>Cover: ${esc(t)}</option>`));
+          if(curVal && curVal!=='__FREE__' && !free.includes(curVal)) optList.push(`<option value="${esc(curVal)}" selected>Cover: ${esc(curVal)}</option>`);
+          return `<tr><td>${esc(l.period)}</td><td>${esc(l.cls)}</td><td>${esc(l.subject)}</td><td><select class="ttEmAbsSel" data-cls="${esc(l.cls)}" data-period="${esc(l.period)}" data-subject="${esc(l.subject)}">${optList.join('')}</select></td></tr>`;
+        }).join('');
+        table = `<div class="table-wrap" style="margin-top:8px"><table class="datatable"><thead><tr><th>Period</th><th>Class</th><th>Subject</th><th>What happens</th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn secondary" id="ttEmSuggest">✨ Suggest cover</button><button class="btn" id="ttEmAbsApply">Apply for ${esc(T)}</button></div>
+          <p class="field-hint" style="margin-top:6px">“Cover” lists only teachers who are free that period. Suggest cover spreads the duties evenly. Nothing changes until you press Apply.</p>`;
+      }
+    }
+    body = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="margin:0"><label>Teacher absent on ${esc(ttNiceDate(dk))}</label><select onchange="ttEmAbsentTeacher=this.value;render()"><option value="">— pick a teacher —</option>${teachers.map(t=> `<option ${t===T?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      </div>${table}`;
+  }
+  return `<details style="margin-bottom:12px" ${(ttEmAbsentTeacher||absentChips)?'open':''}><summary style="cursor:pointer;font-weight:600;font-size:13px">🙋 Teacher absent${absentChips? ' — '+((ov&&ov.absent)||[]).length+' today':''}</summary>
+    <div style="margin-top:10px;padding:10px;background:var(--surface-1);border-radius:8px">${absentChips? `<div style="margin-bottom:10px">${absentChips}</div>`:''}${body}</div></details>`;
+}
+function ttEmReadAbsentRows(){
+  return Array.from(document.querySelectorAll('.ttEmAbsSel')).map(s=> ({cls:s.dataset.cls, period:s.dataset.period, subject:s.dataset.subject, value:s.value, el:s}));
+}
+async function ttEmApplyAbsence(){
+  if(!isAdmin()) return requireAdmin('change the timetable for a day');
+  const dk = ttEmDateKey(), T = ttEmAbsentTeacher; if(!T) return;
+  const ov = ttEmEnsure(dk);
+  // Clear whatever was previously planned for this teacher, then record the new plan.
+  Object.keys(ov.teacherPlan).forEach(c=> Object.keys(ov.teacherPlan[c]).forEach(p=>{ if(ov.teacherPlan[c][p].teacher===T) delete ov.teacherPlan[c][p]; }));
+  ttEmReadAbsentRows().forEach(r=>{
+    if(!r.value) return;
+    if(!ov.teacherPlan[r.cls]) ov.teacherPlan[r.cls] = {};
+    ov.teacherPlan[r.cls][r.period] = r.value==='__FREE__' ? {teacher:T, subject:r.subject, mode:'free'} : {teacher:T, subject:r.subject, mode:'cover', cover:r.value};
+  });
+  if(!ov.absent.includes(T)) ov.absent.push(T);
+  ttEmCleanup(dk);
+  ttEmAbsentTeacher = '';
+  await saveDB(`Teacher absent: ${T} ${dk}`); render();
+  toast(`✓ ${T} marked absent for ${ttNiceDate(dk)}`);
+}
+function ttEmSuggestCover(){
+  const rows = ttEmReadAbsentRows();
+  const load = {}, takenAt = {};
+  rows.forEach(r=>{
+    const choices = Array.from(r.el.options).map(o=> o.value).filter(v=> v && v!=='__FREE__' && !(takenAt[r.period]||[]).includes(v));
+    if(!choices.length){ r.el.value = '__FREE__'; return; }
+    choices.sort((a,b)=> (load[a]||0)-(load[b]||0));
+    r.el.value = choices[0];
+    load[choices[0]] = (load[choices[0]]||0)+1;
+    (takenAt[r.period] = takenAt[r.period]||[]).push(choices[0]);
+  });
+  toast('Cover suggested — review it, then press Apply. Lessons with no free teacher are set to free periods.');
+}
+function ttEmBackAtSchool(name){
+  if(!isAdmin()) return requireAdmin('change the timetable for a day');
+  const dk = ttEmDateKey(), ov = ttOverrideFor(dk); if(!ov) return;
+  confirmModal(`${name} is back? Their cover arrangements for ${ttNiceDate(dk)} are removed and their lessons return.`, async ()=>{
+    Object.keys(ov.teacherPlan||{}).forEach(c=> Object.keys(ov.teacherPlan[c]).forEach(p=>{ if(ov.teacherPlan[c][p].teacher===name) delete ov.teacherPlan[c][p]; }));
+    ov.absent = (ov.absent||[]).filter(t=> t!==name);
+    ttEmCleanup(dk);
+    await saveDB('Teacher back: '+name); render();
+  }, {confirmLabel:'Back at school'});
+}
+document.addEventListener('click', e=>{
+  const t = e.target;
+  if(!t.closest) return;
+  if(t.closest('#ttEmSuggest')) ttEmSuggestCover();
+  else if(t.closest('#ttEmAbsApply')) ttEmApplyAbsence();
+  const bk = t.closest('.ttEmBack');
+  if(bk) ttEmBackAtSchool(bk.dataset.name);
+});
 
 /* ================= Note Modal Functions ================= */
 let noteHasChanges = false;
