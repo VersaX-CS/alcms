@@ -7226,6 +7226,9 @@ function migrateNewFeatureData(db){
   if(db.setup.periods && !Array.isArray(db.setup.periods)) db.setup.periods = [];
   if(!db.classTimetable || typeof db.classTimetable!=='object' || Array.isArray(db.classTimetable)) db.classTimetable = {};
   if(!db.classTimings || typeof db.classTimings!=='object' || Array.isArray(db.classTimings)) db.classTimings = {};
+  // Break/lunch rows that the library auto-build generated earlier ("Free period (from class timetable)")
+  // were never real library periods — drop them. Rows you added by hand are left alone.
+  if(Array.isArray(db.scheduleDays)) db.scheduleDays = db.scheduleDays.filter(r=> !(Array.isArray(r) && ['BREAK','LUNCH'].includes(bellSlotId(r[1])) && /^Free period \(from class timetable\)/.test(String(r[4]||''))));
   if(!Array.isArray(db.savedTimetables)) db.savedTimetables = [];          // named snapshots you can deploy later
   if(typeof db.activeTimetableId!=='string') db.activeTimetableId = '';     // which saved snapshot is currently live
   if(!db.timetableOverrides || typeof db.timetableOverrides!=='object' || Array.isArray(db.timetableOverrides)) db.timetableOverrides = {};  // emergency per-date fixes
@@ -19090,7 +19093,7 @@ function renderBatchStagingHtml(){
     </div>
     <div class="field">
       <label>Period (for tracking attendance)</label>
-      <select id="batchPeriod"><option value="">— No period —</option>${timetablePeriods().map(p=>`<option>${esc(p)}</option>`).join('')}</select>
+      <select id="batchPeriod"><option value="">— No period —</option>${timetablePeriods().filter(p=> !ttIsBreakOrLunchLabel(p)).map(p=>`<option>${esc(p)}</option>`).join('')}</select>
     </div>
   </div>
   <div class="field" style="margin-bottom:12px">
@@ -22830,6 +22833,7 @@ function computeLibraryScheduleProposals(){
     const students = classStudents(cls);
     TIMETABLE_DAYS.forEach(day=>{
       timetablePeriodsFor(cls).forEach(period=>{
+        if(ttIsBreakLikePeriod(cls, day, period)) return;     // break/lunch: not a lesson, never a library visit slot
         const vals = ttEffective(cls, day, period).values;
         if(vals.includes('LIBRARY')) librarySlots.push([day,period]);
         else if(!vals.length){ if(!ttIsBreakLikePeriod(cls, day, period)) freeSlots.push([day,period]); }
@@ -22942,7 +22946,7 @@ function scheduleFields(r){
   return [
     {row:[
       {key:'day', label:'Day', type:'select', required:true, options:['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY'], default:r? r[0]:''},
-      {key:'period', label:'Period', type:'select', required:true, options:timetablePeriods(), default:r? r[1]:''},
+      {key:'period', label:'Period', type:'select', required:true, options:timetablePeriods().filter(p=> !ttIsBreakOrLunchLabel(p) || (r && r[1]===p)), default:r? r[1]:''},
     ]},
     {key:'time', label:'Time', type:'time', default:r? (r[2]||'').slice(0,5):''},
   ];
