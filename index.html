@@ -3001,6 +3001,25 @@ nav.navlist button.active .nav-badge{ background:#221704; color:#fff;}
      open and the row is tightest. */
   .sidebar.pinned ~ .main .topbar .titles{ max-width:190px;}
 }
+/* Narrow windows: never let the search bar crowd into the page title. The title block keeps a floor
+   width (its subtitle truncates first), the search bar may shrink a little, and when there still
+   isn't room the bar folds into the 🔍 icon button (opens the same search-everything box, Ctrl/Cmd+K). */
+@media (min-width:901px){
+  .topbar > div:first-child{ min-width:170px;}
+  .topbar-search{ min-width:150px;}
+}
+@media (min-width:901px) and (max-width:1220px){
+  .sidebar.pinned ~ .main .topbar .topbar-search{ flex:none; min-width:0; max-width:none; margin-right:0;}
+  .sidebar.pinned ~ .main .topbar .topbar-search .topbar-search-input,
+  .sidebar.pinned ~ .main .topbar .topbar-search .topbar-search-input-icon{ display:none;}
+  .sidebar.pinned ~ .main .topbar .topbar-search .topbar-search-icon{ display:inline-flex;}
+}
+@media (min-width:901px) and (max-width:980px){
+  .topbar .topbar-search{ flex:none; min-width:0; max-width:none; margin-right:0;}
+  .topbar .topbar-search .topbar-search-input,
+  .topbar .topbar-search .topbar-search-input-icon{ display:none;}
+  .topbar .topbar-search .topbar-search-icon{ display:inline-flex;}
+}
 body[data-topbar-style="blank"] .topbar-search-input{ color:var(--ink); border-color:var(--line);}
 body[data-topbar-style="blank"] .topbar-search-input::placeholder{ color:var(--muted);}
 .topbar .hamburger{ color:#EFE8D3;}
