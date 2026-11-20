@@ -3783,6 +3783,29 @@ input[type="password"]::-webkit-credentials-auto-fill-button, input[type="passwo
 .sugg-item:hover, .sugg-item.active{ background:rgba(31,58,46,.08);}
 .sugg-item b{ color:var(--forest);}
 html[data-theme="dark"] .sugg-item:hover, html[data-theme="dark"] .sugg-item.active{ background:rgba(255,255,255,.08);}
+/* keyboard-highlighted row in every search dropdown (arrow keys / Enter-takes-first) */
+.scan-suggest-row.active{ background:rgba(31,58,46,.12);}
+html[data-theme="dark"] .scan-suggest-row.active, html[data-theme="dark"] .gsearch-row.active{ background:rgba(255,255,255,.1);}
+.sugg-item.multi{ display:flex; align-items:center; gap:8px;}
+.sugg-item.multi .sg-txt{ flex:1; min-width:0;}
+.sg-cb{ flex:none; width:16px; height:16px; border:1.5px solid var(--muted); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; line-height:1; color:transparent; background:transparent;}
+.sugg-item.checked{ background:rgba(31,58,46,.12);}
+.sugg-item.checked .sg-cb{ background:var(--forest); border-color:var(--forest); color:#fff;}
+.sugg-foot{ position:sticky; bottom:-4px; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 4px 4px; margin-top:2px; background:var(--card); border-top:1px solid var(--line); font-size:11px; color:var(--muted);}
+.sugg-foot button{ font-size:11.5px; padding:4px 10px; border-radius:7px; border:1px solid var(--forest); background:var(--forest); color:#fff; cursor:pointer;}
+.sugg-foot button.ghost{ background:transparent; color:var(--forest);}
+.sugg-foot button:disabled{ opacity:.45; cursor:default;}
+/* checkbox dropdown (multi-select) used for table filters and multi-class pickers */
+.msel{ display:inline-block; position:relative; min-width:0; max-width:100%;}
+.msel-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; text-align:left; font:inherit; font-size:inherit; color:var(--ink); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:9px 10px 9px 12px; cursor:pointer; white-space:nowrap;}
+.msel-btn:focus{ outline:2px solid var(--brass-light, #c9a227); outline-offset:1px;}
+.msel-btn.has-value{ border-color:var(--forest); font-weight:600;}
+.msel-txt{ overflow:hidden; text-overflow:ellipsis;}
+.msel-car{ flex:none; font-size:11px; opacity:.7;}
+.msel-panel{ max-height:280px !important;}
+.msel-panel .msel-q{ width:100%; margin:0 0 4px; padding:6px 8px; font-size:12.5px; box-sizing:border-box;}
+.msel-panel .sugg-item{ user-select:none;}
+
 .picked-card{ margin-top:8px; padding:10px 12px; background:var(--parchment-dim); border-radius:8px; font-size:12px; display:none;}
 .picked-card.show{ display:block;}
 
@@ -9684,6 +9707,13 @@ function openModal({title, fields, values={}, onSave, wide, validate, postRender
   if (modalElement) {
     setFocusToModal(modalElement);
     modalElement.addEventListener('keydown', (e) => trapFocusInModal(e, modalElement));
+    // Cursor goes to the first real entry box (not the ✕ button, and not an auto-opening "search
+    // and copy" picker) — mouse devices only.
+    if(isFinePointer()) setTimeout(()=>{
+      const first = [...modalElement.querySelectorAll('.modal-body input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([readonly]):not([disabled]), .modal-body textarea:not([disabled]), .modal-body select:not([disabled])')]
+        .find(x=> x.offsetParent && !x.closest('.fieldSearchSelect'));
+      if(first) first.focus({preventScroll:true});
+    }, 40);
   }
   
   return close;
@@ -9773,7 +9803,7 @@ function bindSearchSelectFields(fields){
     function openList(){
       const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
       matches = words.length ? opts.filter(o=>{ const hay = o.toLowerCase(); return words.every(w=>hay.includes(w)); }) : opts;
-      activeIndex = -1;
+      activeIndex = (words.length && matches.length) ? 0 : -1; // typed something → first result is pre-highlighted
       sugg.innerHTML = matches.length
         ? matches.slice(0,50).map((o,i)=>`<div class="sugg-item" data-i="${i}">${esc(o)}</div>`).join('')
         : `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`;
@@ -9782,6 +9812,7 @@ function bindSearchSelectFields(fields){
       document.body.appendChild(sugg);
       sugg.classList.add('show');
       positionFloatingPanel(sugg, input, {matchWidth:true});
+      highlight();
     }
     function closeList(){
       sugg.classList.remove('show');
@@ -9796,11 +9827,20 @@ function bindSearchSelectFields(fields){
     input.addEventListener('input', ()=>{ hidden.value=''; openList(); });
     input.addEventListener('focus', openList);
     input.addEventListener('keydown', e=>{
-      if(!sugg.classList.contains('show')) return;
-      if(e.key==='ArrowDown'){ e.preventDefault(); activeIndex = Math.min(activeIndex+1, matches.length-1); highlight(); }
-      else if(e.key==='ArrowUp'){ e.preventDefault(); activeIndex = Math.max(activeIndex-1, 0); highlight(); }
-      else if(e.key==='Enter'){ if(activeIndex>=0 && matches[activeIndex]){ e.preventDefault(); pick(matches[activeIndex]); } }
-      else if(e.key==='Escape'){ closeList(); }
+      if(!sugg.classList.contains('show')){
+        if(e.key==='ArrowDown' || e.key==='ArrowUp'){ e.preventDefault(); openList(); }
+        else if(e.key==='Enter' && input.value.trim()){ e.preventDefault(); openList(); if(matches[0]) pick(matches[0]); }
+        else if(e.key==='Escape' && input.value){ e.stopPropagation(); input.value=''; hidden.value=''; }
+        return;
+      }
+      if(e.key==='ArrowDown'){ if(!matches.length) return; e.preventDefault(); activeIndex = (activeIndex+1)%matches.length; highlight(); }
+      else if(e.key==='ArrowUp'){ if(!matches.length) return; e.preventDefault(); activeIndex = activeIndex<=0 ? matches.length-1 : activeIndex-1; highlight(); }
+      else if(e.key==='Enter'){
+        if(e.isComposing) return;
+        const i = activeIndex>=0 ? activeIndex : (input.value.trim() && matches.length ? 0 : -1); // Enter = first result
+        if(i>=0 && matches[i]){ e.preventDefault(); pick(matches[i]); }
+      }
+      else if(e.key==='Escape'){ e.stopPropagation(); closeList(); input.value=''; hidden.value=''; }
     });
     sugg.addEventListener('mousedown', e=>{
       const row = e.target.closest('.sugg-item'); if(!row || row.dataset.i===undefined) return;
@@ -9905,55 +9945,132 @@ function quickPickerHtml(id, placeholder){
     <div class="picked-card" id="qp_picked_${id}"></div>
   </div>`;
 }
-function bindQuickPicker(id, {items, formatSuggestion, formatPicked, onPick}){
+function bindQuickPicker(id, {items, formatSuggestion, formatPicked, onPick, onPickMany, multi=false}){
+  /* Keyboard: ArrowDown/ArrowUp move through the list, Enter takes the highlighted row — or the
+     FIRST result when nothing was moved to (the first row is pre-highlighted so you can see it).
+     multi:true adds checkboxes: tick boxes / Ctrl(Cmd)+click / Shift+click (range) / Shift+Arrow /
+     Ctrl+Space choose several, then Enter or "Use selected" commits them all. A plain click or a
+     plain Enter still picks just one. picker.value = first pick (old API), picker.values = all. */
   const input = document.getElementById('qp_input_'+id);
   const sugg = document.getElementById('qp_sugg_'+id);
   const picked = document.getElementById('qp_picked_'+id);
+  const wrapEl = document.getElementById('qp_'+id);
   const suggHome = sugg.parentElement; // put it back here once closed, so re-rendering the page doesn't leave an orphaned copy on <body>
   sugg.dataset.qpInputId = input.id; // lets repositionOpenSuggestionPanels() find its anchor while open
-  let selected = null;
+  let selected = null, selectedList = [], matches = [], activeIndex = -1, lastAnchor = -1;
+  const checked = new Map();
   function openSuggestions(){
-    // A themed .card (the "glassy"/"image" Personalization backgrounds put backdrop-filter on
-    // .card) creates its own containing block for position:fixed children, exactly like
-    // transform does for .dropdown-menu elsewhere in the app — so despite being computed from
-    // the input's real on-screen coordinates, the panel can render far from the input or off
-    // the edge of the card. Detach to <body> while open so it's always positioned relative to
-    // the real viewport, directly under the input, above everything else.
+    // Detach to <body> while open so it is positioned against the real viewport (themed .card
+    // ancestors with backdrop-filter would otherwise become the containing block).
     document.body.appendChild(sugg);
     sugg.classList.add('show');
     positionFloatingPanel(sugg, input, {matchWidth:true});
   }
   function closeSuggestions(){
     sugg.classList.remove('show');
+    checked.clear();
     if(sugg.parentElement !== suggHome) suggHome.appendChild(sugg);
   }
-  const search = debounce(()=>{
-    const q = input.value.trim().toLowerCase();
-    if(!q){ closeSuggestions(); sugg.innerHTML=''; return; }
-    const exact = items.find(it=> it.id.toLowerCase()===q);
-    let matches;
-    if(exact){ matches=[exact]; }
-    else{
-      matches = smartFilter(items, q, it=> it.id+' '+it.label, 25);
-    }
-    if(!matches.length){ sugg.innerHTML = `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`; openSuggestions(); return; }
-    sugg.innerHTML = matches.map(it=>`<div class="sugg-item" data-id="${esc(it.id)}"><b>${esc(it.id)}</b> — ${esc(it.label)}</div>`).join('');
-    openSuggestions();
-    if(exact && matches.length===1) pick(exact);
-  }, 120);
-  function pick(it){
-    selected = it; input.value = it.id; closeSuggestions();
-    picked.innerHTML = formatPicked(it); picked.classList.add('show');
-    onPick && onPick(it);
+  function paint(){
+    const st = sugg.scrollTop;
+    if(!matches.length){ sugg.innerHTML = `<div class="sugg-item" style="color:var(--muted)">No match for "${esc(input.value)}"</div>`; return; }
+    sugg.innerHTML = matches.map((it,i)=>`<div class="sugg-item${multi?' multi':''}${checked.has(it.id)?' checked':''}${i===activeIndex?' active':''}" data-i="${i}">${multi?'<span class="sg-cb" data-cb="1">✓</span>':''}<span class="sg-txt"><b>${esc(it.id)}</b> — ${esc(it.label)}</span></div>`).join('')
+      + (multi? `<div class="sugg-foot"><span>${checked.size? checked.size+' selected' : 'Tick boxes or Ctrl+click for several'}</span><button type="button" data-commit="1" ${checked.size?'':'disabled'}>Use selected</button></div>` : '');
+    sugg.scrollTop = st;
+    if(sugg.classList.contains('show')) positionFloatingPanel(sugg, input, {matchWidth:true});
   }
-  input.addEventListener('input', search);
-  input.addEventListener('focus', search);
-  sugg.addEventListener('click', e=>{
-    const row = e.target.closest('.sugg-item'); if(!row || !row.dataset.id) return;
-    const it = items.find(x=>x.id===row.dataset.id); if(it) pick(it);
+  function setActive(i){
+    activeIndex = i;
+    [...sugg.querySelectorAll('.sugg-item')].forEach((el,k)=> el.classList.toggle('active', k===i));
+    const el = sugg.querySelector('.sugg-item[data-i="'+i+'"]'); if(el) el.scrollIntoView({block:'nearest'});
+  }
+  function toggleItem(it){ if(checked.has(it.id)) checked.delete(it.id); else checked.set(it.id, it); }
+  function commit(list){
+    if(!list.length) return;
+    selectedList = list; selected = list[0];
+    closeSuggestions();
+    input.value = list.length===1 ? list[0].id : '';
+    picked.innerHTML = list.length===1 ? formatPicked(list[0])
+      : `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">${list.length} selected</div>` + list.map(x=>`<div>${formatPicked(x)}</div>`).join('');
+    picked.classList.add('show');
+    if(list.length>1 && onPickMany) onPickMany(list);
+    else if(onPick) list.forEach(x=>onPick(x));
+  }
+  function pick(it){ commit([it]); }
+  function search(){
+    const q = input.value.trim().toLowerCase();
+    if(!q){ closeSuggestions(); sugg.innerHTML=''; matches=[]; activeIndex=-1; return; }
+    const exact = items.find(it=> it.id.toLowerCase()===q);
+    matches = exact ? [exact] : smartFilter(items, q, it=> it.id+' '+it.label, 25);
+    activeIndex = matches.length ? 0 : -1;
+    paint();
+    openSuggestions();
+    if(exact && matches.length===1){
+      if(selected && selected.id===exact.id && selectedList.length===1) closeSuggestions(); else pick(exact);
+    }
+  }
+  const debouncedSearch = debounce(search, 120);
+  input.addEventListener('input', debouncedSearch);
+  input.addEventListener('focus', debouncedSearch);
+  input.addEventListener('keydown', e=>{
+    const open = sugg.classList.contains('show');
+    if(e.key==='ArrowDown' || e.key==='ArrowUp'){
+      if(!open){ if(input.value.trim()){ e.preventDefault(); search(); } return; }
+      if(!matches.length) return;
+      e.preventDefault();
+      const n = matches.length;
+      const i = e.key==='ArrowDown' ? (activeIndex+1)%n : (activeIndex<=0 ? n-1 : activeIndex-1);
+      if(multi && e.shiftKey){ if(activeIndex>=0) checked.set(matches[activeIndex].id, matches[activeIndex]); checked.set(matches[i].id, matches[i]); activeIndex=i; paint(); const el=sugg.querySelector('.sugg-item[data-i="'+i+'"]'); if(el) el.scrollIntoView({block:'nearest'}); }
+      else setActive(i);
+    } else if(e.key==='Enter'){
+      if(e.isComposing) return;
+      if(!open){
+        const v = input.value.trim();
+        if(!v) return;
+        if(selected && selectedList.length===1 && v.toLowerCase()===selected.id.toLowerCase()) return; // already picked
+        e.preventDefault();
+        search(); // run synchronously — don't wait for the debounce
+        if(!sugg.classList.contains('show')) return; // exact id was auto-picked
+      } else e.preventDefault();
+      if(multi && checked.size) commit([...checked.values()]);
+      else if(matches[activeIndex>=0?activeIndex:0]) pick(matches[activeIndex>=0?activeIndex:0]);
+    } else if(e.key==='Escape'){
+      if(open || input.value){
+        e.stopPropagation(); closeSuggestions();
+        if(input.value){ selected=null; selectedList=[]; input.value=''; picked.classList.remove('show'); } // Esc clears the entry too
+      }
+    } else if(multi && open && (e.ctrlKey||e.metaKey) && e.key===' '){
+      e.preventDefault();
+      if(matches[activeIndex]){ toggleItem(matches[activeIndex]); paint(); }
+    }
   });
-  document.addEventListener('click', e=>{ if(!e.target.closest('#qp_'+id) && !sugg.contains(e.target)) closeSuggestions(); });
-  return { get value(){ return selected; }, clear(){ selected=null; input.value=''; picked.classList.remove('show'); }, pick(it){ pick(it); } };
+  if(multi) sugg.addEventListener('mousedown', e=>{ e.preventDefault(); }); // keep typing focus while ticking
+  sugg.addEventListener('click', e=>{
+    if(e.target.closest('[data-commit]')){ if(checked.size) commit([...checked.values()]); return; }
+    const row = e.target.closest('.sugg-item'); if(!row || row.dataset.i===undefined) return;
+    const i = +row.dataset.i, it = matches[i]; if(!it) return;
+    if(multi && e.shiftKey && lastAnchor>=0){
+      const [lo,hi] = [Math.min(lastAnchor,i), Math.max(lastAnchor,i)];
+      for(let k=lo;k<=hi;k++) checked.set(matches[k].id, matches[k]);
+      activeIndex = i; paint(); return;
+    }
+    if(multi && (e.ctrlKey || e.metaKey || e.target.closest('[data-cb]'))){
+      toggleItem(it); lastAnchor = i; activeIndex = i; paint(); return;
+    }
+    pick(it);
+  });
+  document.addEventListener('click', e=>{
+    // composedPath (not contains) — a ticked row is re-rendered, so e.target may already be detached
+    const path = e.composedPath ? e.composedPath() : [];
+    if(!path.includes(wrapEl) && !path.includes(sugg) && !(e.target.closest && e.target.closest('#qp_'+id)) && !sugg.contains(e.target)) closeSuggestions();
+  });
+  return {
+    get value(){ return selected; },
+    get values(){ return selectedList.slice(); },
+    clear(){ selected=null; selectedList=[]; checked.clear(); input.value=''; picked.classList.remove('show'); },
+    pick(it){ pick(it); },
+    pickMany(list){ commit(list); }
+  };
 }
 // Shared by every quickpick / searchselect suggestions panel: while a panel is open (detached
 // onto <body> — see openSuggestions() above), keep it pinned under its input as the page
@@ -9966,6 +10083,175 @@ function repositionOpenSuggestionPanels(){
 }
 window.addEventListener('scroll', repositionOpenSuggestionPanels, true);
 window.addEventListener('resize', repositionOpenSuggestionPanels);
+
+
+/* ================= AUTO-FOCUS THE MAIN ENTRY BOX =================
+   Desktop / mouse devices only (on a phone or tablet, focusing a box pops the on-screen keyboard
+   open before the person has even looked at the page). */
+function isFinePointer(){ try{ return window.matchMedia('(pointer:fine)').matches; }catch(e){ return true; } }
+function scheduleAutoFocusMainEntry(){
+  if(!isFinePointer()) return;
+  const go = ()=>{
+    if(document.querySelector('.modal-backdrop, .quick-modal-overlay.show, .gsearch-backdrop')) return;
+    const a = document.activeElement;
+    if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#content')) return; // already in a box — don't steal it
+    const el = route==='circulation' ? document.getElementById('qp_input_issueUser')
+             : route==='register' ? document.getElementById('qp_input_batchAdd')
+             : document.querySelector('#content input[id^="q_"]'); // list pages: their Search box
+    if(el && el.offsetParent) el.focus({preventScroll:true});
+  };
+  setTimeout(go, 120); setTimeout(go, 450); // second pass: some pages finish mounting their boxes a moment later
+}
+
+/* ================= KEYBOARD NAV FOR SEARCH DROPDOWNS + CHECKBOX MULTI-SELECT =================
+   attachResultNav(): gives any search box whose results are rendered elsewhere (lockscreen search,
+   top-bar search, Ctrl+K search, scan/lookup box) ArrowUp/ArrowDown to move through the results and
+   Enter to open the highlighted one — or the first one (an exact ID/code match wins) if you never
+   moved. The first row is always pre-highlighted so you can see what Enter will take. */
+function attachResultNav(input, o){
+  if(!input || input.__resultNav) return; input.__resultNav = true;
+  const panel = ()=> typeof o.panel==='function' ? o.panel() : o.panel;
+  const rows = ()=>{ const p = panel(); return p ? [...p.querySelectorAll(o.rows)] : []; };
+  const cur = ()=> rows().findIndex(r=>r.classList.contains('active'));
+  const paint = i=>{ const r = rows(); r.forEach((el,k)=> el.classList.toggle('active', k===i)); if(r[i]) r[i].scrollIntoView({block:'nearest'}); };
+  let navigated = false;
+  const p0 = panel();
+  if(p0 && window.MutationObserver) new MutationObserver(()=>{ if(rows().length && cur()<0){ navigated = false; paint(0); } }).observe(p0, {childList:true});
+  input.addEventListener('input', ()=>{ navigated = false; });
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Escape' && input.value){ // first Esc clears what was typed (and closes the results); Esc on an empty box keeps its old behaviour
+      e.preventDefault(); e.stopImmediatePropagation();
+      input.value=''; navigated=false;
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+      if(o.onClear) o.onClear();
+      return;
+    }
+    if(o.skip && o.skip(e)) return;
+    if(e.key==='ArrowDown' || e.key==='ArrowUp'){
+      if(o.refresh && !rows().length && input.value.trim()) o.refresh();
+      const r = rows(); if(!r.length) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      navigated = true;
+      const c = cur();
+      paint(e.key==='ArrowDown' ? (c+1)%r.length : (c<=0 ? r.length-1 : c-1));
+    } else if(e.key==='Enter'){
+      if(e.isComposing) return;
+      if(o.refresh && !navigated && input.value.trim()) o.refresh(); // results may lag the typing (debounce) — refresh first
+      const r = rows(); if(!r.length) return;
+      let i = navigated ? cur() : -1;
+      if(i<0){
+        const v = input.value.trim().toLowerCase();
+        i = r.findIndex(x=> String(x.dataset.id||x.dataset.code||'').toLowerCase()===v);
+        if(i<0) i = 0;
+      }
+      e.preventDefault(); e.stopImmediatePropagation();
+      r[i].click();
+    }
+  }, true);
+}
+function initSearchKeyboardNav(){
+  attachResultNav(document.getElementById('lockLoanSearchInput'), {
+    panel:()=>document.getElementById('lockLoanSuggest'), rows:'.scan-suggest-row', refresh:()=>renderLockLoanSuggest()
+  });
+  attachResultNav(document.getElementById('topbarSearchInput'), {
+    panel:()=>document.getElementById('topbarSearchResults'), rows:'.gsearch-row', onClear:()=>closeTopbarSearch(),
+    refresh:()=>{ const i=document.getElementById('topbarSearchInput'); renderTopbarSearchResults(i.value); }
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initSearchKeyboardNav); else initSearchKeyboardNav();
+
+/* makeMultiSelect(): a checkbox dropdown that replaces a native <select> where choosing several
+   makes sense. Click (or Ctrl/Cmd+click) a row to tick it, Shift+click for a range, type to filter,
+   ArrowUp/Down + Enter (or Space on an empty filter) to tick from the keyboard, Esc to close. */
+function makeMultiSelect(host, o){
+  const options = (o.options||[]).map(x=> typeof x==='string' ? {value:x, label:x} : x);
+  const labelOf = v=>{ const f = options.find(x=>x.value===v); return f ? f.label : v; };
+  const vals = new Set((o.values||[]).filter(v=>options.some(x=>x.value===v)));
+  let shown = options.slice(), active = -1, anchor = -1, q = '';
+  host.classList.add('msel');
+  host.innerHTML = `<button type="button" class="msel-btn" aria-haspopup="listbox" aria-expanded="false"><span class="msel-txt"></span><span class="msel-car" aria-hidden="true">▾</span></button>`;
+  const btn = host.querySelector('.msel-btn'), txt = host.querySelector('.msel-txt');
+  btn.id = (host.id || ('msel'+Math.random().toString(36).slice(2,8))) + '_btn';
+  const panel = document.createElement('div');
+  panel.className = 'suggestions msel-panel'; panel.dataset.qpInputId = btn.id; panel.setAttribute('role','listbox'); panel.tabIndex = -1;
+  panel.innerHTML = `${options.length>8? '<input type="text" class="msel-q" placeholder="Filter…" autocomplete="off">':''}<div class="msel-list"></div><div class="sugg-foot"><span class="msel-count"></span><span><button type="button" class="ghost" data-clear="1">Clear</button> <button type="button" data-done="1">Done</button></span></div>`;
+  const listEl = panel.querySelector('.msel-list'), qEl = panel.querySelector('.msel-q'), countEl = panel.querySelector('.msel-count');
+  const pre = o.label ? o.label+': ' : '';
+  const sync = ()=>{
+    txt.textContent = vals.size===0 ? (o.label ? o.label+': All' : (o.placeholder||'Select…')) : vals.size===1 ? pre+labelOf([...vals][0]) : pre+vals.size+' selected';
+    btn.classList.toggle('has-value', vals.size>0);
+    countEl.textContent = vals.size ? vals.size+' selected' : 'Click or Ctrl+click to tick';
+  };
+  const paint = ()=>{
+    const st = panel.scrollTop;
+    listEl.innerHTML = shown.length ? shown.map((x,i)=>`<div class="sugg-item multi${vals.has(x.value)?' checked':''}${i===active?' active':''}" role="option" data-i="${i}"><span class="sg-cb">✓</span><span class="sg-txt">${esc(x.label)}</span></div>`).join('')
+      : `<div class="sugg-item" style="color:var(--muted)">No match</div>`;
+    sync(); panel.scrollTop = st;
+  };
+  const fire = ()=>{ sync(); if(o.onChange) o.onChange([...vals]); };
+  const toggle = v=>{ vals.has(v) ? vals.delete(v) : vals.add(v); };
+  const isOpen = ()=> panel.classList.contains('show');
+  const place = ()=>{ panel.style.minWidth = Math.max(btn.offsetWidth, 180)+'px'; positionFloatingPanel(panel, btn, {}); };
+  function open(){
+    if(isOpen()) return;
+    document.body.appendChild(panel); panel.classList.add('show'); btn.setAttribute('aria-expanded','true');
+    q=''; if(qEl) qEl.value=''; shown = options.slice(); active = shown.length ? 0 : -1; paint(); place();
+    (qEl || panel).focus({preventScroll:true});
+  }
+  function close(refocus){
+    if(!isOpen()) return;
+    panel.classList.remove('show'); btn.setAttribute('aria-expanded','false'); panel.remove();
+    if(refocus) btn.focus();
+  }
+  btn.addEventListener('click', ()=> isOpen() ? close() : open());
+  btn.addEventListener('keydown', e=>{ if(['ArrowDown','ArrowUp','Enter',' '].includes(e.key)){ e.preventDefault(); open(); } });
+  if(qEl) qEl.addEventListener('input', ()=>{
+    q = qEl.value.trim().toLowerCase();
+    shown = q ? options.filter(x=> x.label.toLowerCase().includes(q)) : options.slice();
+    active = shown.length ? 0 : -1; paint(); place();
+  });
+  panel.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){
+      e.preventDefault(); e.stopPropagation();
+      if(qEl && qEl.value){ qEl.value=''; qEl.dispatchEvent(new Event('input')); return; } // clear the filter text first
+      close(true); return;
+    }
+    if(e.key==='Tab'){ close(); return; }
+    if(e.key==='ArrowDown' || e.key==='ArrowUp'){
+      if(!shown.length) return; e.preventDefault();
+      const n = shown.length, i = e.key==='ArrowDown' ? (active+1)%n : (active<=0 ? n-1 : active-1);
+      if(e.shiftKey){ if(active>=0) vals.add(shown[active].value); vals.add(shown[i].value); active=i; paint(); fire(); }
+      else { active = i; paint(); }
+      const el = listEl.querySelector('.sugg-item[data-i="'+i+'"]'); if(el) el.scrollIntoView({block:'nearest'});
+    } else if(e.key==='Enter' || (e.key===' ' && (!qEl || !qEl.value))){
+      e.preventDefault();
+      const i = active>=0 ? active : 0;
+      if(shown[i]){ toggle(shown[i].value); paint(); fire(); }
+    }
+  });
+  panel.addEventListener('mousedown', e=>{ if(!e.target.closest('.msel-q')) e.preventDefault(); });
+  panel.addEventListener('click', e=>{
+    if(e.target.closest('[data-done]')){ close(true); return; }
+    if(e.target.closest('[data-clear]')){ vals.clear(); paint(); fire(); return; }
+    const row = e.target.closest('.sugg-item'); if(!row || row.dataset.i===undefined) return;
+    const i = +row.dataset.i;
+    if(e.shiftKey && anchor>=0){ for(let k=Math.min(anchor,i); k<=Math.max(anchor,i); k++) vals.add(shown[k].value); }
+    else { toggle(shown[i].value); anchor = i; }
+    active = i; paint(); fire();
+  });
+  const outside = e=>{
+    if(!document.body.contains(host)){ document.removeEventListener('click', outside); panel.remove(); return; }
+    const path = e.composedPath ? e.composedPath() : [];
+    if(isOpen() && !path.includes(panel) && !path.includes(host)) close();
+  };
+  document.addEventListener('click', outside);
+  sync();
+  return {
+    getValues: ()=> [...vals],
+    setValues: arr=>{ vals.clear(); (arr||[]).forEach(v=>{ if(options.some(x=>x.value===v)) vals.add(v); }); sync(); },
+    clear: ()=>{ vals.clear(); sync(); }
+  };
+}
 
 /* ================= generic table module ================= */
 function GenericModule(cfg){
@@ -10060,11 +10346,7 @@ function GenericModule(cfg){
             <input type="text" placeholder="Search…" id="q_${cfg.key}" value="${esc(state.q)}" autocomplete="off">
             <button type="button" class="search-clear-btn" id="qclear_${cfg.key}" style="${state.q?'':'display:none'}" title="Clear search" aria-label="Clear search">✕</button>
           </div>
-          ${(cfg.filters||[]).map(f=>`
-            <select id="filt_${cfg.key}_${f.key}">
-              <option value="">${esc(f.label)}: All</option>
-              ${f.options.map(o=>`<option value="${esc(o)}" ${state.filters[f.key]===o?'selected':''}>${esc(o)}</option>`).join('')}
-            </select>`).join('')}
+          ${(cfg.filters||[]).map(f=>`<div id="filt_${cfg.key}_${f.key}" class="msel" data-msel-filter="${esc(f.key)}"></div>`).join('')}
           ${cfg.sortOptions? `
             <select id="sort_${cfg.key}">
               <option value="">Sort by…</option>
@@ -10125,7 +10407,12 @@ function GenericModule(cfg){
       }
       (cfg.filters||[]).forEach(f=>{
         const el = document.getElementById('filt_'+cfg.key+'_'+f.key);
-        if(el) el.onchange = e=>{ state.filters[f.key]=e.target.value; updateResultsOnly(); };
+        // Checkbox dropdown: tick several values (matches ANY of them). State stays '' / 'ONE' / ['A','B'].
+        if(el){
+          const cur = state.filters[f.key];
+          makeMultiSelect(el, {label:f.label, options:f.options, values: Array.isArray(cur) ? cur : (cur ? [cur] : []),
+            onChange: v=>{ state.filters[f.key] = v.length===0 ? '' : (v.length===1 ? v[0] : v); updateResultsOnly(); }});
+        }
       });
       if(cfg.sortOptions){
         const sortEl = document.getElementById('sort_'+cfg.key);
@@ -10292,6 +10579,7 @@ function filterRows(data, state, searchKeys){
     if(!v) return;
     if(k==='__from'){ rows = rows.filter(r=> !r.date && !r.dateSent ? true : inRange(r.date||r.dateSent, parseAnyDate(v), null)); return; }
     if(k==='__to'){ rows = rows.filter(r=> !r.date && !r.dateSent ? true : inRange(r.date||r.dateSent, null, parseAnyDate(v))); return; }
+    if(Array.isArray(v)){ if(!v.length) return; rows = rows.filter(r=> v.includes(r[k]||'')); return; }
     rows = rows.filter(r=> (r[k]||'')===v);
   });
   if(state.q){
@@ -15007,6 +15295,7 @@ function openArchiveModal(kind){
     });
   };
   wrap.querySelector('#arcSearch').oninput = e=>{ q = e.target.value; draw(); };
+  wrap.querySelector('#arcSearch').onkeydown = e=>{ if(e.key==='Escape' && e.target.value){ e.stopPropagation(); e.target.value=''; q=''; draw(); } if(e.key==='Enter'){ e.preventDefault(); const c = list.querySelector('.arcPick:not(:checked)'); if(c) c.click(); } };
   wrap.querySelector('#arcSelAll').onclick = ()=>{
     const rows = shown();
     const allOn = rows.length && rows.every(r=> selected.has(r.id));
@@ -15787,6 +16076,7 @@ function bindCirculationPickers(){
   });
   const bookItems = DB.catalogue.filter(b=>b.available==='AVAILABLE').map(b=>({id:b.acc, label:b.title}));
   const bookPicker2 = bindQuickPicker('issueBook', {
+    multi:true, // tick several titles (checkbox / Ctrl+click) to issue or stage them together
     items:bookItems,
     formatPicked: it=>`<strong>${esc(it.id)}</strong> — ${esc(it.label)}`,
   });
@@ -15795,6 +16085,7 @@ function bindCirculationPickers(){
   const active = DB.circulation.map(x=>({...x,status:txnStatus(x)})).filter(x=>x.status!=='RETURNED');
   const trxItems = active.map(x=>({id:x.trxId, label:`${x.acc} — ${x.title} (${x.name})`, acc:x.acc}));
   returnPicker = bindQuickPicker('returnTrx', {
+    multi:true, // tick several loans to return them together
     items:trxItems,
     formatPicked: it=>`<strong>${esc(it.id.split('-').slice(0,1))}</strong> ${esc(it.label)}`,
   });
@@ -16251,6 +16542,8 @@ function issueBook(){
   const userPick = issuePicker && issuePicker.value;
   const bookPick = window.__issueBookPicker && window.__issueBookPicker.value;
   if(!userPick || !bookPick){ toast('Pick a member and a title from the suggestions'); return; }
+  const bookPicks = window.__issueBookPicker.values;
+  if(bookPicks.length>1) return issueManyBooks(userPick, bookPicks);
   const user = DB.users.find(u=>u.id===userPick.id), book = DB.catalogue.find(b=>b.acc===bookPick.id);
   if(!user || !book) return;
   const blockReason = memberBorrowBlockReason(user);
@@ -16267,30 +16560,50 @@ function issueBook(){
     toast(`${book.title} issued to ${user.name} — due ${fmtDate(trx.dueDate)}`);
   });
 }
+function issueManyBooks(userPick, picks){
+  const user = DB.users.find(u=>u.id===userPick.id); if(!user) return;
+  const blockReason = memberBorrowBlockReason(user);
+  if(blockReason){ toast('⛔ '+blockReason); return; }
+  const room = user.maxAllowed - user.borrowed;
+  if(room<=0){ toast(`${user.name} has reached their borrowing limit`); return; }
+  const books = picks.map(p=>DB.catalogue.find(b=>b.acc===p.id)).filter(b=>b && b.available==='AVAILABLE');
+  if(!books.length){ toast('None of those titles are available'); return; }
+  const take = books.slice(0, room), left = books.length - take.length;
+  warnIfStrikes(user, ()=>{
+    let n = 0;
+    take.forEach(b=>{ if(user.borrowed < user.maxAllowed){ doIssueOne(user, b, {quiet:true}); n++; } });
+    saveDB(`${n} item(s) issued to ${user.name}`); render();
+    setTimeout(()=>{ bindCirculationPickers(); issuePicker && issuePicker.clear(); window.__issueBookPicker && window.__issueBookPicker.clear(); }, 0);
+    toast(`${n} item(s) issued to ${user.name}${left? ` — ${left} not issued (borrowing limit reached)`:''}`);
+  });
+}
 /* ---- batch borrow: stage several titles for one member, capped at their max allowed ---- */
 let issueStaging = []; // {acc, title}
 function addIssueToStaging(){
   if(!isStaff()) return requireStaff('issue titles');
   const userPick = issuePicker && issuePicker.value;
-  const bookPick = window.__issueBookPicker && window.__issueBookPicker.value;
+  const picks = window.__issueBookPicker ? window.__issueBookPicker.values : [];
   if(!userPick){ toast('Pick a member first'); return; }
-  if(!bookPick){ toast('Pick a title to add'); return; }
+  if(!picks.length){ toast('Pick a title to add'); return; }
   const user = DB.users.find(u=>u.id===userPick.id);
   if(!user) return;
   const blockReason = memberBorrowBlockReason(user);
   if(blockReason){ toast('⛔ '+blockReason); return; }
-  if(issueStaging.some(s=>s.acc===bookPick.id)){ toast('That title is already staged'); return; }
-  const cap = user.maxAllowed - user.borrowed;
-  if(issueStaging.length >= cap){ toast(`${user.name} is capped at ${user.maxAllowed} item(s) — can't stage any more`); return; }
-  const book = DB.catalogue.find(b=>b.acc===bookPick.id);
-  if(!book || book.available!=='AVAILABLE'){ toast('That title is not available'); return; }
-  const stageIt = ()=>{
-    issueStaging.push({acc:book.acc, title:book.title});
+  const stageAll = ()=>{
+    let added = 0, capped = false, dup = 0, unavailable = 0;
+    for(const p of picks){
+      if(issueStaging.some(s=>s.acc===p.id)){ dup++; continue; }
+      if(issueStaging.length >= user.maxAllowed - user.borrowed){ capped = true; break; }
+      const book = DB.catalogue.find(b=>b.acc===p.id);
+      if(!book || book.available!=='AVAILABLE'){ unavailable++; continue; }
+      issueStaging.push({acc:book.acc, title:book.title}); added++;
+    }
     if(window.__issueBookPicker.clear) window.__issueBookPicker.clear();
     renderIssueStaging();
+    if(capped) toast(`${user.name} is capped at ${user.maxAllowed} item(s) — ${added? `staged ${added}, the rest were` : 'none'} not staged`);
+    else if(!added) toast(dup ? 'That title is already staged' : 'That title is not available');
   };
-  if(issueStaging.length===0) warnIfStrikes(user, stageIt);
-  else stageIt();
+  if(issueStaging.length===0) warnIfStrikes(user, stageAll); else stageAll();
 }
 function removeIssueStaging(acc){ issueStaging = issueStaging.filter(s=>s.acc!==acc); renderIssueStaging(); }
 function renderIssueStaging(){
@@ -16471,6 +16784,15 @@ function returnBook(){
   const pick = returnPicker && returnPicker.value;
   const condition = $('#returnCondition') ? $('#returnCondition').value : 'GOOD';
   if(!pick){ toast('Pick a loan from the suggestions'); return; }
+  const returnPicks = returnPicker.values;
+  if(returnPicks.length>1){
+    let c = 0, csq = 0;
+    returnPicks.forEach(p=>{ const t = DB.circulation.find(x=>x.trxId===p.id); if(t && !t.returnDate){ const r = doReturnOne(t, condition, {quiet:true}); c++; csq += (r.consequences||[]).length; } });
+    saveDB(`${c} item(s) returned`); render();
+    setTimeout(()=>{ bindCirculationPickers(); returnPicker && returnPicker.clear(); }, 0);
+    toast(`${c} item(s) returned${csq? ` — ⚠ ${csq} consequence(s) triggered, see Register`:''}`);
+    return;
+  }
   const trx = DB.circulation.find(x=>x.trxId===pick.id);
   if(!trx) return;
   const {wasOverdue, isMissing, book, consequences} = doReturnOne(trx, condition);
@@ -16490,12 +16812,16 @@ function returnBook(){
 let returnStaging = []; // {trxId, acc, title}
 function addReturnToStaging(){
   if(!isStaff()) return requireStaff('return titles');
-  const pick = returnPicker && returnPicker.value;
-  if(!pick){ toast('Pick a loan to add'); return; }
-  if(returnStaging.some(s=>s.trxId===pick.id)){ toast('That loan is already staged'); return; }
-  const trx = DB.circulation.find(x=>x.trxId===pick.id);
-  if(!trx || trx.returnDate){ toast('That loan is not currently active'); return; }
-  returnStaging.push({trxId:trx.trxId, acc:trx.acc, title:trx.title});
+  const picks = returnPicker ? returnPicker.values : [];
+  if(!picks.length){ toast('Pick a loan to add'); return; }
+  let added = 0, dup = 0;
+  picks.forEach(pick=>{
+    if(returnStaging.some(s=>s.trxId===pick.id)){ dup++; return; }
+    const trx = DB.circulation.find(x=>x.trxId===pick.id);
+    if(!trx || trx.returnDate) return;
+    returnStaging.push({trxId:trx.trxId, acc:trx.acc, title:trx.title}); added++;
+  });
+  if(!added) toast(dup ? 'That loan is already staged' : 'That loan is not currently active');
   if(returnPicker.clear) returnPicker.clear();
   renderReturnStaging();
 }
@@ -17202,6 +17528,7 @@ function openGlobalSearch(){
   const input = document.getElementById('gsearchInput');
   input.oninput = ()=> renderGlobalSearchResults(input.value);
   input.onkeydown = e=>{ if(e.key==='Escape') closeGlobalSearch(); };
+  attachResultNav(input, {panel:()=>document.getElementById('gsearchResults'), rows:'.gsearch-row', refresh:()=>renderGlobalSearchResults(input.value)});
   renderGlobalSearchResults('');
   setTimeout(()=> input.focus(), 30);
 }
@@ -18208,6 +18535,12 @@ function openScanModal(mode){
     });
   };
   input.addEventListener('input', renderSuggest);
+  // Arrow keys + Enter-takes-first for typed names/codes. A hardware scanner types its whole code in a
+  // few ms and ends with Enter, so a fast burst is left to the exact-code handler below (no fuzzy guess).
+  let keyTimes = [];
+  input.addEventListener('input', ()=>{ if(!input.value){ keyTimes = []; return; } keyTimes.push(Date.now()); if(keyTimes.length>12) keyTimes.shift(); });
+  attachResultNav(input, {panel:()=>suggestEl, rows:'.scan-suggest-row', refresh:renderSuggest,
+    skip:()=> keyTimes.length>=4 && (keyTimes[keyTimes.length-1]-keyTimes[0])/(keyTimes.length-1) < 40});
   /* One line, always shown, stating exactly what the scan verified — including reasons a scan
      can't proceed (already checked out, already checked in today, not eligible to borrow) — so
      the person scanning isn't left guessing why nothing happened. */
@@ -19075,8 +19408,8 @@ function renderBatchStagingHtml(){
       <div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1;min-width:0">${quickPickerHtml('batchAdd','Type a member ID…')}</div><button type="button" class="btn secondary" style="flex:none" onclick="openScanModal('batch')" title="Scan a member ID" aria-label="Scan a member ID">📷</button></div>
     </div>
     <div class="field">
-      <label>Add a whole class</label>
-      <select id="batchClassSelect"><option value="" selected disabled>Select class</option>${sortedClasses().map(c=>`<option>${esc(c)}</option>`).join('')}</select>
+      <label>Add whole class(es)</label>
+      <div id="batchClassSelect" class="msel"></div>
     </div>
     <div class="field">
       <label style="visibility:hidden">Add class</label>
@@ -19120,10 +19453,12 @@ function renderBatchStagingHtml(){
 }
 function addClassToBatch(clsOverride){
   if(!isStaff()) return requireStaff('stage check-ins');
-  const cls = clsOverride || document.getElementById('batchClassSelect').value;
-  if(!cls){ toast('Select a class first'); return; }
-  const members = DB.users.filter(u=>u.cls===cls);
-  if(!members.length){ toast('No members found in that class'); return; }
+  const classSel = window.__batchClassMsel;
+  const classList = clsOverride ? [clsOverride] : (classSel ? classSel.getValues() : []);
+  if(!classList.length){ toast('Select a class first'); return; }
+  const cls = classList.length===1 ? classList[0] : classList.length+' classes';
+  const members = DB.users.filter(u=>classList.includes(u.cls));
+  if(!members.length){ toast('No members found in '+(classList.length>1?'those classes':'that class')); return; }
   // A student who's already signed in at the desk (in currentlyInLibrary() — checked in but not
   // yet checked out) must not be pulled into a second check-in batch; they stay off-limits here
   // until their existing register entry gets a timeOut.
@@ -19384,7 +19719,20 @@ function bindBatchStagingEvents(){
   // timeOut yet) is left out of the picker entirely, so they can't be "called up" into a second
   // check-in until they're checked out.
   const inLibraryIds = new Set(currentlyInLibrary().map(r=>r.id));
+  const batchCs = document.getElementById('batchClassSelect');
+  if(batchCs) window.__batchClassMsel = makeMultiSelect(batchCs, {placeholder:'Select class(es)', options:sortedClasses()});
   batchPicker = bindQuickPicker('batchAdd', {
+    multi:true, // tick several students (checkbox / Ctrl+click), Enter adds them all
+    onPickMany:(list)=>{
+      let added = 0;
+      list.forEach(it=>{
+        const u = DB.users.find(x=>x.id===it.id);
+        if(!u || inLibraryIds.has(u.id)) return;
+        if(!batchStaging.some(s=>s.id===u.id)){ batchStaging.push({id:u.id,name:u.name,cls:u.cls,category:u.category}); batchChecked[u.id]=true; added++; }
+      });
+      mountBatchStaging();
+      toast(`Added ${added} student(s) to the batch`);
+    },
     items: DB.users.filter(u=>!inLibraryIds.has(u.id)).map(u=>({id:u.id, label:u.name+' — '+u.cls})),
     formatPicked: it=>`<strong>${esc(it.id)}</strong> — ${esc(it.label)}`,
     onPick: (it)=>{
@@ -20229,7 +20577,7 @@ function openExternalExamsModal(preUserId){
           <div class="field" style="margin:0"><label>Last day (optional)</label><input type="date" value="" onchange="examState.end=this.value" title="Leave blank if you don't know when the exams end"></div>
           <div class="field" style="margin:0;flex:1;min-width:150px"><label>Note (optional)</label><input type="text" placeholder="e.g. centre, papers" oninput="examState.note=this.value"></div>
         </div>
-        <div class="field"><label>Find students</label><input type="text" id="exSearch" placeholder="Search by name, ID or class" oninput="examState.q=this.value;refreshExamSearch()"></div>
+        <div class="field"><label>Find students</label><input type="text" id="exSearch" placeholder="Search by name, ID or class" oninput="examState.q=this.value;refreshExamSearch()" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();this.value='';examState.q='';refreshExamSearch();}if(event.key==='Enter'){event.preventDefault();const c=document.querySelector('#exSearchList input[type=checkbox]:not(:checked):not(:disabled)');if(c)c.click();}"></div>
         <div id="exSearchList"></div>
         <div id="exActive"></div>
       </div>
@@ -27423,6 +27771,7 @@ function render(){
       try{ history.pushState({navDepth:navStack.length}, '', location.href); }catch(e){}
     }
     lastRenderedRoute = route;
+    scheduleAutoFocusMainEntry();
     sectionReorderMode = false;
   }
   renderNav(); renderBottomNav(); setHeader(); renderAccountChip();
@@ -28179,8 +28528,8 @@ function openCheckInOutModal() {
   mountBatchStaging();
   mountCheckoutStaging();
   
-  // Activate focus management for this modal
-  activateFocusOnQuickModal();
+  // Activate focus management for this modal — cursor starts in "Add one student"
+  activateFocusOnQuickModal('#qp_input_batchAdd');
 }
 
 // Issue/Return Book wraps the exact "Issue a title" / "Return a title" sections from the
@@ -28264,8 +28613,9 @@ function openIssueReturnModal() {
   renderIssueStaging();
   renderReturnStaging();
   
-  // Activate focus management for this modal
-  activateFocusOnQuickModal();
+  // Activate focus management for this modal — cursor starts in Member ID; Tab walks on to
+  // Accession No., the buttons, then the Return side
+  activateFocusOnQuickModal('#qp_input_issueUser');
 }
 
 // Also handle the non-staff case
@@ -28373,11 +28723,12 @@ function closeQuickActionModal() {
   modal.innerHTML = '';
 }
 
-function activateFocusOnQuickModal() {
-  // Called after quick action modal is rendered to set focus
+function activateFocusOnQuickModal(preferredSelector) {
+  // Called after quick action modal is rendered to set focus. preferredSelector = the modal's main
+  // entry box (mouse devices only — no on-screen keyboard pop-up on touch screens).
   const quickModal = document.querySelector('.quick-modal');
   if (quickModal) {
-    setFocusToModal(quickModal);
+    setFocusToModal(quickModal, isFinePointer() ? (preferredSelector || null) : null);
     // Add focus trap listener
     quickModal.addEventListener('keydown', (e) => trapFocusInModal(e, quickModal));
   }
@@ -29090,7 +29441,7 @@ function ttTchPickerHtml(){
   }
   return `<div style="margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px">
     <div style="font-size:12px;font-weight:700;margin-bottom:6px">Add teachers from the member list</div>
-    <input placeholder="Search members…" oninput="ttTchFilter(this.value)" autocomplete="off" style="width:100%;margin-bottom:8px">
+    <input placeholder="Search members…" oninput="ttTchFilter(this.value)" onkeydown="if(event.key==='Escape'&&this.value){event.stopPropagation();this.value='';ttTchFilter('');}if(event.key==='Enter'){event.preventDefault();const r=[...document.querySelectorAll('.ttTchPickRow')].find(x=>x.style.display!=='none'&&!x.querySelector('input').checked);if(r)r.querySelector('input').click();}" autocomplete="off" style="width:100%;margin-bottom:8px">
     <div style="max-height:220px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">
       ${cands.map(u=> `<label class="ttTchPickRow" data-text="${esc((u.name+' '+u.category+' '+(u.id||'')).toLowerCase())}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:13px;cursor:pointer"><input type="checkbox" class="ttTchPick" value="${esc(u.id)}"><span>${esc(u.name)} <span style="opacity:.55;font-size:11px">${esc(u.category)}</span></span></label>`).join('')}
     </div>
