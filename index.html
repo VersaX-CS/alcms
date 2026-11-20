@@ -25642,30 +25642,21 @@ function pageAbout(){
     <p>alcms${DB.setup.institutionName? ' for '+esc(DB.setup.institutionName):''} — one desk for cataloguing, circulation, members, discipline, scheduling and reporting.</p>
   </div>
   <div class="card panel">
-    <div class="panel-head"><h3>What's new</h3><button class="btn secondary small" onclick="downloadUserGuidePDF()">📄 Download comprehensive PDF guide</button></div>
-    <ul style="font-size:13px;line-height:1.9;color:var(--muted);padding-left:20px">
-      <li><strong>Member &amp; title archive.</strong> Leavers and retired stock move out of the register and the catalogue into an archive of their own, so they stop padding every list, search, filter, picker and count — and can be restored, or deleted for good, from Members → Archive and Catalogue → Archive. Every archived record is stamped with the academic session it left in.</li>
-      <li><strong>End-of-session in one step.</strong> Tick the leaving cohort in Members and use "Mark inactive (selected)": pick the reason (graduated, transferred, expelled, resigned, retired, deceased, or your own), confirm the session, and they are marked inactive and archived together. Members still holding books are held back until the loan is closed.</li>
-      <li><strong>Forgiving search.</strong> Searches now cover every field on a record and fall back to close spellings when nothing matches exactly, so a mistyped or half-remembered name still finds it — in tables, the topbar search, the scan box and the member/book pickers alike.</li>
-      <li><strong>Collapsible, reorderable sections.</strong> Click any section heading to fold it away. Any page with two or more sections gets a small toolbar above them — Collapse all, Expand all, \"↕ Reorder sections\" (drag a section's ⠿ handle or tap ▲▼ to move it) and \"↺ Reset order\". Both the collapsed state and the order you settle on are remembered per page. Class Timetable's Manage activities, Period times and Periods all fold too.</li>
-      <li><strong>Class timetable work is faster.</strong> A cell edit can be applied to every other slot holding the same entry — the same class's other days and periods included — and Setup's class subject distribution can be auto-ticked straight from the timetables.</li>
-      <li><strong>Truer free periods.</strong> Auto-build now counts a student as free only when none of the real subjects running in that period are in their combination; assembly, sport, break and unrecognised imported labels no longer count as free time.</li>
-      <li><strong>Class reach</strong> replaces the old members-by-class doughnut in Analytics: how many members of each class have ever borrowed against how many never have — the classes to target, not just their head count.</li>
-      <li>Optional fingerprint / Face ID sign-in: register your device once from My Account, then use it alongside your username and password to sign in with a touch — no biometric data ever leaves your device. Needs the page served over https:// (or localhost); it won't appear if this file is opened directly from disk. See My Account → Fingerprint &amp; Face ID sign-in.</li>
-      <li>Member and catalogue cards: generate a printable ID card (photo icon, name, ID/accession number, class or category, and a barcode or QR code) for one member/title, or every member/title at once — with a one-click 10-up A4 export ready to print and cut.</li>
-      <li>Choose barcode or QR code generation for every card, from Setup → Codes. QR codes render entirely offline — no internet connection needed.</li>
-      <li>The Member Profile page is now tabbed — Loans, Subjects, Visits, Fines and Reservations — with buttons to generate that member's ID card or print their full profile and loan history.</li>
-      <li>Catalogue's old "View" is now "Details": it shows the full item record, its complete transaction history, and lets you generate its card, all in one place.</li>
-      <li>The scan/verify box filters as you type — a partial number or name brings up a pick-list instead of waiting for an exact code — and shows a ✓ Verified badge with a running scan counter on every match.</li>
-      <li>Analytics' Print and Export now both cover the whole page (summary tables, every chart's data, and overdue detail) in one go — the separate "Export charts" button is gone.</li>
-      <li>The Home greeting is centred middle-left on the hero banner (not pushed to the top), and the "Due today &amp; overdue" alert can be dismissed for the rest of the day once you've dealt with it.</li>
-      <li>The analogue clock now shows the date on its face; the lockscreen has its own loan-check search bar directly above the sign-in box; and Create Account opens as a wider card centred over the whole screen.</li>
+    <div class="panel-head"><h3>Recently added</h3><button class="btn secondary small" onclick="downloadUserGuidePDF()">📄 Download PDF guide</button></div>
+    <ul style="font-size:13px;line-height:1.8;color:var(--muted);padding-left:20px">
+      <li><strong>Faster data entry.</strong> Arrow keys, Enter and Esc work in every search box, several items can be ticked at once in pickers and filters, and the cursor starts in the main box.</li>
+      <li><strong>Archive and end of session.</strong> Leavers and withdrawn stock move to archives, stamped with the session, and can be restored or deleted for good.</li>
+      <li><strong>Forgiving search.</strong> Every field is searched, and near spellings still find the record in tables, pickers, the scan box and top-bar search.</li>
+      <li><strong>Timetables.</strong> Class, staff and teacher timetables, bell schedules, auto-built library schedule and an Emergency fix for single days.</li>
+      <li><strong>Safer data.</strong> Scheduled auto-backup, Checkpoints, Trash, GitHub sync and Google Drive options.</li>
+      <li><strong>Sign-in options.</strong> Optional fingerprint / Face ID, and a lockscreen search to check loans without signing in.</li>
+      <li><strong>Cards and codes.</strong> Printable member and catalogue ID cards (barcode or QR, 10-up on A4).</li>
     </ul>
   </div>
   <div class="grid two-col">
     <div class="card panel">
       <div class="panel-head"><h3>What this app does</h3></div>
-      <p style="font-size:13px;line-height:1.7;color:var(--muted)">alcms grew out of a real school library spreadsheet and keeps the same spirit: a catalogue of every title, a register of members, a circulation desk to issue and return books, member/catalogue ID cards, a visitor register, a weekly schedule, discipline tracking, feedback, analytics, and printable/exportable reports — all in a single, self-contained page.</p>
+      <p style="font-size:13px;line-height:1.7;color:var(--muted)">alcms runs a school library desk: catalogue, members, circulation, reservations, a visitor register, timetables and the library schedule, assets, discipline, feedback, analytics and reports. It works in your browser and keeps your data on this device, with backup options.</p>
     </div>
     <div class="card panel">
       <div class="panel-head"><h3>How your data is stored</h3></div>
@@ -25674,7 +25665,7 @@ function pageAbout(){
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Roles</h3></div>
-    <p style="font-size:13px;line-height:1.7;color:var(--muted)"><strong>Admin</strong> accounts can add, edit, delete, issue/return, print and export. <strong>Guest</strong> accounts can browse and search everything, but can't change data. An admin key is required to create a new admin account — set or change it in Personalization.</p>
+    <p style="font-size:13px;line-height:1.7;color:var(--muted)"><strong>Admin</strong> can do everything: add, edit and delete records, change settings and manage accounts. <strong>Staff</strong> run the desk: issue, return, check in and out. <strong>Guest</strong> can browse and search but can't change data. An admin key is required to create an admin account (see Privacy &amp; Security).</p>
   </div>
   <div class="card panel">
     <div class="panel-head"><h3>Version</h3></div>
@@ -25710,34 +25701,25 @@ function openDeveloperContactForm(){
 }
 
 const GUIDE_QUICKSTART = [
-  'Sign in (or create an account — admin accounts need the admin key from Personalization). On the lockscreen, you can also check your own loans straight from the search bar above the sign-in box, without signing in.',
-  'Want a faster sign-in? Go to My Account → Fingerprint &amp; Face ID sign-in and register this device. After that, a "Sign in with fingerprint / Face ID" button appears on the sign-in screen — your username and password still work too, and are still required to set the fingerprint up in the first place.',
-  'Check the Home page for a quick snapshot of the day — anything due today or overdue shows up right there, with a ✕ to dismiss it once you\'ve dealt with it.',
-  "To lend a book: go to Circulation, type the member's ID and the book's accession number (or scan a barcode/QR code), then Issue.",
-  'To take it back: Circulation → Return, find the loan, set its condition, and confirm.',
-  'To register a visit without a loan: Register → Batch check-in.',
-  'Overdue titles show up automatically in the Reminder Log.',
-  'Need a physical member card or catalogue card? Open a Member Profile or a title\'s Details and click "ID Card" / "Generate card" — or generate every card at once from the Members/Catalogue page and export them 10-up on A4, ready to print and cut.',
+  "<strong>Sign in</strong> (or create an account — admin accounts need the admin key). Guests can browse and search only. Before signing in, the lockscreen search bar lets anyone check a member's loans.",
+  "<strong>Issue a book:</strong> Circulation, or ⚡ Quick Actions → Issue/Return. Type or scan the member ID, then the accession number, pick from the suggestions and press Issue. The cursor starts in Member ID; Tab moves to the next box.",
+  "<strong>Return a book:</strong> use the Return side, pick the loan, set its condition and press Mark as returned. Tick several loans to return them together.",
+  "<strong>Record visits:</strong> Register → Batch check-in (or ⚡ Quick Actions → Check In/Out). Add students or whole classes, choose a purpose and submit. Use Batch check-out when they leave.",
+  "<strong>Chase overdue loans:</strong> the Reminder Log lists every overdue title, with one-click logging and a WhatsApp reminder where a phone number is on file.",
+  "<strong>Protect your data:</strong> changes save automatically, but press Ctrl+S to be sure, make a Checkpoint before big changes, and download a backup regularly from Backup &amp; Restore.",
 ];
 const GUIDE_TIPS = [
-  'Search boxes never lose focus while you type — search freely, results update as you go.',
-  'On desktop, the search bar in the topbar is a full search box — just start typing and matching titles, members and transactions drop down underneath it, grouped by type. Type a pure number (an accession number, member ID, or phone) to search the Catalogue and Members together with more results. Ctrl/Cmd+K jumps straight into it.',
-  'Every table can be searched and filtered; long lists show the first matches with a note to narrow your search further.',
-  'The scan/verify box (Circulation, self-check, etc.) filters as you type — a partial number or name shows a pick-list, so you never have to type a code exactly. A successful match shows a ✓ Verified badge and keeps a running count for back-to-back scans.',
-  'Setup → Codes lets you choose whether member/catalogue cards use a barcode or a QR code — QR codes read well with any phone camera and work fully offline (no internet needed to generate one).',
-  'The 🔔 on the sign-in screen previews what\'s waiting for you, but you\'ll need to sign in to open, dismiss or act on anything. The lockscreen also has its own loan-check search bar and a clock with the date built into the face.',
-  'Use a <strong>Checkpoint</strong> before a big change (like end-of-term promotion) so you can roll back if needed.',
-  'Switch theme (light/dark/system) and colour palette any time from the topbar or Personalization.',
-  'Analytics\' Print and Export buttons both cover the entire page — summary tables, every chart\'s data, and the overdue detail — so you never need to stitch together several exports.',
-  'Fingerprint/Face ID sign-in needs the page to be opened over https:// (or http://localhost) and a device with a fingerprint reader or face sensor — it\'s hidden or shows a note if either is missing. It\'s always an extra option on top of your username and password, never a replacement.',
-  'On mobile, tap the page title in the topbar to open a scrollable list of every destination — no need to open the full sidebar drawer first.',
-  'Keyboard shortcuts work from anywhere in the app, not just one page: Ctrl/Cmd+S saves instantly (same as clicking the save icon), and Ctrl/Cmd+Z undoes your most recent change.',
-  'A handheld or USB barcode/QR scanner works from any page, not just Circulation — scan a book or member code and it jumps straight to that title\'s or member\'s page.',
-  'Searches are forgiving: every field on a record is searched, not just the obvious ones, and a term that matches nothing exactly falls back to close spellings — "achebee", "hibicus" or a half-remembered publisher still find the record. The table footer says when you are looking at near matches rather than exact ones.',
-  'Click any section heading (the ones with a ▾) to fold that section away. Any page with two or more sections also gets a small toolbar above them — Collapse all, Expand all, and \'↕ Reorder sections\'. Turn reordering on to drag a section\'s ⠿ handle, or tap its ▲▼, to put it where you want; \'↺ Reset order\' puts a page back to its original layout. Order and collapsed state are both remembered per page.',
-  'End of session: tick the leaving cohort in Members, then "🚪 Mark inactive (selected)", choose the reason and confirm the session. They are marked inactive and archived in one step.',
-  'Archived members and titles are kept out of every list, search, filter and count in the app — open Members → Archive or Catalogue → Archive to restore one, or to delete it for good.',
-  'Setup → Class subject distribution has "🧭 Auto-tick from timetable", which fills each class\'s subject list from its own timetable instead of you ticking dozens of boxes by hand.',
+  "<strong>Search boxes:</strong> ↑ / ↓ move through the results, <strong>Enter</strong> takes the highlighted one (or the first if you haven't moved), and <strong>Esc</strong> clears what you typed. Ctrl/Cmd+K opens the search-everything box from any page.",
+  "<strong>Pick several at once:</strong> in the student, title and loan pickers, tick the boxes (or Ctrl/Cmd+click; Shift+click for a range), then press Enter or \"Use selected\". List filters and the class picker in Batch check-in are checkbox dropdowns too.",
+  "<strong>Cursor is ready:</strong> pages and pop-ups open with the cursor in their main box (Member ID on Circulation, Add one student on Register, Search on list pages) on computers with a mouse.",
+  "Search is forgiving: every field is searched, and a misspelt name still finds the record. The table footer says when you are seeing near matches.",
+  "A handheld or USB barcode/QR scanner works from any page: scan a book or member code and it jumps to that record.",
+  "Every list has Print and Export (CSV, Excel or PDF). Analytics exports the whole page in one go.",
+  "Click a section heading to fold it away. On pages with two or more sections, use Collapse all, Expand all or Reorder sections; your layout is remembered per page.",
+  "<strong>End of session:</strong> tick the leavers in Members and use Mark inactive (selected). They are archived in one step and can be restored from Members → Archive.",
+  "Ctrl/Cmd+S saves, Ctrl/Cmd+Z undoes your last change, and the undo button in the top bar shows recent changes.",
+  "On a phone, tap the page title in the top bar for a list of every page.",
+  "Fingerprint / Face ID sign-in is an optional extra (My Account). It needs https:// or localhost and a device with a fingerprint or face sensor.",
 ];
 /* ================= comprehensive PDF user guide ================= */
 function stripHtmlTags(s){
@@ -26164,22 +26146,25 @@ function downloadUserGuidePDF(){
 }
 /* ================= PAGE: USER GUIDE ================= */
 const GUIDE_SECTIONS = [
-  {h:'Home', ic:'home', b:'Your landing page: a hero banner with the live weather scene and a centred, middle-left "Good Morning/Afternoon/Evening" greeting, plus the day\'s KPI snapshot (issued, returned, visits, overdue). On smaller screens this weather/KPI strip stays pinned to the top as you scroll, so the "Due today & overdue" alert (dismissible for the rest of the day once handled) and the quick-link shortcuts to every part of the desk scroll underneath it.'},
-  {h:'Dashboard', ic:'bars', b:'The full library overview — collection size, availability, active loans, recent circulation activity, today\'s schedule, and two headline charts. Use "Generate comprehensive report" here for a printable report over any period, with no wasted blank space on the page (a new page only starts when a new heading needs one).'},
-  {h:'Analytics', ic:'linechart', b:'Deeper trends: top borrowers and titles, monthly circulation, book condition, loan status, members by category, borrowing by class, visit purpose, and Class reach — how many members of each class have ever borrowed against how many never have, which is the list of classes to target for a visit or a book talk. "Print" produces a full printable report including the actual chart images; "Export" downloads everything — the summary tables, every chart\'s underlying data, and the overdue detail — as one CSV, Excel or PDF file.'},
-  {h:'Catalogue', ic:'book', b:'Search and browse every title — search is forgiving of spelling and covers every field on the record, not just title and author. Withdrawn titles can be archived out of the catalogue entirely and restored later from \"Archive\". Click "Details" on any title to see its full record plus its complete transaction history, and to generate its catalogue card (barcode or QR, per Setup → Codes). Admins can add, edit, delete, export the current view as CSV/Excel/PDF, and generate every catalogue card at once — "🪪 Catalogue cards" — with a one-click 10-up A4 export ready to print and cut.'},
-  {h:'Members', ic:'person', b:'Every student and staff member. At the end of a session, tick the leavers and use \"Mark inactive (selected)\" — you pick a reason (graduated, transferred, expelled, resigned, retired, deceased, or your own) and confirm the academic session, and they are marked inactive and moved into the member archive in one step. Archived members are kept out of every list, search, filter, picker and count in the app; \"Archive\" reopens them for restoring or permanent deletion. A member\'s Profile page is now tabbed — Loans, Subjects, Visits, and (where relevant) Fines and Reservations — plus buttons to generate that member\'s ID card or print their full profile and loan history. From the Members list, "🪪 Member ID cards" generates every member\'s card at once, exportable 10-up on A4.'},
-  {h:'Circulation', ic:'swap', b:'Issue and return titles. Type a member ID or accession number — or a partial number/name — and pick from the filtered suggestions; no need to type a code exactly, and no more waiting for an exact match. Scanning with a mobile camera, a dedicated code scanner, or typing all work the same way, and a successful match shows a ✓ Verified badge with a running scan counter. Returning a title as "Missing" marks both the book and the loan as Missing, not Available or Returned. Print a report for one member, one item, a date range, or everything. "Clear all" wipes the circulation log for a fresh session (admin only).'},
-  {h:'Reminder Log', ic:'bell', b:'Every loan currently overdue, with a one-click "Log reminder" and — where a phone number is on file — a WhatsApp reminder button that renders a clean designed image (or PDF) of the reminder and shares it to the borrower (staff) or the class teacher (students).'},
-  {h:'Register', ic:'checklist', b:'Desk sign-ins and class period visits together. Use "Batch check-in" to stage several students (by ID or a whole class) before submitting them all at once with a shared note; "Batch check-out" lists everyone currently signed in so you can check them out together. Edit any entry to add discipline notes and consequences.'},
-  {h:'Schedule', ic:'calendar', b:'The weekly library timetable and each student\'s subject combination. Admins can add, edit or delete periods, with a period dropdown, a native time picker, and Library, Free, or Other note types. Class Timetable holds each class\'s week: Manage activities, Bell schedules and Periods fold away. Bell schedules hold the period times — one per year group or set of days, with optional whole-school entries such as Assembly on Monday and Fellowship on Tuesday — and Today\'s Timetable (Dashboard and Quick Actions) shows each schedule as its own segment. Excel timetables import per class or all at once (one sheet per class), and optional Start/End columns in the file set custom times for that class, cell edits can be applied to every other slot holding the same entry at once, and \"Auto-build library schedule\" turns the timetables into the visit schedule — counting a student as free only when none of the real subjects running in that period are in their own combination, so assembly, sport and break are never mistaken for free time.'},
-  {h:'Feedback', ic:'chat', b:'Suggestions, complaints and requests from members and staff, with a status workflow (New, In review, Resolved).'},
-  {h:'Setup', ic:'gear', b:'Library configuration, with every section collapsible and reorderable (Collapse all / Expand all / Reorder sections / Reset order at the top — drag a section\'s ⠿ handle, or use its ▲▼, to put it where you want): classes and their teachers, staff designations, promoting students between classes, shelf locations, book conditions, subjects and each class\'s default subject list — which \"Auto-tick from timetable\" can fill in from the class timetables — fines & renewal rules, and — under Codes — whether member/catalogue cards generate a barcode or a QR code.'},
-  {h:'Personalization', ic:'palette', b:'Everything else: theme and colour palette, clock style and date format (the analogue clock now shows the date on its face), typography, icons, lockscreen appearance and backgrounds — including separate Section and Modal background colours, and a notification bell you can show or hide on the sign-in screen.'},
-  {h:'Lockscreen', ic:'lock', b:'Before signing in you can still check your own loans — there\'s a search bar directly above the sign-in box (with live suggestions as you type a name or ID), the notification bell previews what\'s waiting for you, and Create Account opens as a wider card centred over the whole screen so every field fits without excess scrolling.'},
-  {h:'My Account', ic:'fingerprint', b:'Your profile photo, name, email, phone, password and security question, and — for admins — your own access level. Also home to Fingerprint &amp; Face ID sign-in: register this device once (needs https:// or localhost, plus a fingerprint/face sensor) to add a one-touch "Sign in with fingerprint / Face ID" button to the sign-in screen. Your username and password always keep working alongside it, and are what you use to register or remove a device.'},
-  {h:'Privacy & Security', ic:'lock', b:'Admin-only: the admin key, login lockout after repeated wrong passwords, inactivity auto-lock, whether new signups need the admin key, and the full list of other accounts on this device (delete any except your own). Also explains what data this app stores and where.'},
-  {h:'About', ic:'info', b:'What alcms does, how your data is stored, account roles, version info, and how to reach support — plus a "Download PDF" button for this entire user guide.'},
+  {h:"Home", ic:"home", b:"Greeting, weather scene, today's numbers (issued, returned, visits, overdue) and shortcuts. The Due today & overdue alert can be dismissed for the day."},
+  {h:"Dashboard", ic:"bars", b:"Collection size, availability, active loans, recent activity, today's schedule and members needing attention. \"Generate comprehensive report\" prints a report for any period."},
+  {h:"Analytics", ic:"linechart", b:"Top borrowers and titles, monthly circulation, condition, loan status, borrowing by class and Class reach (who has never borrowed). Print and Export cover the whole page."},
+  {h:"Catalogue", ic:"book", b:"Search and browse every title. Details shows the full record and its loan history, and can generate a catalogue card (barcode or QR). Admins add, edit, archive withdrawn titles, export and print cards."},
+  {h:"Members", ic:"person", b:"Students and staff. Open a profile for Loans, Subjects, Visits, Fines and Reservations, or to print an ID card or the full history. Use Mark inactive (selected) at the end of a session; Archive restores or deletes for good."},
+  {h:"Assets & Equipment", ic:"gear", b:"Track non-book assets (furniture, electronics and similar) by tag, with scan lookup, add, edit, print and export."},
+  {h:"Circulation", ic:"swap", b:"Issue and return titles by typing, picking or scanning. Several titles can be issued or returned at once, and the loan log can be printed by member, item or date range. Returning as Missing updates the book and the loan."},
+  {h:"Reservations", ic:"book", b:"Place a hold on a title that is out. It is fulfilled when the title is returned."},
+  {h:"Reminder Log", ic:"bell", b:"Every overdue loan with Log reminder and WhatsApp reminder buttons (to the borrower, or the class teacher for students)."},
+  {h:"Register", ic:"checklist", b:"Desk sign-ins and class visits in one log. Batch check-in stages students or whole classes; Batch check-out lists who is still signed in. Edit an entry to add discipline notes."},
+  {h:"Schedule", ic:"calendar", b:"Five tabs: Weekly schedule (library visits), Class timetable (import from Excel, bell schedules, cell edits), Staff timetable, Teachers, and Emergency fix (adjust a single day when a teacher is absent, without changing the normal week). Auto-build creates the library schedule from the timetables."},
+  {h:"Feedback", ic:"chat", b:"Suggestions, complaints and requests with a New / In review / Resolved workflow."},
+  {h:"Quick Actions (⚡)", ic:"swap", b:"The floating button opens Check In/Out, Issue/Return, Add Title, Add Member, Today's Schedule, Today's Timetable, Absent Students, Skipped Students and Calendar — over whatever page you are on."},
+  {h:"Setup", ic:"gear", b:"Institution, term and session, classes and teachers, subjects and class subject lists (Auto-tick from timetable), shelves, conditions, codes (barcode or QR), fines and renewals, discipline rules, promoting students, notifications and integrations."},
+  {h:"Personalization", ic:"palette", b:"Theme sets, colours, accessibility, typography, backgrounds, icons, notifications, the Quick Actions button, clock and date, lockscreen and weather scene."},
+  {h:"Privacy & Security", ic:"lock", b:"Admin only: admin key, login lockout, inactivity auto-lock, account creation rules, other accounts on this device, and data and privacy information."},
+  {h:"Activity Log", ic:"checklist", b:"A running trail of changes made across the app."},
+  {h:"Backup & Restore", ic:"info", b:"Storage status, data and account backup, scheduled auto-backup, Checkpoints (named restore points), Trash, GitHub sync, Google Drive and a data portal to export or import by category."},
+  {h:"My Account", ic:"fingerprint", b:"Your photo, details, password, security question, and optional Fingerprint / Face ID sign-in."},
 ];
 function pageGuide(){
   const sections = GUIDE_SECTIONS;
@@ -26206,12 +26191,14 @@ function pageGuide(){
   </div>`;
 }
 const GUIDE_FAQ = [
-  {q:'I forgot my password — what do I do?', a:'On the sign-in screen, use "Forgot password?" and answer your security question to reset it. If you never set one, ask an admin to reset your account.'},
-  {q:'Why can\'t I edit or delete anything?', a:'Guest accounts can browse and search but can\'t change data. Sign in with an admin account, or ask an admin to change your role in Personalization.'},
-  {q:'My changes disappeared after I refreshed the page — why?', a:'Make sure you pressed "Save changes" (or a Checkpoint) before closing the tab. If your browser storage is full, saves can fail — Backup &amp; Restore will show a warning when that happens.'},
-  {q:'How do I move my data to another device or browser?', a:'Use Backup &amp; Restore: either download a full backup file and restore it on the other device, or set up GitHub sync to push/pull the same data from anywhere.'},
-  {q:'How do I get in touch about a bug or request?', a:'Use the "Send a query / complaint" button on the About page, or reach the developer directly by email or WhatsApp — both are listed there.'},
-  {q:'The fingerprint/Face ID button isn\'t showing up — why?', a:'It only appears once at least one account has registered a device, and it needs a secure connection (https://, or http://localhost) plus a device with a fingerprint reader or face sensor. It won\'t work if this file is opened directly from disk (file://) — hosting it (e.g. on GitHub Pages) or running it through a local server fixes that. Your username and password always work regardless.'},
+  {q:"I forgot my password. What do I do?", a:"On the sign-in screen use \"Forgot password?\" and answer your security question. If you never set one, ask an admin to reset your account."},
+  {q:"Why can't I edit, issue or delete?", a:"Guests can only browse and search. Staff can run the circulation desk (issue, return, check-in and out). Adding, editing and deleting records and changing settings needs an admin."},
+  {q:"A member is missing from the Issue picker.", a:"Only members who are eligible and active appear. Check the member's profile for inactive status, suspension or an archive entry. In Batch check-in, anyone already signed in is left out until checked out."},
+  {q:"How do I issue or return several books at once?", a:"Tick several titles (or loans) in the picker, then press Issue (or Mark as returned). Issuing stops at the member's borrowing limit."},
+  {q:"My changes disappeared after a refresh.", a:"Press Ctrl+S or make a Checkpoint before closing the tab. If browser storage is full, saves can fail and Backup & Restore shows a warning."},
+  {q:"How do I move my data to another device?", a:"Download a backup in Backup & Restore and restore it on the other device, or use GitHub sync to push and pull the same data."},
+  {q:"The fingerprint button isn't showing.", a:"It appears only after a device is registered, and needs https:// or localhost plus a fingerprint or face sensor. It does not work when the file is opened straight from disk."},
+  {q:"How do I report a bug or request something?", a:"Use \"Send a query / complaint\" on the About page, or contact the developer by email or WhatsApp, both listed there."},
 ];
 function openEditClass(oldName){
   if(!isAdmin()) return requireAdmin('edit classes');
